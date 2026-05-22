@@ -223,7 +223,7 @@ func TestCheckErrorPolicy(t *testing.T) {
 }
 
 func TestHandleUpstreamError_PoolModeCustomErrorCodesOverride(t *testing.T) {
-	t.Run("pool_mode_without_custom_error_codes_still_skips", func(t *testing.T) {
+	t.Run("pool_mode_without_custom_error_codes_handles_401_status", func(t *testing.T) {
 		repo := &errorPolicyRepoStub{}
 		svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
 		account := &Account{
@@ -236,6 +236,25 @@ func TestHandleUpstreamError_PoolModeCustomErrorCodesOverride(t *testing.T) {
 		}
 
 		shouldDisable := svc.HandleUpstreamError(context.Background(), account, 401, http.Header{}, []byte("unauthorized"))
+
+		require.True(t, shouldDisable)
+		require.Equal(t, 1, repo.setErrCalls)
+		require.Equal(t, 0, repo.tempCalls)
+	})
+
+	t.Run("pool_mode_without_custom_error_codes_skips_only_transient_503", func(t *testing.T) {
+		repo := &errorPolicyRepoStub{}
+		svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+		account := &Account{
+			ID:       32,
+			Type:     AccountTypeAPIKey,
+			Platform: PlatformOpenAI,
+			Credentials: map[string]any{
+				"pool_mode": true,
+			},
+		}
+
+		shouldDisable := svc.HandleUpstreamError(context.Background(), account, 503, http.Header{}, []byte("temporarily unavailable"))
 
 		require.False(t, shouldDisable)
 		require.Equal(t, 0, repo.setErrCalls)

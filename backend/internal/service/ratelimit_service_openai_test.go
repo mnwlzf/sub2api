@@ -336,6 +336,35 @@ func TestRateLimitService_HandleUpstreamError_403FallsBackToRawBody(t *testing.T
 	require.NotContains(t, repo.lastErrorMsg, "account may be suspended or lack permissions")
 }
 
+func TestRateLimitService_HandleUpstreamError_PoolMode429StillMarksRateLimit(t *testing.T) {
+	repo := &openAI429SnapshotRepo{}
+	service := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	account := &Account{
+		ID:       203,
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"pool_mode": true,
+		},
+	}
+
+	headers := http.Header{}
+	headers.Set("x-codex-primary-used-percent", "100")
+	headers.Set("x-codex-primary-reset-after-seconds", "3600")
+	headers.Set("x-codex-primary-window-minutes", "300")
+
+	shouldDisable := service.HandleUpstreamError(
+		context.Background(),
+		account,
+		429,
+		headers,
+		[]byte(`{"error":{"type":"rate_limit_error","message":"slow down"}}`),
+	)
+
+	require.False(t, shouldDisable)
+	require.Equal(t, account.ID, repo.rateLimitedID)
+}
+
 func TestNormalizedCodexLimits_OnlySecondaryData(t *testing.T) {
 	// Test when only secondary has data, no window_minutes
 	sUsed := 60.0

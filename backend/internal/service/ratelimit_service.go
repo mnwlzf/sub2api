@@ -132,10 +132,14 @@ func (s *RateLimitService) CheckErrorPolicy(ctx context.Context, account *Accoun
 func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, responseBody []byte) (shouldDisable bool) {
 	customErrorCodesEnabled := account.IsCustomErrorCodesEnabled()
 
-	// 池模式默认不标记本地账号状态；仅当用户显式配置自定义错误码时按本地策略处理。
+	// 池模式仍需同步关键运行时状态，否则当前请求即使切号，后续请求也会持续命中坏账号。
+	// 仅对真正瞬时的上游错误跳过本地状态处理，避免把短暂波动放大成持久状态。
 	if account.IsPoolMode() && !customErrorCodesEnabled {
-		slog.Info("pool_mode_error_skipped", "account_id", account.ID, "status_code", statusCode)
-		return false
+		switch statusCode {
+		case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+			slog.Info("pool_mode_transient_error_skipped", "account_id", account.ID, "status_code", statusCode)
+			return false
+		}
 	}
 
 	// apikey 类型账号：检查自定义错误码配置
