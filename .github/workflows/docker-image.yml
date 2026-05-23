@@ -34,7 +34,7 @@ jobs:
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             VERSION="${GITHUB_REF_NAME}"
           else
-            VERSION="main"
+            VERSION="$(tr -d '\r\n' < backend/cmd/server/VERSION)"
           fi
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
