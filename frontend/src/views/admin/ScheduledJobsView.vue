@@ -17,59 +17,67 @@
           </div>
         </div>
 
-        <div class="hidden overflow-x-auto lg:block">
-          <table class="w-full min-w-[960px] table-fixed text-sm">
-            <thead>
-              <tr class="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500 dark:border-dark-700 dark:text-gray-400">
-                <th class="w-[22%] py-2 pr-4">{{ t('admin.scheduledJobs.columns.name') }}</th>
-                <th class="w-[18%] py-2 pr-4">Cron</th>
-                <th class="w-[20%] py-2 pr-4">{{ t('admin.scheduledJobs.columns.status') }}</th>
-                <th class="w-[15%] py-2 pr-4">{{ t('admin.scheduledJobs.columns.nextRun') }}</th>
-                <th class="w-[15%] py-2 pr-4">{{ t('admin.scheduledJobs.columns.lastRun') }}</th>
-                <th class="w-[10%] py-2">{{ t('admin.scheduledJobs.columns.actions') }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="job in jobs" :key="job.id" class="border-b border-gray-100 align-top dark:border-dark-800">
-                <td class="py-3 pr-4">
-                  <div class="break-words text-sm font-medium text-gray-900 dark:text-white">{{ formatJobType(job.job_type) }}</div>
-                  <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ job.enabled ? t('common.enabled') : t('common.disabled') }}</div>
-                </td>
-                <td class="py-3 pr-4">
-                  <div class="break-all font-mono text-xs text-gray-700 dark:text-gray-300">{{ job.cron_expression }}</div>
-                </td>
-                <td class="py-3 pr-4">
+        <div class="hidden lg:block">
+          <div class="grid grid-cols-[minmax(0,1.6fr)_150px_minmax(0,1.7fr)_170px_170px_auto] gap-4 border-b border-gray-200 px-3 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:border-dark-700 dark:text-gray-400">
+            <div>{{ t('admin.scheduledJobs.columns.name') }}</div>
+            <div>Cron</div>
+            <div>{{ t('admin.scheduledJobs.columns.status') }}</div>
+            <div>{{ t('admin.scheduledJobs.columns.nextRun') }}</div>
+            <div>{{ t('admin.scheduledJobs.columns.lastRun') }}</div>
+            <div class="text-right">{{ t('admin.scheduledJobs.columns.actions') }}</div>
+          </div>
+
+          <div v-if="jobs.length" class="mt-3 space-y-3">
+            <div
+              v-for="job in jobs"
+              :key="job.id"
+              class="rounded-2xl border border-gray-200 px-4 py-4 shadow-sm dark:border-dark-700"
+            >
+              <div class="grid grid-cols-[minmax(0,1.6fr)_150px_minmax(0,1.7fr)_170px_170px_auto] items-start gap-4">
+                <div class="min-w-0">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <div class="break-words text-base font-semibold text-gray-900 dark:text-white">{{ formatJobType(job.job_type) }}</div>
+                    <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:bg-dark-700 dark:text-gray-300">
+                      {{ job.enabled ? t('common.enabled') : t('common.disabled') }}
+                    </span>
+                  </div>
+                </div>
+
+                <div class="min-w-0">
+                  <div class="break-all font-mono text-xs leading-5 text-gray-700 dark:text-gray-300">{{ job.cron_expression }}</div>
+                </div>
+
+                <div class="min-w-0">
                   <span class="rounded px-2 py-0.5 text-xs" :class="statusClass(job.last_status)">
                     {{ formatStatus(job.last_status) }}
                   </span>
-                  <div v-if="job.last_message" class="mt-1 break-words text-xs text-gray-500 dark:text-gray-400">{{ job.last_message }}</div>
-                </td>
-                <td class="py-3 pr-4 text-xs text-gray-700 dark:text-gray-300">{{ formatDate(job.next_run_at) }}</td>
-                <td class="py-3 pr-4 text-xs text-gray-700 dark:text-gray-300">{{ formatDate(job.last_run_at) }}</td>
-                <td class="py-3">
-                  <div class="flex flex-wrap gap-1">
-                    <button type="button" class="btn btn-secondary btn-xs" :disabled="runningJobId === job.id" @click="handleRun(job)">
-                      {{ runningJobId === job.id ? t('common.loading') : t('admin.scheduledJobs.runNow') }}
-                    </button>
-                    <button type="button" class="btn btn-secondary btn-xs" @click="openEdit(job)">
-                      {{ t('common.edit') }}
-                    </button>
-                    <button type="button" class="btn btn-secondary btn-xs" @click="openLogs(job)">
-                      {{ t('admin.scheduledJobs.logs') }}
-                    </button>
-                    <button type="button" class="btn btn-danger btn-xs" @click="handleDelete(job)">
-                      {{ t('common.delete') }}
-                    </button>
-                  </div>
-                </td>
-              </tr>
-              <tr v-if="!jobs.length">
-                <td colspan="7" class="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
-                  {{ t('admin.scheduledJobs.empty') }}
-                </td>
-              </tr>
-            </tbody>
-          </table>
+                  <div v-if="job.last_message" class="mt-2 break-words text-sm leading-6 text-gray-500 dark:text-gray-400">{{ job.last_message }}</div>
+                </div>
+
+                <div class="text-sm leading-6 text-gray-700 dark:text-gray-300">{{ formatDate(job.next_run_at) }}</div>
+                <div class="text-sm leading-6 text-gray-700 dark:text-gray-300">{{ formatDate(job.last_run_at) }}</div>
+
+                <div class="flex min-w-[260px] flex-wrap justify-end gap-2">
+                  <button type="button" class="btn btn-secondary btn-xs whitespace-nowrap" :disabled="runningJobId === job.id" @click="handleRun(job)">
+                    {{ runningJobId === job.id ? t('common.loading') : t('admin.scheduledJobs.runNow') }}
+                  </button>
+                  <button type="button" class="btn btn-secondary btn-xs whitespace-nowrap" @click="openEdit(job)">
+                    {{ t('common.edit') }}
+                  </button>
+                  <button type="button" class="btn btn-secondary btn-xs whitespace-nowrap" @click="openLogs(job)">
+                    {{ t('admin.scheduledJobs.logs') }}
+                  </button>
+                  <button type="button" class="btn btn-danger btn-xs whitespace-nowrap" @click="handleDelete(job)">
+                    {{ t('common.delete') }}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div v-else class="py-10 text-center text-sm text-gray-500 dark:text-gray-400">
+            {{ t('admin.scheduledJobs.empty') }}
+          </div>
         </div>
 
         <div class="space-y-3 lg:hidden">
