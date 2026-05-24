@@ -17,35 +17,35 @@
           </div>
         </div>
 
-        <div class="overflow-x-auto">
-          <table class="w-full min-w-[980px] text-sm">
+        <div class="hidden overflow-x-auto lg:block">
+          <table class="w-full min-w-[960px] table-fixed text-sm">
             <thead>
               <tr class="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500 dark:border-dark-700 dark:text-gray-400">
-                <th class="py-2 pr-4">{{ t('admin.scheduledJobs.columns.name') }}</th>
-                <th class="py-2 pr-4">{{ t('admin.scheduledJobs.columns.type') }}</th>
-                <th class="py-2 pr-4">Cron</th>
-                <th class="py-2 pr-4">{{ t('admin.scheduledJobs.columns.status') }}</th>
-                <th class="py-2 pr-4">{{ t('admin.scheduledJobs.columns.nextRun') }}</th>
-                <th class="py-2 pr-4">{{ t('admin.scheduledJobs.columns.lastRun') }}</th>
-                <th class="py-2">{{ t('admin.scheduledJobs.columns.actions') }}</th>
+                <th class="w-[22%] py-2 pr-4">{{ t('admin.scheduledJobs.columns.name') }}</th>
+                <th class="w-[18%] py-2 pr-4">Cron</th>
+                <th class="w-[20%] py-2 pr-4">{{ t('admin.scheduledJobs.columns.status') }}</th>
+                <th class="w-[15%] py-2 pr-4">{{ t('admin.scheduledJobs.columns.nextRun') }}</th>
+                <th class="w-[15%] py-2 pr-4">{{ t('admin.scheduledJobs.columns.lastRun') }}</th>
+                <th class="w-[10%] py-2">{{ t('admin.scheduledJobs.columns.actions') }}</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="job in jobs" :key="job.id" class="border-b border-gray-100 align-top dark:border-dark-800">
                 <td class="py-3 pr-4">
-                  <div class="font-medium text-gray-900 dark:text-white">{{ job.name }}</div>
+                  <div class="break-words text-sm font-medium text-gray-900 dark:text-white">{{ formatJobType(job.job_type) }}</div>
                   <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ job.enabled ? t('common.enabled') : t('common.disabled') }}</div>
                 </td>
-                <td class="py-3 pr-4 font-mono text-xs">{{ job.job_type }}</td>
-                <td class="py-3 pr-4 font-mono text-xs">{{ job.cron_expression }}</td>
+                <td class="py-3 pr-4">
+                  <div class="break-all font-mono text-xs text-gray-700 dark:text-gray-300">{{ job.cron_expression }}</div>
+                </td>
                 <td class="py-3 pr-4">
                   <span class="rounded px-2 py-0.5 text-xs" :class="statusClass(job.last_status)">
                     {{ formatStatus(job.last_status) }}
                   </span>
-                  <div v-if="job.last_message" class="mt-1 max-w-xs truncate text-xs text-gray-500 dark:text-gray-400">{{ job.last_message }}</div>
+                  <div v-if="job.last_message" class="mt-1 break-words text-xs text-gray-500 dark:text-gray-400">{{ job.last_message }}</div>
                 </td>
-                <td class="py-3 pr-4 text-xs">{{ formatDate(job.next_run_at) }}</td>
-                <td class="py-3 pr-4 text-xs">{{ formatDate(job.last_run_at) }}</td>
+                <td class="py-3 pr-4 text-xs text-gray-700 dark:text-gray-300">{{ formatDate(job.next_run_at) }}</td>
+                <td class="py-3 pr-4 text-xs text-gray-700 dark:text-gray-300">{{ formatDate(job.last_run_at) }}</td>
                 <td class="py-3">
                   <div class="flex flex-wrap gap-1">
                     <button type="button" class="btn btn-secondary btn-xs" :disabled="runningJobId === job.id" @click="handleRun(job)">
@@ -71,22 +71,83 @@
             </tbody>
           </table>
         </div>
+
+        <div class="space-y-3 lg:hidden">
+          <div v-for="job in jobs" :key="job.id" class="rounded-2xl border border-gray-200 p-4 dark:border-dark-700">
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0 flex-1">
+                <div class="break-words text-sm font-semibold text-gray-900 dark:text-white">
+                  {{ formatJobType(job.job_type) }}
+                </div>
+              </div>
+              <span class="shrink-0 rounded px-2 py-0.5 text-xs" :class="statusClass(job.last_status)">
+                {{ formatStatus(job.last_status) }}
+              </span>
+            </div>
+
+            <div class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+              {{ job.enabled ? t('common.enabled') : t('common.disabled') }}
+            </div>
+
+            <div class="mt-4 space-y-3 text-sm">
+              <div>
+                <div class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Cron</div>
+                <div class="mt-1 break-all font-mono text-xs text-gray-700 dark:text-gray-300">{{ job.cron_expression }}</div>
+              </div>
+              <div v-if="job.last_message">
+                <div class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  {{ t('admin.scheduledJobs.columns.status') }}
+                </div>
+                <div class="mt-1 break-words text-xs text-gray-600 dark:text-gray-300">{{ job.last_message }}</div>
+              </div>
+              <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <div class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    {{ t('admin.scheduledJobs.columns.nextRun') }}
+                  </div>
+                  <div class="mt-1 text-xs text-gray-700 dark:text-gray-300">{{ formatDate(job.next_run_at) }}</div>
+                </div>
+                <div>
+                  <div class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    {{ t('admin.scheduledJobs.columns.lastRun') }}
+                  </div>
+                  <div class="mt-1 text-xs text-gray-700 dark:text-gray-300">{{ formatDate(job.last_run_at) }}</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-4 grid grid-cols-2 gap-2">
+              <button type="button" class="btn btn-secondary btn-sm" :disabled="runningJobId === job.id" @click="handleRun(job)">
+                {{ runningJobId === job.id ? t('common.loading') : t('admin.scheduledJobs.runNow') }}
+              </button>
+              <button type="button" class="btn btn-secondary btn-sm" @click="openEdit(job)">
+                {{ t('common.edit') }}
+              </button>
+              <button type="button" class="btn btn-secondary btn-sm" @click="openLogs(job)">
+                {{ t('admin.scheduledJobs.logs') }}
+              </button>
+              <button type="button" class="btn btn-danger btn-sm" @click="handleDelete(job)">
+                {{ t('common.delete') }}
+              </button>
+            </div>
+          </div>
+
+          <div v-if="!jobs.length" class="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+            {{ t('admin.scheduledJobs.empty') }}
+          </div>
+        </div>
       </div>
 
       <BaseDialog :show="showEditor" :title="editingId ? t('common.edit') : t('admin.scheduledJobs.create')" width="wide" @close="closeEditor">
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div class="md:col-span-2">
-            <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.scheduledJobs.columns.name') }}</label>
-            <input v-model="form.name" class="input w-full" />
-          </div>
           <div>
             <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.scheduledJobs.columns.type') }}</label>
-            <select v-model="form.job_type" class="input w-full">
-              <option value="backup_postgres">{{ t('admin.scheduledJobs.types.backup_postgres') }}</option>
-              <option value="data_management_full_backup">{{ t('admin.scheduledJobs.types.data_management_full_backup') }}</option>
-              <option value="channel_monitor_maintenance">{{ t('admin.scheduledJobs.types.channel_monitor_maintenance') }}</option>
-              <option value="sync_codex_free_group_accounts">{{ t('admin.scheduledJobs.types.sync_codex_free_group_accounts') }}</option>
+            <select v-model="form.job_type" class="input w-full" :disabled="Boolean(editingId)">
+              <option v-for="option in selectableJobTypeOptions" :key="option.value" :value="option.value">
+                {{ option.label }}
+              </option>
             </select>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.scheduledJobs.typeAsName') }}</p>
           </div>
           <div>
             <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">Cron</label>
@@ -165,7 +226,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -187,6 +248,13 @@ const editingId = ref<number | null>(null)
 const currentLogsJobId = ref<number | null>(null)
 const availableGroups = ref<AdminGroup[]>([])
 
+const jobTypeOptions = [
+  { value: 'backup_postgres', labelKey: 'admin.scheduledJobs.types.backup_postgres' },
+  { value: 'data_management_full_backup', labelKey: 'admin.scheduledJobs.types.data_management_full_backup' },
+  { value: 'channel_monitor_maintenance', labelKey: 'admin.scheduledJobs.types.channel_monitor_maintenance' },
+  { value: 'sync_codex_free_group_accounts', labelKey: 'admin.scheduledJobs.types.sync_codex_free_group_accounts' },
+] as const
+
 const form = reactive<CreateAdminScheduledJobRequest>({
   name: '',
   job_type: 'backup_postgres',
@@ -205,9 +273,26 @@ const targetGroupOptions = computed(() =>
   availableGroups.value.filter((group) => group.id !== syncCodexFreeForm.source_group_id)
 )
 
+const selectableJobTypeOptions = computed(() => {
+  const usedTypes = new Set(jobs.value.map((job) => job.job_type))
+  return jobTypeOptions
+    .filter((option) => editingId.value || !usedTypes.has(option.value))
+    .map((option) => ({
+      value: option.value,
+      label: t(option.labelKey),
+    }))
+})
+
+watch(
+  () => syncCodexFreeForm.source_group_id,
+  (sourceGroupID) => {
+    syncCodexFreeForm.target_group_ids = syncCodexFreeForm.target_group_ids.filter((id) => id !== sourceGroupID)
+  }
+)
+
 function resetForm() {
-  form.name = ''
-  form.job_type = 'backup_postgres'
+  form.job_type = selectableJobTypeOptions.value[0]?.value || 'backup_postgres'
+  form.name = formatJobType(form.job_type)
   form.cron_expression = '0 * * * *'
   form.enabled = true
   form.payload_json = '{}'
@@ -224,8 +309,8 @@ function openCreate() {
 
 function openEdit(job: AdminScheduledJob) {
   editingId.value = job.id
-  form.name = job.name
   form.job_type = job.job_type
+  form.name = formatJobType(job.job_type)
   form.cron_expression = job.cron_expression
   form.enabled = job.enabled
   form.payload_json = job.payload_json || '{}'
@@ -290,6 +375,7 @@ function toggleTargetGroup(groupID: number) {
 async function submitForm() {
   saving.value = true
   try {
+    form.name = formatJobType(form.job_type)
     if (form.job_type === 'sync_codex_free_group_accounts') {
       if (syncCodexFreeForm.source_group_id <= 0) {
         appStore.showError(t('admin.scheduledJobs.sourceGroupRequired'))
@@ -306,9 +392,10 @@ async function submitForm() {
           target_group_ids: syncCodexFreeForm.target_group_ids,
         })
       : form.payload_json
+
     if (editingId.value) {
       const payload: UpdateAdminScheduledJobRequest = {
-        name: form.name,
+        name: formatJobType(form.job_type),
         cron_expression: form.cron_expression,
         enabled: form.enabled,
         payload_json: payloadJSON,
@@ -363,6 +450,11 @@ function formatDate(value: string | null) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
   return date.toLocaleString()
+}
+
+function formatJobType(value: string) {
+  const option = jobTypeOptions.find((item) => item.value === value)
+  return option ? t(option.labelKey) : value
 }
 
 function formatStatus(value: string) {

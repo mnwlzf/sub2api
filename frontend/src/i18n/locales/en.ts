@@ -4003,30 +4003,31 @@ export default {
       logs: 'Logs',
       empty: 'No scheduled jobs',
       noLogs: 'No execution logs',
-        retentionLimit: 'Log retention',
-        payloadJson: 'Payload JSON',
-        runTriggered: 'Job triggered',
-        sourceGroup: 'Source Group',
-        targetGroups: 'Target Groups',
-        selectSourceGroup: 'Select source group',
-        noTargetGroups: 'No target groups available',
-        sourceGroupRequired: 'Please select a source group',
-        targetGroupsRequired: 'Please select at least one target group',
-        columns: {
-          name: 'Name',
-          type: 'Type',
+      retentionLimit: 'Log retention',
+      payloadJson: 'Payload JSON',
+      runTriggered: 'Job triggered',
+      sourceGroup: 'Source Group',
+      targetGroups: 'Target Groups',
+      selectSourceGroup: 'Select source group',
+      noTargetGroups: 'No target groups available',
+      sourceGroupRequired: 'Please select a source group',
+      targetGroupsRequired: 'Please select at least one target group',
+      typeAsName: 'Task type is used as the task name, and only one job is allowed per type.',
+      columns: {
+        name: 'Name',
+        type: 'Type',
         status: 'Last Status',
         nextRun: 'Next Run',
         lastRun: 'Last Run',
         actions: 'Actions'
       },
-        types: {
-          backup_postgres: 'PostgreSQL Backup',
-          data_management_full_backup: 'Data Management Full Backup',
-          channel_monitor_maintenance: 'Channel Monitor Maintenance',
-          sync_codex_free_group_accounts: 'Sync Codex-Free Group Accounts'
-        }
-      },
+      types: {
+        backup_postgres: 'PostgreSQL Backup',
+        data_management_full_backup: 'Data Management Full Backup',
+        channel_monitor_maintenance: 'Channel Monitor Maintenance',
+        sync_codex_free_group_accounts: 'Sync Codex-Free Group Accounts'
+      }
+    },
 
     // Proxies
     proxies: {
