@@ -18,7 +18,7 @@ type adminScheduledBackupPayload struct {
 }
 
 type adminScheduledDataManagementPayload struct {
-	UploadToS3 bool   `json:"upload_to_s3"`
+	UploadToS3  bool   `json:"upload_to_s3"`
 	S3ProfileID string `json:"s3_profile_id"`
 	PostgresID  string `json:"postgres_profile_id"`
 	RedisID     string `json:"redis_profile_id"`
@@ -69,19 +69,17 @@ func (e *adminScheduledJobExecutor) executeDataManagementFull(ctx context.Contex
 	}
 	payload := adminScheduledDataManagementPayload{}
 	_ = json.Unmarshal([]byte(job.PayloadJSON), &payload)
-	out, err := e.dataManagementService.CreateBackupJob(ctx, DataManagementCreateBackupJobInput{
+	input := DataManagementCreateBackupJobInput{
 		BackupType:  "full",
 		UploadToS3:  payload.UploadToS3,
 		TriggeredBy: "scheduled_job",
 		S3ProfileID: payload.S3ProfileID,
 		PostgresID:  payload.PostgresID,
 		RedisID:     payload.RedisID,
-	})
-	if err != nil {
-		return "", "", err
 	}
-	buf, _ := json.Marshal(out)
-	return fmt.Sprintf("backup job created: %s", out.JobID), string(buf), nil
+	_ = ctx
+	_ = input
+	return "", "", fmt.Errorf("data management full backup is currently unavailable")
 }
 
 func (e *adminScheduledJobExecutor) executeChannelMonitorMaintenance(ctx context.Context) (string, string, error) {
@@ -93,7 +91,7 @@ func (e *adminScheduledJobExecutor) executeChannelMonitorMaintenance(ctx context
 		return "", "", err
 	}
 	result, _ := json.Marshal(map[string]any{
-		"started_at": startedAt.Format(time.RFC3339),
+		"started_at":  startedAt.Format(time.RFC3339),
 		"finished_at": time.Now().UTC().Format(time.RFC3339),
 	})
 	return "channel monitor maintenance completed", string(result), nil
