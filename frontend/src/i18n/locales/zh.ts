@@ -4098,23 +4098,30 @@ export default {
       logs: '执行日志',
       empty: '暂无定时任务',
       noLogs: '暂无执行日志',
-      retentionLimit: '日志保留条数',
-      payloadJson: '任务参数 JSON',
-      runTriggered: '任务已触发',
-      columns: {
-        name: '任务名称',
-        type: '任务类型',
+        retentionLimit: '日志保留条数',
+        payloadJson: '任务参数 JSON',
+        runTriggered: '任务已触发',
+        sourceGroup: '源分组',
+        targetGroups: '同步到的分组',
+        selectSourceGroup: '请选择源分组',
+        noTargetGroups: '暂无可选目标分组',
+        sourceGroupRequired: '请选择源分组',
+        targetGroupsRequired: '请至少选择一个目标分组',
+        columns: {
+          name: '任务名称',
+          type: '任务类型',
         status: '最近状态',
         nextRun: '下次执行',
         lastRun: '上次执行',
         actions: '操作'
       },
-      types: {
-        backup_postgres: 'PostgreSQL 备份',
-        data_management_full_backup: '数据管理全量备份',
-        channel_monitor_maintenance: '渠道监控维护'
-      }
-    },
+        types: {
+          backup_postgres: 'PostgreSQL 备份',
+          data_management_full_backup: '数据管理全量备份',
+          channel_monitor_maintenance: '渠道监控维护',
+          sync_codex_free_group_accounts: '同步codex-free分组账号'
+        }
+      },
 
     // Proxies Management
     proxies: {

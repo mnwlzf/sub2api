@@ -85,7 +85,7 @@
               <option value="backup_postgres">{{ t('admin.scheduledJobs.types.backup_postgres') }}</option>
               <option value="data_management_full_backup">{{ t('admin.scheduledJobs.types.data_management_full_backup') }}</option>
               <option value="channel_monitor_maintenance">{{ t('admin.scheduledJobs.types.channel_monitor_maintenance') }}</option>
-              <option value="sync_codex_free_group_accounts">同步codex-free分组账号</option>
+              <option value="sync_codex_free_group_accounts">{{ t('admin.scheduledJobs.types.sync_codex_free_group_accounts') }}</option>
             </select>
           </div>
           <div>
@@ -102,14 +102,14 @@
           </label>
           <div class="md:col-span-2">
             <template v-if="form.job_type === 'sync_codex_free_group_accounts'">
-              <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">源分组</label>
+              <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.scheduledJobs.sourceGroup') }}</label>
               <select v-model.number="syncCodexFreeForm.source_group_id" class="input w-full">
-                <option :value="0">请选择源分组</option>
+                <option :value="0">{{ t('admin.scheduledJobs.selectSourceGroup') }}</option>
                 <option v-for="group in availableGroups" :key="group.id" :value="group.id">
                   {{ group.name }}
                 </option>
               </select>
-              <label class="mb-1 mt-4 block text-xs font-medium text-gray-600 dark:text-gray-400">同步到的分组</label>
+              <label class="mb-1 mt-4 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.scheduledJobs.targetGroups') }}</label>
               <div class="max-h-64 overflow-y-auto rounded-xl border border-gray-200 p-3 dark:border-dark-600">
                 <label
                   v-for="group in targetGroupOptions"
@@ -124,7 +124,7 @@
                   <span>{{ group.name }}</span>
                 </label>
                 <div v-if="!targetGroupOptions.length" class="text-xs text-gray-500 dark:text-gray-400">
-                  暂无可选目标分组
+                  {{ t('admin.scheduledJobs.noTargetGroups') }}
                 </div>
               </div>
             </template>
@@ -292,11 +292,11 @@ async function submitForm() {
   try {
     if (form.job_type === 'sync_codex_free_group_accounts') {
       if (syncCodexFreeForm.source_group_id <= 0) {
-        appStore.showError('请选择源分组')
+        appStore.showError(t('admin.scheduledJobs.sourceGroupRequired'))
         return
       }
       if (syncCodexFreeForm.target_group_ids.length === 0) {
-        appStore.showError('请至少选择一个目标分组')
+        appStore.showError(t('admin.scheduledJobs.targetGroupsRequired'))
         return
       }
     }
