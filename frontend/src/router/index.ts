@@ -537,6 +537,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/scheduled-jobs',
+    name: 'AdminScheduledJobs',
+    component: () => import('@/views/admin/ScheduledJobsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Scheduled Jobs',
+      titleKey: 'admin.scheduledJobs.title',
+      descriptionKey: 'admin.scheduledJobs.description'
+    }
+  },
+  {
     path: '/admin/settings',
     name: 'AdminSettings',
     component: () => import('@/views/admin/SettingsView.vue'),

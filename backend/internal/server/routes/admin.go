@@ -86,6 +86,9 @@ func RegisterAdminRoutes(
 		// 定时测试计划
 		registerScheduledTestRoutes(admin, h)
 
+		// 管理员定时任务中心
+		registerAdminScheduledJobRoutes(admin, h)
+
 		// 渠道管理
 		registerChannelRoutes(admin, h)
 
@@ -504,6 +507,19 @@ func registerSystemRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		system.POST("/update", h.Admin.System.PerformUpdate)
 		system.POST("/rollback", h.Admin.System.Rollback)
 		system.POST("/restart", h.Admin.System.RestartService)
+	}
+}
+
+func registerAdminScheduledJobRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	jobs := admin.Group("/scheduled-jobs")
+	{
+		jobs.GET("", h.Admin.AdminScheduledJob.List)
+		jobs.POST("", h.Admin.AdminScheduledJob.Create)
+		jobs.GET("/:id", h.Admin.AdminScheduledJob.Get)
+		jobs.PUT("/:id", h.Admin.AdminScheduledJob.Update)
+		jobs.DELETE("/:id", h.Admin.AdminScheduledJob.Delete)
+		jobs.POST("/:id/run", h.Admin.AdminScheduledJob.RunNow)
+		jobs.GET("/:id/runs", h.Admin.AdminScheduledJob.ListRuns)
 	}
 }
 

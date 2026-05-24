@@ -1852,5 +1852,52 @@ export interface UpdateScheduledTestPlanRequest {
   auto_recover?: boolean
 }
 
+export interface AdminScheduledJob {
+  id: number
+  name: string
+  job_type: string
+  cron_expression: string
+  enabled: boolean
+  payload_json: string
+  retention_limit: number
+  last_run_at: string | null
+  next_run_at: string | null
+  last_status: string
+  last_message: string
+  created_by: number
+  created_at: string
+  updated_at: string
+}
+
+export interface AdminScheduledJobRun {
+  id: number
+  job_id: number
+  trigger_type: string
+  status: string
+  message: string
+  result_json: string
+  started_at: string
+  finished_at: string | null
+  created_at: string
+  triggered_by_user: number | null
+}
+
+export interface CreateAdminScheduledJobRequest {
+  name: string
+  job_type: string
+  cron_expression: string
+  enabled?: boolean
+  payload_json?: string
+  retention_limit?: number
+}
+
+export interface UpdateAdminScheduledJobRequest {
+  name?: string
+  cron_expression?: string
+  enabled?: boolean
+  payload_json?: string
+  retention_limit?: number
+}
+
 // Payment types
 export type { SubscriptionPlan, PaymentOrder, CheckoutInfoResponse } from './payment'

@@ -388,6 +388,7 @@ export default {
     channelMonitor: 'Channel Monitor',
     channelStatus: 'Channel Status',
     riskControl: 'Risk Control',
+    scheduledJobs: 'Scheduled Jobs',
   },
 
   // Auth
@@ -3993,6 +3994,31 @@ export default {
       maxResultsTooltipRange: 'Recommended range: usually 20 to 200. Use 20-50 when you only care about recent health status, or 100-200 if you want a longer trend history.',
       autoRecover: 'Auto Recover',
       autoRecoverHelp: 'Automatically recover account from error/rate-limited state on successful test'
+    },
+    scheduledJobs: {
+      title: 'Scheduled Jobs',
+      description: 'Admin-only built-in job center with manual run, cron scheduling, and execution logs.',
+      create: 'Create Job',
+      runNow: 'Run Now',
+      logs: 'Logs',
+      empty: 'No scheduled jobs',
+      noLogs: 'No execution logs',
+      retentionLimit: 'Log retention',
+      payloadJson: 'Payload JSON',
+      runTriggered: 'Job triggered',
+      columns: {
+        name: 'Name',
+        type: 'Type',
+        status: 'Last Status',
+        nextRun: 'Next Run',
+        lastRun: 'Last Run',
+        actions: 'Actions'
+      },
+      types: {
+        backup_postgres: 'PostgreSQL Backup',
+        data_management_full_backup: 'Data Management Full Backup',
+        channel_monitor_maintenance: 'Channel Monitor Maintenance'
+      }
     },
 
     // Proxies

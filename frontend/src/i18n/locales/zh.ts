@@ -388,6 +388,7 @@ export default {
     channelMonitor: '渠道监控',
     channelStatus: '渠道状态',
     riskControl: '风控中心',
+    scheduledJobs: '定时任务',
   },
 
   // Auth
@@ -4088,6 +4089,31 @@ export default {
       maxResultsTooltipRange: '推荐填写范围：一般可填 20 到 200。只关注近期可用性时可填 20-50；需要回看较长时间的波动趋势时可填 100-200。',
       autoRecover: '自动恢复',
       autoRecoverHelp: '测试成功后自动恢复异常状态的账号'
+    },
+    scheduledJobs: {
+      title: '定时任务',
+      description: '管理员内置任务中心，支持手工执行、Cron 定时和执行日志查看。',
+      create: '新建任务',
+      runNow: '立即执行',
+      logs: '执行日志',
+      empty: '暂无定时任务',
+      noLogs: '暂无执行日志',
+      retentionLimit: '日志保留条数',
+      payloadJson: '任务参数 JSON',
+      runTriggered: '任务已触发',
+      columns: {
+        name: '任务名称',
+        type: '任务类型',
+        status: '最近状态',
+        nextRun: '下次执行',
+        lastRun: '上次执行',
+        actions: '操作'
+      },
+      types: {
+        backup_postgres: 'PostgreSQL 备份',
+        data_management_full_backup: '数据管理全量备份',
+        channel_monitor_maintenance: '渠道监控维护'
+      }
     },
 
     // Proxies Management
