@@ -180,7 +180,7 @@ func (s *AdminScheduledJobService) executeRun(ctx context.Context, job *AdminSch
 
 func validateAdminScheduledJob(jobType, cronExpr, payloadJSON string, retentionLimit int) error {
 	switch strings.TrimSpace(jobType) {
-	case AdminScheduledJobTypeBackup, AdminScheduledJobTypeDataManagementFull, AdminScheduledJobTypeChannelMonitorMaint:
+	case AdminScheduledJobTypeBackup, AdminScheduledJobTypeDataManagementFull, AdminScheduledJobTypeChannelMonitorMaint, AdminScheduledJobTypeSyncCodexFreeGroups:
 	default:
 		return fmt.Errorf("unsupported job type")
 	}
@@ -195,6 +195,39 @@ func validateAdminScheduledJob(jobType, cronExpr, payloadJSON string, retentionL
 	}
 	if !json.Valid([]byte(normalizeAdminScheduledJobPayload(payloadJSON))) {
 		return fmt.Errorf("payload_json must be valid json")
+	}
+	if err := validateAdminScheduledJobPayload(strings.TrimSpace(jobType), normalizeAdminScheduledJobPayload(payloadJSON)); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateAdminScheduledJobPayload(jobType, payloadJSON string) error {
+	switch jobType {
+	case AdminScheduledJobTypeSyncCodexFreeGroups:
+		var payload adminScheduledSyncCodexFreeGroupsPayload
+		if err := json.Unmarshal([]byte(payloadJSON), &payload); err != nil {
+			return fmt.Errorf("invalid payload_json: %w", err)
+		}
+		if payload.SourceGroupID <= 0 {
+			return fmt.Errorf("source_group_id is required")
+		}
+		if len(payload.TargetGroupIDs) == 0 {
+			return fmt.Errorf("target_group_ids is required")
+		}
+		seen := make(map[int64]struct{}, len(payload.TargetGroupIDs))
+		for _, groupID := range payload.TargetGroupIDs {
+			if groupID <= 0 {
+				return fmt.Errorf("target_group_ids contains invalid group id")
+			}
+			if groupID == payload.SourceGroupID {
+				return fmt.Errorf("target_group_ids cannot contain source_group_id")
+			}
+			if _, exists := seen[groupID]; exists {
+				return fmt.Errorf("target_group_ids contains duplicate group id")
+			}
+			seen[groupID] = struct{}{}
+		}
 	}
 	return nil
 }

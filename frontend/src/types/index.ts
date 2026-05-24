@@ -1899,5 +1899,10 @@ export interface UpdateAdminScheduledJobRequest {
   retention_limit?: number
 }
 
+export interface AdminScheduledSyncCodexFreeGroupsPayload {
+  source_group_id: number
+  target_group_ids: number[]
+}
+
 // Payment types
 export type { SubscriptionPlan, PaymentOrder, CheckoutInfoResponse } from './payment'

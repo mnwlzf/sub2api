@@ -228,7 +228,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	scheduledTestHandler := admin.NewScheduledTestHandler(scheduledTestService)
 	adminScheduledJobRepository := repository.NewAdminScheduledJobRepository(db)
 	adminScheduledJobRunRepository := repository.NewAdminScheduledJobRunRepository(db)
-	adminScheduledJobExecutor := service.NewAdminScheduledJobExecutor(backupService, dataManagementService, channelMonitorService)
+	adminScheduledJobExecutor := service.NewAdminScheduledJobExecutor(backupService, dataManagementService, channelMonitorService, groupRepository, accountRepository)
 	adminScheduledJobService := service.ProvideAdminScheduledJobService(adminScheduledJobRepository, adminScheduledJobRunRepository, adminScheduledJobExecutor)
 	adminScheduledJobHandler := admin.NewAdminScheduledJobHandler(adminScheduledJobService)
 	channelHandler := admin.NewChannelHandler(channelService, billingService, pricingService)

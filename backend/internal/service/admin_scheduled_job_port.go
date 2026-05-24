@@ -9,6 +9,7 @@ const (
 	AdminScheduledJobTypeBackup              = "backup_postgres"
 	AdminScheduledJobTypeDataManagementFull  = "data_management_full_backup"
 	AdminScheduledJobTypeChannelMonitorMaint = "channel_monitor_maintenance"
+	AdminScheduledJobTypeSyncCodexFreeGroups = "sync_codex_free_group_accounts"
 
 	AdminScheduledJobTriggerManual    = "manual"
 	AdminScheduledJobTriggerScheduled = "scheduled"

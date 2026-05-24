@@ -85,6 +85,7 @@
               <option value="backup_postgres">{{ t('admin.scheduledJobs.types.backup_postgres') }}</option>
               <option value="data_management_full_backup">{{ t('admin.scheduledJobs.types.data_management_full_backup') }}</option>
               <option value="channel_monitor_maintenance">{{ t('admin.scheduledJobs.types.channel_monitor_maintenance') }}</option>
+              <option value="sync_codex_free_group_accounts">同步codex-free分组账号</option>
             </select>
           </div>
           <div>
@@ -100,8 +101,37 @@
             <span>{{ t('common.enabled') }}</span>
           </label>
           <div class="md:col-span-2">
-            <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.scheduledJobs.payloadJson') }}</label>
-            <textarea v-model="form.payload_json" rows="8" class="input w-full font-mono text-xs"></textarea>
+            <template v-if="form.job_type === 'sync_codex_free_group_accounts'">
+              <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">源分组</label>
+              <select v-model.number="syncCodexFreeForm.source_group_id" class="input w-full">
+                <option :value="0">请选择源分组</option>
+                <option v-for="group in availableGroups" :key="group.id" :value="group.id">
+                  {{ group.name }}
+                </option>
+              </select>
+              <label class="mb-1 mt-4 block text-xs font-medium text-gray-600 dark:text-gray-400">同步到的分组</label>
+              <div class="max-h-64 overflow-y-auto rounded-xl border border-gray-200 p-3 dark:border-dark-600">
+                <label
+                  v-for="group in targetGroupOptions"
+                  :key="group.id"
+                  class="flex items-center gap-2 py-1 text-sm text-gray-700 dark:text-gray-300"
+                >
+                  <input
+                    :checked="syncCodexFreeForm.target_group_ids.includes(group.id)"
+                    type="checkbox"
+                    @change="toggleTargetGroup(group.id)"
+                  />
+                  <span>{{ group.name }}</span>
+                </label>
+                <div v-if="!targetGroupOptions.length" class="text-xs text-gray-500 dark:text-gray-400">
+                  暂无可选目标分组
+                </div>
+              </div>
+            </template>
+            <template v-else>
+              <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.scheduledJobs.payloadJson') }}</label>
+              <textarea v-model="form.payload_json" rows="8" class="input w-full font-mono text-xs"></textarea>
+            </template>
           </div>
         </div>
         <template #footer>
@@ -135,13 +165,13 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import { useAppStore } from '@/stores/app'
-import type { AdminScheduledJob, AdminScheduledJobRun, CreateAdminScheduledJobRequest, UpdateAdminScheduledJobRequest } from '@/types'
+import type { AdminGroup, AdminScheduledJob, AdminScheduledJobRun, AdminScheduledSyncCodexFreeGroupsPayload, CreateAdminScheduledJobRequest, UpdateAdminScheduledJobRequest } from '@/types'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -155,6 +185,7 @@ const showEditor = ref(false)
 const showLogs = ref(false)
 const editingId = ref<number | null>(null)
 const currentLogsJobId = ref<number | null>(null)
+const availableGroups = ref<AdminGroup[]>([])
 
 const form = reactive<CreateAdminScheduledJobRequest>({
   name: '',
@@ -165,6 +196,15 @@ const form = reactive<CreateAdminScheduledJobRequest>({
   retention_limit: 100,
 })
 
+const syncCodexFreeForm = reactive<AdminScheduledSyncCodexFreeGroupsPayload>({
+  source_group_id: 0,
+  target_group_ids: [],
+})
+
+const targetGroupOptions = computed(() =>
+  availableGroups.value.filter((group) => group.id !== syncCodexFreeForm.source_group_id)
+)
+
 function resetForm() {
   form.name = ''
   form.job_type = 'backup_postgres'
@@ -172,6 +212,8 @@ function resetForm() {
   form.enabled = true
   form.payload_json = '{}'
   form.retention_limit = 100
+  syncCodexFreeForm.source_group_id = 0
+  syncCodexFreeForm.target_group_ids = []
 }
 
 function openCreate() {
@@ -188,6 +230,21 @@ function openEdit(job: AdminScheduledJob) {
   form.enabled = job.enabled
   form.payload_json = job.payload_json || '{}'
   form.retention_limit = job.retention_limit
+  if (job.job_type === 'sync_codex_free_group_accounts') {
+    try {
+      const payload = JSON.parse(job.payload_json || '{}') as Partial<AdminScheduledSyncCodexFreeGroupsPayload>
+      syncCodexFreeForm.source_group_id = Number(payload.source_group_id || 0)
+      syncCodexFreeForm.target_group_ids = Array.isArray(payload.target_group_ids)
+        ? payload.target_group_ids.map((id) => Number(id)).filter((id) => id > 0)
+        : []
+    } catch {
+      syncCodexFreeForm.source_group_id = 0
+      syncCodexFreeForm.target_group_ids = []
+    }
+  } else {
+    syncCodexFreeForm.source_group_id = 0
+    syncCodexFreeForm.target_group_ids = []
+  }
   showEditor.value = true
 }
 
@@ -216,20 +273,53 @@ async function loadJobs() {
   }
 }
 
+async function loadGroups() {
+  const response = await adminAPI.groups.list(1, 500)
+  availableGroups.value = response.items ?? []
+}
+
+function toggleTargetGroup(groupID: number) {
+  const exists = syncCodexFreeForm.target_group_ids.includes(groupID)
+  if (exists) {
+    syncCodexFreeForm.target_group_ids = syncCodexFreeForm.target_group_ids.filter((id) => id !== groupID)
+    return
+  }
+  syncCodexFreeForm.target_group_ids = [...syncCodexFreeForm.target_group_ids, groupID]
+}
+
 async function submitForm() {
   saving.value = true
   try {
+    if (form.job_type === 'sync_codex_free_group_accounts') {
+      if (syncCodexFreeForm.source_group_id <= 0) {
+        appStore.showError('请选择源分组')
+        return
+      }
+      if (syncCodexFreeForm.target_group_ids.length === 0) {
+        appStore.showError('请至少选择一个目标分组')
+        return
+      }
+    }
+    const payloadJSON = form.job_type === 'sync_codex_free_group_accounts'
+      ? JSON.stringify({
+          source_group_id: syncCodexFreeForm.source_group_id,
+          target_group_ids: syncCodexFreeForm.target_group_ids,
+        })
+      : form.payload_json
     if (editingId.value) {
       const payload: UpdateAdminScheduledJobRequest = {
         name: form.name,
         cron_expression: form.cron_expression,
         enabled: form.enabled,
-        payload_json: form.payload_json,
+        payload_json: payloadJSON,
         retention_limit: form.retention_limit,
       }
       await adminAPI.scheduledJobs.update(editingId.value, payload)
     } else {
-      await adminAPI.scheduledJobs.create(form)
+      await adminAPI.scheduledJobs.create({
+        ...form,
+        payload_json: payloadJSON,
+      })
     }
     closeEditor()
     await loadJobs()
@@ -289,5 +379,6 @@ function statusClass(status: string) {
 
 onMounted(() => {
   loadJobs()
+  loadGroups()
 })
 </script>

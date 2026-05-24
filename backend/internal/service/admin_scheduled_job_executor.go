@@ -11,6 +11,8 @@ type adminScheduledJobExecutor struct {
 	backupService         *BackupService
 	dataManagementService *DataManagementService
 	channelMonitorService *ChannelMonitorService
+	groupRepo             GroupRepository
+	accountRepo           AccountRepository
 }
 
 type adminScheduledBackupPayload struct {
@@ -24,15 +26,24 @@ type adminScheduledDataManagementPayload struct {
 	RedisID     string `json:"redis_profile_id"`
 }
 
+type adminScheduledSyncCodexFreeGroupsPayload struct {
+	SourceGroupID int64   `json:"source_group_id"`
+	TargetGroupIDs []int64 `json:"target_group_ids"`
+}
+
 func NewAdminScheduledJobExecutor(
 	backupService *BackupService,
 	dataManagementService *DataManagementService,
 	channelMonitorService *ChannelMonitorService,
+	groupRepo GroupRepository,
+	accountRepo AccountRepository,
 ) AdminScheduledJobExecutor {
 	return &adminScheduledJobExecutor{
 		backupService:         backupService,
 		dataManagementService: dataManagementService,
 		channelMonitorService: channelMonitorService,
+		groupRepo:             groupRepo,
+		accountRepo:           accountRepo,
 	}
 }
 
@@ -44,6 +55,8 @@ func (e *adminScheduledJobExecutor) Execute(ctx context.Context, job *AdminSched
 		return e.executeDataManagementFull(ctx, job)
 	case AdminScheduledJobTypeChannelMonitorMaint:
 		return e.executeChannelMonitorMaintenance(ctx)
+	case AdminScheduledJobTypeSyncCodexFreeGroups:
+		return e.executeSyncCodexFreeGroups(ctx, job)
 	default:
 		return "", "", fmt.Errorf("unsupported job type: %s", job.JobType)
 	}
@@ -95,4 +108,109 @@ func (e *adminScheduledJobExecutor) executeChannelMonitorMaintenance(ctx context
 		"finished_at": time.Now().UTC().Format(time.RFC3339),
 	})
 	return "channel monitor maintenance completed", string(result), nil
+}
+
+func (e *adminScheduledJobExecutor) executeSyncCodexFreeGroups(ctx context.Context, job *AdminScheduledJob) (string, string, error) {
+	if e.groupRepo == nil {
+		return "", "", fmt.Errorf("group repository unavailable")
+	}
+	payload := adminScheduledSyncCodexFreeGroupsPayload{}
+	if err := json.Unmarshal([]byte(job.PayloadJSON), &payload); err != nil {
+		return "", "", fmt.Errorf("invalid payload_json: %w", err)
+	}
+	if payload.SourceGroupID <= 0 {
+		return "", "", fmt.Errorf("source_group_id is required")
+	}
+	if len(payload.TargetGroupIDs) == 0 {
+		return "", "", fmt.Errorf("target_group_ids is required")
+	}
+
+	sourceGroup, err := e.groupRepo.GetByIDLite(ctx, payload.SourceGroupID)
+	if err != nil {
+		return "", "", fmt.Errorf("source group not found: %w", err)
+	}
+
+	targetGroupIDs := make([]int64, 0, len(payload.TargetGroupIDs))
+	seen := make(map[int64]struct{}, len(payload.TargetGroupIDs))
+	for _, targetGroupID := range payload.TargetGroupIDs {
+		if targetGroupID <= 0 || targetGroupID == payload.SourceGroupID {
+			return "", "", fmt.Errorf("invalid target group id: %d", targetGroupID)
+		}
+		if _, exists := seen[targetGroupID]; exists {
+			continue
+		}
+		seen[targetGroupID] = struct{}{}
+		targetGroup, targetErr := e.groupRepo.GetByIDLite(ctx, targetGroupID)
+		if targetErr != nil {
+			return "", "", fmt.Errorf("target group %d not found: %w", targetGroupID, targetErr)
+		}
+		if targetGroup.Platform != sourceGroup.Platform {
+			return "", "", fmt.Errorf("target group %d platform mismatch: expected %s, got %s", targetGroupID, sourceGroup.Platform, targetGroup.Platform)
+		}
+		targetGroupIDs = append(targetGroupIDs, targetGroupID)
+	}
+
+	accountIDs, err := e.groupRepo.GetAccountIDsByGroupIDs(ctx, []int64{payload.SourceGroupID})
+	if err != nil {
+		return "", "", fmt.Errorf("failed to load source group accounts: %w", err)
+	}
+	filteredAccountIDs, err := e.filterOAuthOnlyAccounts(ctx, sourceGroup, accountIDs)
+	if err != nil {
+		return "", "", err
+	}
+
+	syncedTargets := make([]int64, 0, len(targetGroupIDs))
+	for _, targetGroupID := range targetGroupIDs {
+		targetGroup, targetErr := e.groupRepo.GetByIDLite(ctx, targetGroupID)
+		if targetErr != nil {
+			return "", "", fmt.Errorf("target group %d not found during sync: %w", targetGroupID, targetErr)
+		}
+		targetAccountIDs, filterErr := e.filterOAuthOnlyAccounts(ctx, targetGroup, filteredAccountIDs)
+		if filterErr != nil {
+			return "", "", filterErr
+		}
+		if _, clearErr := e.groupRepo.DeleteAccountGroupsByGroupID(ctx, targetGroupID); clearErr != nil {
+			return "", "", fmt.Errorf("failed to clear target group %d bindings: %w", targetGroupID, clearErr)
+		}
+		if bindErr := e.groupRepo.BindAccountsToGroup(ctx, targetGroupID, targetAccountIDs); bindErr != nil {
+			return "", "", fmt.Errorf("failed to bind target group %d accounts: %w", targetGroupID, bindErr)
+		}
+		syncedTargets = append(syncedTargets, targetGroupID)
+	}
+
+	result, _ := json.Marshal(map[string]any{
+		"source_group_id":            payload.SourceGroupID,
+		"target_group_ids":           syncedTargets,
+		"source_account_count":       len(accountIDs),
+		"synced_account_count":       len(filteredAccountIDs),
+		"synced_target_group_count":  len(syncedTargets),
+		"finished_at":                time.Now().UTC().Format(time.RFC3339),
+	})
+	return fmt.Sprintf("synced %d accounts from group %d to %d groups", len(filteredAccountIDs), payload.SourceGroupID, len(syncedTargets)), string(result), nil
+}
+
+func (e *adminScheduledJobExecutor) filterOAuthOnlyAccounts(ctx context.Context, group *Group, accountIDs []int64) ([]int64, error) {
+	if group == nil || !group.RequireOAuthOnly || len(accountIDs) == 0 {
+		return accountIDs, nil
+	}
+	if e.accountRepo == nil {
+		return nil, fmt.Errorf("account repository unavailable")
+	}
+	accounts, err := e.accountRepo.GetByIDs(ctx, accountIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch accounts for oauth filter: %w", err)
+	}
+	oauthIDs := make(map[int64]struct{}, len(accounts))
+	for _, acc := range accounts {
+		if acc != nil && acc.Type != AccountTypeAPIKey {
+			oauthIDs[acc.ID] = struct{}{}
+		}
+	}
+	filtered := make([]int64, 0, len(accountIDs))
+	for _, accountID := range accountIDs {
+		if _, ok := oauthIDs[accountID]; ok {
+			filtered = append(filtered, accountID)
+		}
+	}
+	return filtered, nil
 }
