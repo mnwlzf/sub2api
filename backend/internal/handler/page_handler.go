@@ -18,6 +18,23 @@ import (
 var validSlugPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
 
 const maxPageFileSize = 1 << 20 // 1MB
+const builtinTutorialSlug = "user-tutorial"
+const defaultTutorialMarkdown = `# 使用教程
+
+欢迎使用本系统。
+
+## 快速开始
+
+1. 登录后从左侧菜单进入所需功能。
+2. 按照页面提示完成账号、分组或订阅配置。
+3. 如需查看详细执行结果，请优先查看对应日志页面。
+
+## 常见说明
+
+- 本页面内容支持 Markdown 语法。
+- 管理员可以直接在页面右上角编辑教程内容。
+- 普通用户只能查看渲染后的教程内容。
+`
 
 type PageHandler struct {
 	pagesDir       string
@@ -28,6 +45,14 @@ func NewPageHandler(dataDir string, settingService *service.SettingService) *Pag
 	pagesDir := filepath.Join(dataDir, "pages")
 	_ = os.MkdirAll(pagesDir, 0755)
 	return &PageHandler{pagesDir: pagesDir, settingService: settingService}
+}
+
+type updateTutorialContentRequest struct {
+	Content string `json:"content"`
+}
+
+func (h *PageHandler) tutorialFilePath() string {
+	return filepath.Join(h.pagesDir, builtinTutorialSlug+".md")
 }
 
 // GetPageContent serves raw markdown content for a given slug.
@@ -70,6 +95,55 @@ func (h *PageHandler) GetPageContent(c *gin.Context) {
 	}
 
 	c.Data(http.StatusOK, "text/markdown; charset=utf-8", content)
+}
+
+// GetTutorialContent serves the built-in tutorial markdown content for authenticated users.
+// GET /api/v1/tutorial/content
+func (h *PageHandler) GetTutorialContent(c *gin.Context) {
+	content, err := os.ReadFile(h.tutorialFilePath())
+	if err != nil {
+		if os.IsNotExist(err) {
+			c.Data(http.StatusOK, "text/markdown; charset=utf-8", []byte(defaultTutorialMarkdown))
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read tutorial"})
+		return
+	}
+
+	if len(content) > maxPageFileSize {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "tutorial too large"})
+		return
+	}
+
+	c.Data(http.StatusOK, "text/markdown; charset=utf-8", content)
+}
+
+// UpdateTutorialContent saves the built-in tutorial markdown content.
+// PUT /api/v1/admin/tutorial/content
+func (h *PageHandler) UpdateTutorialContent(c *gin.Context) {
+	var req updateTutorialContentRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+
+	content := []byte(req.Content)
+	if len(content) > maxPageFileSize {
+		response.BadRequest(c, "Tutorial content too large")
+		return
+	}
+
+	if err := os.MkdirAll(h.pagesDir, 0755); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to prepare tutorial directory"})
+		return
+	}
+
+	if err := os.WriteFile(h.tutorialFilePath(), content, 0644); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save tutorial"})
+		return
+	}
+
+	response.Success(c, gin.H{"saved": true})
 }
 
 // ListPages returns available page slugs.
@@ -279,5 +353,18 @@ func RegisterPageRoutes(v1 *gin.RouterGroup, dataDir string, jwtAuth gin.Handler
 	adminPages.Use(adminAuth)
 	{
 		adminPages.GET("", h.ListPages)
+	}
+
+	tutorial := v1.Group("/tutorial")
+	tutorial.Use(jwtAuth)
+	{
+		tutorial.GET("/content", h.GetTutorialContent)
+	}
+
+	adminTutorial := v1.Group("/admin/tutorial")
+	adminTutorial.Use(adminAuth)
+	{
+		adminTutorial.GET("/content", h.GetTutorialContent)
+		adminTutorial.PUT("/content", h.UpdateTutorialContent)
 	}
 }

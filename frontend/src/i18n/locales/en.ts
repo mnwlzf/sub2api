@@ -6445,6 +6445,11 @@ export default {
     notFoundDesc: 'This custom page does not exist or has been removed.',
     notConfiguredTitle: 'Page URL not configured',
     notConfiguredDesc: 'The URL for this custom page has not been properly configured.',
+    editTutorial: 'Edit tutorial',
+    tutorialMarkdownHint: 'This page is rendered from built-in Markdown. Admins can edit it directly, while other users can only view the rendered content.',
+    tutorialEditorHint: 'Standard Markdown syntax is supported. Saving will update the user-facing content immediately.',
+    tutorialSaveSuccess: 'Tutorial content saved',
+    tutorialSaveFailed: 'Failed to save tutorial content',
   },
 
   // Announcements Page

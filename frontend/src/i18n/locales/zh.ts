@@ -6602,6 +6602,11 @@ export default {
     notFoundDesc: '该自定义页面不存在或已被删除。',
     notConfiguredTitle: '页面链接未配置',
     notConfiguredDesc: '该自定义页面的 URL 未正确配置。',
+    editTutorial: '编辑教程',
+    tutorialMarkdownHint: '此页面内容由站内 Markdown 渲染，管理员可直接维护，普通用户仅可查看。',
+    tutorialEditorHint: '支持标准 Markdown 语法，保存后会立即更新用户侧展示内容。',
+    tutorialSaveSuccess: '教程内容已保存',
+    tutorialSaveFailed: '保存教程内容失败',
   },
 
   // Announcements Page

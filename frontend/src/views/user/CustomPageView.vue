@@ -27,6 +27,69 @@
           </div>
         </div>
 
+        <div v-else-if="isBuiltinTutorialRoute" class="flex h-full flex-col overflow-hidden">
+          <div class="tutorial-header-bar">
+            <div class="tutorial-header-copy">
+              <h2 class="tutorial-header-title">{{ t('nav.tutorial') }}</h2>
+              <p class="tutorial-header-desc">{{ t('customPage.tutorialMarkdownHint') }}</p>
+            </div>
+            <button
+              v-if="authStore.isAdmin"
+              type="button"
+              class="btn btn-primary btn-sm tutorial-edit-btn"
+              @click="openTutorialEditor"
+            >
+              <Icon name="edit" size="sm" class="mr-1.5" :stroke-width="2" />
+              {{ t('customPage.editTutorial') }}
+            </button>
+          </div>
+
+          <div class="flex min-h-0 flex-1 overflow-hidden">
+            <aside
+              v-show="tocVisible"
+              class="toc-sidebar"
+            >
+              <div class="toc-header">
+                <span class="toc-title">目录</span>
+                <button class="toc-close-btn" @click="tocVisible = false">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+                </button>
+              </div>
+              <nav class="toc-nav">
+                <a
+                  v-for="item in tocItems"
+                  :key="item.id"
+                  :href="'#' + item.id"
+                  class="toc-item"
+                  :class="[
+                    `toc-level-${item.level}`,
+                    { 'toc-active': activeHeadingId === item.id }
+                  ]"
+                  @click.prevent="scrollToHeading(item.id)"
+                >
+                  {{ item.text }}
+                </a>
+              </nav>
+            </aside>
+
+            <button
+              v-show="!tocVisible && tocItems.length > 0"
+              class="toc-toggle-btn"
+              @click="tocVisible = true"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+              <span class="ml-1 text-xs">目录</span>
+            </button>
+
+            <div
+              ref="markdownContainer"
+              class="markdown-page-content flex-1 h-full overflow-auto p-6 md:p-10"
+              v-html="renderedHtml"
+              @scroll="onContentScroll"
+            ></div>
+          </div>
+        </div>
+
         <!-- Markdown mode with TOC -->
         <div v-else-if="isMarkdownMode" class="flex h-full overflow-hidden">
           <!-- TOC Sidebar -->
@@ -113,6 +176,39 @@
       </div>
     </div>
   </AppLayout>
+
+  <BaseDialog
+    :show="showTutorialEditor"
+    :title="t('customPage.editTutorial')"
+    width="extra-wide"
+    close-on-click-outside
+    @close="closeTutorialEditor"
+  >
+    <div class="space-y-4">
+      <p class="text-sm text-gray-500 dark:text-dark-300">
+        {{ t('customPage.tutorialEditorHint') }}
+      </p>
+      <textarea
+        v-model="tutorialDraft"
+        class="tutorial-editor-textarea"
+        spellcheck="false"
+      ></textarea>
+    </div>
+
+    <template #footer>
+      <button type="button" class="btn btn-secondary" @click="closeTutorialEditor">
+        {{ t('common.cancel') }}
+      </button>
+      <button
+        type="button"
+        class="btn btn-primary"
+        :disabled="savingTutorial"
+        @click="saveTutorialContent"
+      >
+        {{ savingTutorial ? t('common.saving') : t('common.save') }}
+      </button>
+    </template>
+  </BaseDialog>
 </template>
 
 <script setup lang="ts">
@@ -122,7 +218,9 @@ import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores'
 import { useAuthStore } from '@/stores/auth'
 import { useAdminSettingsStore } from '@/stores/adminSettings'
+import { adminAPI } from '@/api/admin'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { buildEmbeddedUrl, detectTheme } from '@/utils/embedded-url'
 import { marked } from 'marked'
@@ -141,15 +239,19 @@ const authStore = useAuthStore()
 const adminSettingsStore = useAdminSettingsStore()
 
 const BUILTIN_TUTORIAL_ID = 'builtin-user-tutorial'
-const BUILTIN_TUTORIAL_URL = 'https://ycn0fzzbzq3b.feishu.cn/wiki/HRcIwz5szirVU6kSOqockLeunqd'
+const BUILTIN_TUTORIAL_SLUG = 'user-tutorial'
 
 const loading = ref(false)
 const pageTheme = ref<'light' | 'dark'>('light')
 const renderedHtml = ref('')
+const rawMarkdown = ref('')
 const markdownContainer = ref<HTMLElement | null>(null)
 const tocItems = ref<TocItem[]>([])
 const tocVisible = ref(typeof window !== 'undefined' ? window.innerWidth > 768 : true)
 const activeHeadingId = ref('')
+const showTutorialEditor = ref(false)
+const tutorialDraft = ref('')
+const savingTutorial = ref(false)
 let themeObserver: MutationObserver | null = null
 
 const menuItemId = computed(() => route.params.id as string)
@@ -160,9 +262,9 @@ const menuItem = computed(() => {
     return {
       id: BUILTIN_TUTORIAL_ID,
       label: t('nav.tutorial'),
-      url: BUILTIN_TUTORIAL_URL,
+      url: `md:${BUILTIN_TUTORIAL_SLUG}`,
       icon_svg: '',
-      page_slug: '',
+      page_slug: BUILTIN_TUTORIAL_SLUG,
       visibility: 'user',
       sort_order: 9999,
     }
@@ -240,19 +342,26 @@ async function fetchAndRenderMarkdown(slug: string) {
   tocItems.value = []
   activeHeadingId.value = ''
   try {
-    const resp = await fetch(`/api/v1/pages/${encodeURIComponent(slug)}`, {
+    const endpoint = isBuiltinTutorialRoute.value
+      ? '/api/v1/tutorial/content'
+      : `/api/v1/pages/${encodeURIComponent(slug)}`
+    const resp = await fetch(endpoint, {
       headers: authStore.token ? { Authorization: `Bearer ${authStore.token}` } : {},
     })
     if (!resp.ok) {
       renderedHtml.value = '<p class="text-red-500">Page not found</p>'
+      rawMarkdown.value = ''
       return
     }
     let raw = await resp.text()
+    rawMarkdown.value = raw
 
-    raw = raw.replace(
-      /!\[([^\]]*)\]\(([^)]+)\)/g,
-      (match, alt, src) => isRelativeMarkdownAsset(src) ? `![${alt}](${buildPageImageUrl(slug, src)})` : match
-    )
+    if (!isBuiltinTutorialRoute.value) {
+      raw = raw.replace(
+        /!\[([^\]]*)\]\(([^)]+)\)/g,
+        (match, alt, src) => isRelativeMarkdownAsset(src) ? `![${alt}](${buildPageImageUrl(slug, src)})` : match
+      )
+    }
 
     const html = marked.parse(raw) as string
     const sanitized = DOMPurify.sanitize(html, {
@@ -348,6 +457,32 @@ function injectCopyButtons() {
   })
 }
 
+function openTutorialEditor() {
+  tutorialDraft.value = rawMarkdown.value
+  showTutorialEditor.value = true
+}
+
+function closeTutorialEditor() {
+  if (savingTutorial.value) return
+  showTutorialEditor.value = false
+}
+
+async function saveTutorialContent() {
+  if (!authStore.isAdmin) return
+  savingTutorial.value = true
+  try {
+    await adminAPI.tutorial.updateTutorialContent({ content: tutorialDraft.value })
+    rawMarkdown.value = tutorialDraft.value
+    showTutorialEditor.value = false
+    await fetchAndRenderMarkdown(BUILTIN_TUTORIAL_SLUG)
+    appStore.showSuccess(t('customPage.tutorialSaveSuccess'))
+  } catch (error: any) {
+    appStore.showError(error?.message || t('customPage.tutorialSaveFailed'))
+  } finally {
+    savingTutorial.value = false
+  }
+}
+
 watch(markdownSlug, (slug) => {
   if (slug) {
     fetchAndRenderMarkdown(slug)
@@ -391,6 +526,33 @@ onUnmounted(() => {
 .custom-page-layout {
   @apply flex flex-col;
   height: calc(100vh - 64px - 4rem);
+}
+
+.tutorial-header-bar {
+  @apply flex flex-col gap-3 border-b border-gray-200 px-4 py-4 md:flex-row md:items-center md:justify-between md:px-6;
+  @apply dark:border-dark-600;
+}
+
+.tutorial-header-copy {
+  @apply min-w-0;
+}
+
+.tutorial-header-title {
+  @apply text-lg font-semibold text-gray-900 dark:text-white;
+}
+
+.tutorial-header-desc {
+  @apply mt-1 text-sm text-gray-500 dark:text-dark-300;
+}
+
+.tutorial-edit-btn {
+  @apply self-start md:self-auto;
+}
+
+.tutorial-editor-textarea {
+  @apply min-h-[420px] w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 font-mono text-sm leading-6 text-gray-800 outline-none transition focus:border-primary-400 focus:bg-white;
+  @apply dark:border-dark-600 dark:bg-dark-900 dark:text-dark-100 dark:focus:border-primary-500 dark:focus:bg-dark-800;
+  resize: vertical;
 }
 
 .toc-sidebar {
