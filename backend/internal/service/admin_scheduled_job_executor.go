@@ -27,7 +27,7 @@ type adminScheduledDataManagementPayload struct {
 }
 
 type adminScheduledSyncCodexFreeGroupsPayload struct {
-	SourceGroupID int64   `json:"source_group_id"`
+	SourceGroupID  int64   `json:"source_group_id"`
 	TargetGroupIDs []int64 `json:"target_group_ids"`
 }
 
