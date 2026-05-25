@@ -1,147 +1,155 @@
 <template>
   <AppLayout>
     <div class="mx-auto max-w-7xl space-y-6">
-      <div class="card p-6">
-        <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('admin.scheduledJobs.title') }}</h2>
-            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('admin.scheduledJobs.description') }}</p>
-          </div>
-          <div class="flex gap-2">
-            <button type="button" class="btn btn-secondary btn-sm" :disabled="loading" @click="loadJobs">
-              {{ loading ? t('common.loading') : t('common.refresh') }}
-            </button>
-            <button type="button" class="btn btn-primary btn-sm" @click="openCreate">
-              {{ t('admin.scheduledJobs.create') }}
-            </button>
+      <div class="overflow-hidden rounded-[28px] border border-white/80 bg-gradient-to-br from-sky-50 via-white to-emerald-50 shadow-[0_24px_60px_-28px_rgba(15,23,42,0.35)] dark:border-dark-700 dark:from-dark-800 dark:via-dark-800 dark:to-dark-700">
+        <div class="border-b border-white/70 bg-white/70 px-6 py-5 backdrop-blur dark:border-dark-700/80 dark:bg-dark-800/80">
+          <div class="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <h2 class="text-xl font-semibold text-gray-900 dark:text-white">{{ t('admin.scheduledJobs.title') }}</h2>
+              <p class="mt-1 max-w-3xl text-sm text-gray-500 dark:text-gray-400">{{ t('admin.scheduledJobs.description') }}</p>
+            </div>
+            <div class="flex gap-2">
+              <button type="button" class="btn btn-secondary btn-sm" :disabled="loading" @click="loadJobs">
+                {{ loading ? t('common.loading') : t('common.refresh') }}
+              </button>
+              <button type="button" class="btn btn-primary btn-sm" @click="openCreate">
+                {{ t('admin.scheduledJobs.create') }}
+              </button>
+            </div>
           </div>
         </div>
 
-        <div class="hidden lg:block">
-          <div class="grid grid-cols-[minmax(0,1.6fr)_150px_minmax(0,1.7fr)_170px_170px_auto] gap-4 border-b border-gray-200 px-3 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:border-dark-700 dark:text-gray-400">
-            <div>{{ t('admin.scheduledJobs.columns.name') }}</div>
-            <div>Cron</div>
-            <div>{{ t('admin.scheduledJobs.columns.status') }}</div>
-            <div>{{ t('admin.scheduledJobs.columns.nextRun') }}</div>
-            <div>{{ t('admin.scheduledJobs.columns.lastRun') }}</div>
-            <div class="text-right">{{ t('admin.scheduledJobs.columns.actions') }}</div>
-          </div>
+        <div class="px-4 py-5 sm:px-6">
+          <div class="hidden lg:block">
+            <div class="grid grid-cols-[minmax(0,1.7fr)_160px_minmax(0,1.9fr)_170px_170px_auto] gap-4 px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+              <div>{{ t('admin.scheduledJobs.columns.name') }}</div>
+              <div>Cron</div>
+              <div>{{ t('admin.scheduledJobs.columns.status') }}</div>
+              <div>{{ t('admin.scheduledJobs.columns.nextRun') }}</div>
+              <div>{{ t('admin.scheduledJobs.columns.lastRun') }}</div>
+              <div class="text-right">{{ t('admin.scheduledJobs.columns.actions') }}</div>
+            </div>
 
-          <div v-if="jobs.length" class="mt-3 space-y-3">
-            <div
-              v-for="job in jobs"
-              :key="job.id"
-              class="rounded-2xl border border-gray-200 px-4 py-4 shadow-sm dark:border-dark-700"
-            >
-              <div class="grid grid-cols-[minmax(0,1.6fr)_150px_minmax(0,1.7fr)_170px_170px_auto] items-start gap-4">
-                <div class="min-w-0">
-                  <div class="flex flex-wrap items-center gap-2">
-                    <div class="break-words text-base font-semibold text-gray-900 dark:text-white">{{ formatJobType(job.job_type) }}</div>
-                    <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:bg-dark-700 dark:text-gray-300">
-                      {{ job.enabled ? t('common.enabled') : t('common.disabled') }}
+            <div v-if="jobs.length" class="mt-3 space-y-4">
+              <div
+                v-for="job in jobs"
+                :key="job.id"
+                class="rounded-3xl border border-gray-200/80 bg-white/95 px-5 py-5 shadow-[0_16px_40px_-28px_rgba(15,23,42,0.45)] transition-all hover:-translate-y-0.5 hover:shadow-[0_20px_48px_-28px_rgba(15,23,42,0.5)] dark:border-dark-700 dark:bg-dark-800/95"
+              >
+                <div class="grid grid-cols-[minmax(0,1.7fr)_160px_minmax(0,1.9fr)_170px_170px_auto] items-start gap-4">
+                  <div class="min-w-0">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <div class="break-words text-lg font-semibold leading-7 text-gray-900 dark:text-white">{{ formatJobType(job.job_type) }}</div>
+                      <span class="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600 dark:bg-dark-700 dark:text-gray-300">
+                        {{ job.enabled ? t('common.enabled') : t('common.disabled') }}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div class="rounded-2xl bg-gray-50 px-3 py-2 dark:bg-dark-700/70">
+                    <div class="break-all font-mono text-xs leading-5 text-gray-700 dark:text-gray-300">{{ job.cron_expression }}</div>
+                  </div>
+
+                  <div class="min-w-0">
+                    <span class="rounded-full px-2.5 py-1 text-xs font-medium" :class="statusClass(job.last_status)">
+                      {{ formatStatus(job.last_status) }}
                     </span>
+                    <div v-if="job.last_message" class="mt-3 break-words text-sm leading-6 text-gray-500 dark:text-gray-400">
+                      {{ formatJobMessage(job.last_message) }}
+                    </div>
+                  </div>
+
+                  <div class="rounded-2xl bg-gray-50 px-3 py-2 text-sm leading-6 text-gray-700 dark:bg-dark-700/70 dark:text-gray-300">
+                    {{ formatDate(job.next_run_at) }}
+                  </div>
+                  <div class="rounded-2xl bg-gray-50 px-3 py-2 text-sm leading-6 text-gray-700 dark:bg-dark-700/70 dark:text-gray-300">
+                    {{ formatDate(job.last_run_at) }}
+                  </div>
+
+                  <div class="flex min-w-[280px] flex-wrap justify-end gap-2">
+                    <button type="button" class="btn btn-secondary btn-xs whitespace-nowrap" :disabled="runningJobId === job.id" @click="handleRun(job)">
+                      {{ runningJobId === job.id ? t('common.loading') : t('admin.scheduledJobs.runNow') }}
+                    </button>
+                    <button type="button" class="btn btn-secondary btn-xs whitespace-nowrap" @click="openEdit(job)">
+                      {{ t('common.edit') }}
+                    </button>
+                    <button type="button" class="btn btn-secondary btn-xs whitespace-nowrap" @click="openLogs(job)">
+                      {{ t('admin.scheduledJobs.logs') }}
+                    </button>
+                    <button type="button" class="btn btn-danger btn-xs whitespace-nowrap" @click="handleDelete(job)">
+                      {{ t('common.delete') }}
+                    </button>
                   </div>
                 </div>
-
-                <div class="min-w-0">
-                  <div class="break-all font-mono text-xs leading-5 text-gray-700 dark:text-gray-300">{{ job.cron_expression }}</div>
-                </div>
-
-                <div class="min-w-0">
-                  <span class="rounded px-2 py-0.5 text-xs" :class="statusClass(job.last_status)">
-                    {{ formatStatus(job.last_status) }}
-                  </span>
-                  <div v-if="job.last_message" class="mt-2 break-words text-sm leading-6 text-gray-500 dark:text-gray-400">{{ job.last_message }}</div>
-                </div>
-
-                <div class="text-sm leading-6 text-gray-700 dark:text-gray-300">{{ formatDate(job.next_run_at) }}</div>
-                <div class="text-sm leading-6 text-gray-700 dark:text-gray-300">{{ formatDate(job.last_run_at) }}</div>
-
-                <div class="flex min-w-[260px] flex-wrap justify-end gap-2">
-                  <button type="button" class="btn btn-secondary btn-xs whitespace-nowrap" :disabled="runningJobId === job.id" @click="handleRun(job)">
-                    {{ runningJobId === job.id ? t('common.loading') : t('admin.scheduledJobs.runNow') }}
-                  </button>
-                  <button type="button" class="btn btn-secondary btn-xs whitespace-nowrap" @click="openEdit(job)">
-                    {{ t('common.edit') }}
-                  </button>
-                  <button type="button" class="btn btn-secondary btn-xs whitespace-nowrap" @click="openLogs(job)">
-                    {{ t('admin.scheduledJobs.logs') }}
-                  </button>
-                  <button type="button" class="btn btn-danger btn-xs whitespace-nowrap" @click="handleDelete(job)">
-                    {{ t('common.delete') }}
-                  </button>
-                </div>
               </div>
+            </div>
+
+            <div v-else class="py-10 text-center text-sm text-gray-500 dark:text-gray-400">
+              {{ t('admin.scheduledJobs.empty') }}
             </div>
           </div>
 
-          <div v-else class="py-10 text-center text-sm text-gray-500 dark:text-gray-400">
-            {{ t('admin.scheduledJobs.empty') }}
-          </div>
-        </div>
-
-        <div class="space-y-3 lg:hidden">
-          <div v-for="job in jobs" :key="job.id" class="rounded-2xl border border-gray-200 p-4 dark:border-dark-700">
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0 flex-1">
-                <div class="break-words text-sm font-semibold text-gray-900 dark:text-white">
-                  {{ formatJobType(job.job_type) }}
+          <div class="space-y-3 lg:hidden">
+            <div v-for="job in jobs" :key="job.id" class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-dark-700 dark:bg-dark-800">
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0 flex-1">
+                  <div class="break-words text-sm font-semibold text-gray-900 dark:text-white">
+                    {{ formatJobType(job.job_type) }}
+                  </div>
                 </div>
+                <span class="shrink-0 rounded-full px-2 py-0.5 text-xs font-medium" :class="statusClass(job.last_status)">
+                  {{ formatStatus(job.last_status) }}
+                </span>
               </div>
-              <span class="shrink-0 rounded px-2 py-0.5 text-xs" :class="statusClass(job.last_status)">
-                {{ formatStatus(job.last_status) }}
-              </span>
-            </div>
 
-            <div class="mt-2 text-xs text-gray-500 dark:text-gray-400">
-              {{ job.enabled ? t('common.enabled') : t('common.disabled') }}
-            </div>
-
-            <div class="mt-4 space-y-3 text-sm">
-              <div>
-                <div class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Cron</div>
-                <div class="mt-1 break-all font-mono text-xs text-gray-700 dark:text-gray-300">{{ job.cron_expression }}</div>
+              <div class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                {{ job.enabled ? t('common.enabled') : t('common.disabled') }}
               </div>
-              <div v-if="job.last_message">
-                <div class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                  {{ t('admin.scheduledJobs.columns.status') }}
+
+              <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div class="rounded-2xl bg-gray-50 px-3 py-2 dark:bg-dark-700/70">
+                  <div class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Cron</div>
+                  <div class="mt-1 break-all font-mono text-xs text-gray-700 dark:text-gray-300">{{ job.cron_expression }}</div>
                 </div>
-                <div class="mt-1 break-words text-xs text-gray-600 dark:text-gray-300">{{ job.last_message }}</div>
-              </div>
-              <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div>
+                <div class="rounded-2xl bg-gray-50 px-3 py-2 dark:bg-dark-700/70">
+                  <div class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    {{ t('admin.scheduledJobs.columns.status') }}
+                  </div>
+                  <div class="mt-1 break-words text-xs text-gray-600 dark:text-gray-300">{{ formatJobMessage(job.last_message) }}</div>
+                </div>
+                <div class="rounded-2xl bg-gray-50 px-3 py-2 dark:bg-dark-700/70">
                   <div class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     {{ t('admin.scheduledJobs.columns.nextRun') }}
                   </div>
                   <div class="mt-1 text-xs text-gray-700 dark:text-gray-300">{{ formatDate(job.next_run_at) }}</div>
                 </div>
-                <div>
+                <div class="rounded-2xl bg-gray-50 px-3 py-2 dark:bg-dark-700/70">
                   <div class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     {{ t('admin.scheduledJobs.columns.lastRun') }}
                   </div>
                   <div class="mt-1 text-xs text-gray-700 dark:text-gray-300">{{ formatDate(job.last_run_at) }}</div>
                 </div>
               </div>
+
+              <div class="mt-4 grid grid-cols-2 gap-2">
+                <button type="button" class="btn btn-secondary btn-sm" :disabled="runningJobId === job.id" @click="handleRun(job)">
+                  {{ runningJobId === job.id ? t('common.loading') : t('admin.scheduledJobs.runNow') }}
+                </button>
+                <button type="button" class="btn btn-secondary btn-sm" @click="openEdit(job)">
+                  {{ t('common.edit') }}
+                </button>
+                <button type="button" class="btn btn-secondary btn-sm" @click="openLogs(job)">
+                  {{ t('admin.scheduledJobs.logs') }}
+                </button>
+                <button type="button" class="btn btn-danger btn-sm" @click="handleDelete(job)">
+                  {{ t('common.delete') }}
+                </button>
+              </div>
             </div>
 
-            <div class="mt-4 grid grid-cols-2 gap-2">
-              <button type="button" class="btn btn-secondary btn-sm" :disabled="runningJobId === job.id" @click="handleRun(job)">
-                {{ runningJobId === job.id ? t('common.loading') : t('admin.scheduledJobs.runNow') }}
-              </button>
-              <button type="button" class="btn btn-secondary btn-sm" @click="openEdit(job)">
-                {{ t('common.edit') }}
-              </button>
-              <button type="button" class="btn btn-secondary btn-sm" @click="openLogs(job)">
-                {{ t('admin.scheduledJobs.logs') }}
-              </button>
-              <button type="button" class="btn btn-danger btn-sm" @click="handleDelete(job)">
-                {{ t('common.delete') }}
-              </button>
+            <div v-if="!jobs.length" class="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+              {{ t('admin.scheduledJobs.empty') }}
             </div>
-          </div>
-
-          <div v-if="!jobs.length" class="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
-            {{ t('admin.scheduledJobs.empty') }}
           </div>
         </div>
       </div>
@@ -465,8 +473,25 @@ function formatJobType(value: string) {
   return option ? t(option.labelKey) : value
 }
 
+function formatJobMessage(message: string) {
+  if (!message) return '-'
+  const syncMatch = message.match(/^synced\s+(\d+)\s+accounts\s+from\s+group\s+(\d+)\s+to\s+(\d+)\s+groups?$/i)
+  if (syncMatch) {
+    return t('admin.scheduledJobs.syncResult', {
+      accounts: syncMatch[1],
+      sourceGroup: syncMatch[2],
+      targetGroups: syncMatch[3],
+    })
+  }
+  return message
+}
+
 function formatStatus(value: string) {
   if (!value) return '-'
+  const normalized = value.toLowerCase()
+  if (normalized === 'success') return t('common.success')
+  if (normalized === 'failed') return t('common.error')
+  if (normalized === 'running') return t('common.processing')
   return value
 }
 

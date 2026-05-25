@@ -4108,6 +4108,7 @@ export default {
       sourceGroupRequired: '请选择源分组',
       targetGroupsRequired: '请至少选择一个目标分组',
       typeAsName: '任务类型即任务名称，同一类型仅允许存在一个任务。',
+      syncResult: '已同步 {accounts} 个账号，从分组 {sourceGroup} 到 {targetGroups} 个分组',
       columns: {
         name: '任务名称',
         type: '任务类型',

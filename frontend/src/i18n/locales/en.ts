@@ -4013,6 +4013,7 @@ export default {
       sourceGroupRequired: 'Please select a source group',
       targetGroupsRequired: 'Please select at least one target group',
       typeAsName: 'Task type is used as the task name, and only one job is allowed per type.',
+      syncResult: 'Synced {accounts} accounts from group {sourceGroup} to {targetGroups} groups',
       columns: {
         name: 'Name',
         type: 'Type',
