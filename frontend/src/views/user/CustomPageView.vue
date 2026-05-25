@@ -141,7 +141,7 @@ const authStore = useAuthStore()
 const adminSettingsStore = useAdminSettingsStore()
 
 const BUILTIN_TUTORIAL_ID = 'builtin-user-tutorial'
-const BUILTIN_TUTORIAL_URL = 'https://my.feishu.cn/wiki/AwqtwkSoKiJXKvkNVzKcAaO2nab'
+const BUILTIN_TUTORIAL_URL = 'https://ycn0fzzbzq3b.feishu.cn/wiki/HRcIwz5szirVU6kSOqockLeunqd'
 
 const loading = ref(false)
 const pageTheme = ref<'light' | 'dark'>('light')
