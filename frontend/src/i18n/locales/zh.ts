@@ -4101,6 +4101,8 @@ export default {
       retentionLimit: '日志保留条数',
       payloadJson: '任务参数 JSON',
       runTriggered: '任务已触发',
+      triggerManual: '手工执行',
+      triggerScheduled: '定时执行',
       sourceGroup: '源分组',
       targetGroups: '同步到的分组',
       selectSourceGroup: '请选择源分组',

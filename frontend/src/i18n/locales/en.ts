@@ -4006,6 +4006,8 @@ export default {
       retentionLimit: 'Log retention',
       payloadJson: 'Payload JSON',
       runTriggered: 'Job triggered',
+      triggerManual: 'Manual Run',
+      triggerScheduled: 'Scheduled Run',
       sourceGroup: 'Source Group',
       targetGroups: 'Target Groups',
       selectSourceGroup: 'Select source group',
