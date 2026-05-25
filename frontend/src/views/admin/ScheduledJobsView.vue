@@ -21,13 +21,13 @@
 
         <div class="px-4 py-5 sm:px-6">
           <div class="hidden lg:block">
-            <div class="grid grid-cols-[minmax(0,1.7fr)_160px_minmax(0,1.9fr)_170px_170px_auto] gap-4 px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+            <div class="grid grid-cols-[2.1fr_1fr_1.5fr_1.05fr_1.05fr_1.2fr] gap-5 px-5 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
               <div>{{ t('admin.scheduledJobs.columns.name') }}</div>
               <div>Cron</div>
               <div>{{ t('admin.scheduledJobs.columns.status') }}</div>
               <div>{{ t('admin.scheduledJobs.columns.nextRun') }}</div>
               <div>{{ t('admin.scheduledJobs.columns.lastRun') }}</div>
-              <div class="text-right">{{ t('admin.scheduledJobs.columns.actions') }}</div>
+              <div>{{ t('admin.scheduledJobs.columns.actions') }}</div>
             </div>
 
             <div v-if="jobs.length" class="mt-3 space-y-4">
@@ -36,8 +36,8 @@
                 :key="job.id"
                 class="rounded-3xl border border-gray-200/80 bg-white/95 px-5 py-5 shadow-[0_16px_40px_-28px_rgba(15,23,42,0.45)] transition-all hover:-translate-y-0.5 hover:shadow-[0_20px_48px_-28px_rgba(15,23,42,0.5)] dark:border-dark-700 dark:bg-dark-800/95"
               >
-                <div class="grid grid-cols-[minmax(0,1.7fr)_160px_minmax(0,1.9fr)_170px_170px_auto] items-start gap-4">
-                  <div class="min-w-0">
+                <div class="grid grid-cols-[2.1fr_1fr_1.5fr_1.05fr_1.05fr_1.2fr] items-start gap-5">
+                  <div class="min-w-0 flex flex-col justify-start">
                     <div class="flex flex-wrap items-center gap-2">
                       <div class="break-words text-lg font-semibold leading-7 text-gray-900 dark:text-white">{{ formatJobType(job.job_type) }}</div>
                       <span class="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600 dark:bg-dark-700 dark:text-gray-300">
@@ -46,11 +46,11 @@
                     </div>
                   </div>
 
-                  <div class="rounded-2xl bg-gray-50 px-3 py-2 dark:bg-dark-700/70">
+                  <div class="min-w-0 rounded-2xl bg-gray-50 px-3 py-2 dark:bg-dark-700/70">
                     <div class="break-all font-mono text-xs leading-5 text-gray-700 dark:text-gray-300">{{ job.cron_expression }}</div>
                   </div>
 
-                  <div class="min-w-0">
+                  <div class="min-w-0 flex flex-col justify-start">
                     <span class="rounded-full px-2.5 py-1 text-xs font-medium" :class="statusClass(job.last_status)">
                       {{ formatStatus(job.last_status) }}
                     </span>
@@ -59,14 +59,14 @@
                     </div>
                   </div>
 
-                  <div class="rounded-2xl bg-gray-50 px-3 py-2 text-sm leading-6 text-gray-700 dark:bg-dark-700/70 dark:text-gray-300">
+                  <div class="min-w-0 rounded-2xl bg-gray-50 px-3 py-2 text-sm leading-6 text-gray-700 dark:bg-dark-700/70 dark:text-gray-300">
                     {{ formatDate(job.next_run_at) }}
                   </div>
-                  <div class="rounded-2xl bg-gray-50 px-3 py-2 text-sm leading-6 text-gray-700 dark:bg-dark-700/70 dark:text-gray-300">
+                  <div class="min-w-0 rounded-2xl bg-gray-50 px-3 py-2 text-sm leading-6 text-gray-700 dark:bg-dark-700/70 dark:text-gray-300">
                     {{ formatDate(job.last_run_at) }}
                   </div>
 
-                  <div class="flex min-w-[280px] flex-wrap justify-end gap-2">
+                  <div class="flex min-w-0 flex-wrap items-start gap-2">
                     <button type="button" class="btn btn-secondary btn-xs whitespace-nowrap" :disabled="runningJobId === job.id" @click="handleRun(job)">
                       {{ runningJobId === job.id ? t('common.loading') : t('admin.scheduledJobs.runNow') }}
                     </button>
