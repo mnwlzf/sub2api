@@ -188,6 +188,22 @@
       <p class="text-sm text-gray-500 dark:text-dark-300">
         {{ t('customPage.tutorialEditorHint') }}
       </p>
+      <div class="tutorial-editor-toolbar">
+        <label class="btn btn-secondary btn-sm cursor-pointer">
+          <input
+            class="hidden"
+            type="file"
+            accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.zip,.txt"
+            :disabled="uploadingTutorialAsset"
+            @change="handleTutorialAssetUpload"
+          />
+          <Icon name="upload" size="sm" class="mr-1.5" :stroke-width="2" />
+          {{ uploadingTutorialAsset ? t('customPage.uploadingTutorialAsset') : t('customPage.uploadTutorialAsset') }}
+        </label>
+        <span class="text-xs text-gray-500 dark:text-dark-300">
+          {{ t('customPage.tutorialAssetHint') }}
+        </span>
+      </div>
       <textarea
         v-model="tutorialDraft"
         class="tutorial-editor-textarea"
@@ -252,6 +268,7 @@ const activeHeadingId = ref('')
 const showTutorialEditor = ref(false)
 const tutorialDraft = ref('')
 const savingTutorial = ref(false)
+const uploadingTutorialAsset = ref(false)
 let themeObserver: MutationObserver | null = null
 
 const menuItemId = computed(() => route.params.id as string)
@@ -365,8 +382,8 @@ async function fetchAndRenderMarkdown(slug: string) {
 
     const html = marked.parse(raw) as string
     const sanitized = DOMPurify.sanitize(html, {
-      ADD_TAGS: ['iframe'],
-      ADD_ATTR: ['allowfullscreen', 'frameborder', 'src'],
+      ADD_TAGS: ['iframe', 'video', 'source', 'audio'],
+      ADD_ATTR: ['allowfullscreen', 'frameborder', 'src', 'controls', 'preload', 'poster', 'style'],
     })
 
     // Inject IDs into headings and build TOC
@@ -483,6 +500,27 @@ async function saveTutorialContent() {
   }
 }
 
+async function handleTutorialAssetUpload(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+
+  uploadingTutorialAsset.value = true
+  try {
+    const result = await adminAPI.tutorial.uploadTutorialAsset(file)
+    const snippet = result.markdown_snippet
+    tutorialDraft.value = tutorialDraft.value
+      ? `${tutorialDraft.value}\n\n${snippet}\n`
+      : `${snippet}\n`
+    appStore.showSuccess(t('customPage.tutorialAssetUploadSuccess'))
+  } catch (error: any) {
+    appStore.showError(error?.message || t('customPage.tutorialAssetUploadFailed'))
+  } finally {
+    uploadingTutorialAsset.value = false
+    input.value = ''
+  }
+}
+
 watch(markdownSlug, (slug) => {
   if (slug) {
     fetchAndRenderMarkdown(slug)
@@ -553,6 +591,11 @@ onUnmounted(() => {
   @apply min-h-[420px] w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 font-mono text-sm leading-6 text-gray-800 outline-none transition focus:border-primary-400 focus:bg-white;
   @apply dark:border-dark-600 dark:bg-dark-900 dark:text-dark-100 dark:focus:border-primary-500 dark:focus:bg-dark-800;
   resize: vertical;
+}
+
+.tutorial-editor-toolbar {
+  @apply flex flex-col gap-2 rounded-2xl border border-dashed border-gray-300 bg-gray-50 px-4 py-3 md:flex-row md:items-center md:justify-between;
+  @apply dark:border-dark-600 dark:bg-dark-900/60;
 }
 
 .toc-sidebar {

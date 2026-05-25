@@ -2,12 +2,15 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -19,6 +22,7 @@ var validSlugPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
 
 const maxPageFileSize = 1 << 20 // 1MB
 const builtinTutorialSlug = "user-tutorial"
+const maxTutorialAssetSize = 100 << 20 // 100MB
 const defaultTutorialMarkdown = `# 使用教程
 
 欢迎使用本系统。
@@ -51,8 +55,18 @@ type updateTutorialContentRequest struct {
 	Content string `json:"content"`
 }
 
+type tutorialAssetUploadResponse struct {
+	Filename        string `json:"filename"`
+	URL             string `json:"url"`
+	MarkdownSnippet string `json:"markdown_snippet"`
+}
+
 func (h *PageHandler) tutorialFilePath() string {
 	return filepath.Join(h.pagesDir, builtinTutorialSlug+".md")
+}
+
+func (h *PageHandler) tutorialAssetsDir() string {
+	return filepath.Join(h.pagesDir, builtinTutorialSlug)
 }
 
 // GetPageContent serves raw markdown content for a given slug.
@@ -144,6 +158,77 @@ func (h *PageHandler) UpdateTutorialContent(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{"saved": true})
+}
+
+// ServeTutorialAsset serves uploaded tutorial assets without JWT because browser media tags
+// cannot attach authorization headers.
+// GET /api/v1/tutorial/assets/*filename
+func (h *PageHandler) ServeTutorialAsset(c *gin.Context) {
+	filename := strings.TrimPrefix(c.Param("filename"), "/")
+	cleaned, ok := resolvePageImagePath(h.pagesDir, h.tutorialAssetsDir(), filename)
+	if !ok {
+		c.Status(http.StatusNotFound)
+		return
+	}
+
+	info, err := os.Stat(cleaned)
+	if err != nil || info.IsDir() {
+		c.Status(http.StatusNotFound)
+		return
+	}
+
+	c.File(cleaned)
+}
+
+// UploadTutorialAsset stores an uploaded image/video/file for the tutorial page.
+// POST /api/v1/admin/tutorial/assets
+func (h *PageHandler) UploadTutorialAsset(c *gin.Context) {
+	fileHeader, err := c.FormFile("file")
+	if err != nil {
+		response.BadRequest(c, "file is required")
+		return
+	}
+	if fileHeader.Size <= 0 {
+		response.BadRequest(c, "file is empty")
+		return
+	}
+	if fileHeader.Size > maxTutorialAssetSize {
+		response.BadRequest(c, "file is too large")
+		return
+	}
+
+	src, err := fileHeader.Open()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to open uploaded file"})
+		return
+	}
+	defer src.Close()
+
+	if err := os.MkdirAll(h.tutorialAssetsDir(), 0755); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to prepare tutorial asset directory"})
+		return
+	}
+
+	filename := sanitizeTutorialAssetFilename(fileHeader.Filename)
+	targetPath := filepath.Join(h.tutorialAssetsDir(), filename)
+	dst, err := os.Create(targetPath)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create tutorial asset"})
+		return
+	}
+	defer dst.Close()
+
+	if _, err := io.Copy(dst, src); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save tutorial asset"})
+		return
+	}
+
+	assetURL := fmt.Sprintf("/api/v1/tutorial/assets/%s", url.PathEscape(filename))
+	response.Success(c, tutorialAssetUploadResponse{
+		Filename:        filename,
+		URL:             assetURL,
+		MarkdownSnippet: buildTutorialAssetSnippet(fileHeader.Header.Get("Content-Type"), filename, assetURL),
+	})
 }
 
 // ListPages returns available page slugs.
@@ -267,6 +352,49 @@ func cleanPageImageRelativePath(filename string) (string, bool) {
 	return relPath, true
 }
 
+func sanitizeTutorialAssetFilename(name string) string {
+	base := filepath.Base(strings.TrimSpace(name))
+	if base == "." || base == "" || base == string(filepath.Separator) {
+		base = "asset"
+	}
+
+	ext := filepath.Ext(base)
+	stem := strings.TrimSuffix(base, ext)
+	stem = strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z':
+			return r
+		case r >= 'A' && r <= 'Z':
+			return r
+		case r >= '0' && r <= '9':
+			return r
+		case r == '-' || r == '_' || r == '.':
+			return r
+		default:
+			return '-'
+		}
+	}, stem)
+	stem = strings.Trim(stem, "-_.")
+	if stem == "" {
+		stem = "asset"
+	}
+	return fmt.Sprintf("%s-%d%s", stem, time.Now().Unix(), ext)
+}
+
+func buildTutorialAssetSnippet(contentType, filename, assetURL string) string {
+	lowerType := strings.ToLower(strings.TrimSpace(contentType))
+	switch {
+	case strings.HasPrefix(lowerType, "image/"):
+		return fmt.Sprintf("![%s](%s)", filename, assetURL)
+	case strings.HasPrefix(lowerType, "video/"):
+		return fmt.Sprintf("<video controls preload=\"metadata\" src=\"%s\" style=\"max-width: 100%%; border-radius: 12px;\"></video>", assetURL)
+	case strings.HasPrefix(lowerType, "audio/"):
+		return fmt.Sprintf("<audio controls preload=\"metadata\" src=\"%s\"></audio>", assetURL)
+	default:
+		return fmt.Sprintf("[%s](%s)", filename, assetURL)
+	}
+}
+
 func isPathWithinBase(path, base string) bool {
 	rel, err := filepath.Rel(filepath.Clean(base), filepath.Clean(path))
 	if err != nil {
@@ -361,10 +489,16 @@ func RegisterPageRoutes(v1 *gin.RouterGroup, dataDir string, jwtAuth gin.Handler
 		tutorial.GET("/content", h.GetTutorialContent)
 	}
 
+	tutorialAssets := v1.Group("/tutorial")
+	{
+		tutorialAssets.GET("/assets/*filename", h.ServeTutorialAsset)
+	}
+
 	adminTutorial := v1.Group("/admin/tutorial")
 	adminTutorial.Use(adminAuth)
 	{
 		adminTutorial.GET("/content", h.GetTutorialContent)
 		adminTutorial.PUT("/content", h.UpdateTutorialContent)
+		adminTutorial.POST("/assets", h.UploadTutorialAsset)
 	}
 }
