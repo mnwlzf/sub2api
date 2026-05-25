@@ -10,8 +10,11 @@ export interface TutorialAssetUploadResponse {
   markdown_snippet: string;
 }
 
-export async function getTutorialContent(): Promise<TutorialContentPayload> {
-  const { data } = await apiClient.get<string>("/admin/tutorial/content", {
+export async function getTutorialContent(slug = "user-tutorial"): Promise<TutorialContentPayload> {
+  const endpoint = slug === "user-tutorial"
+    ? "/admin/tutorial/content"
+    : `/admin/tutorials/${encodeURIComponent(slug)}/content`;
+  const { data } = await apiClient.get<string>(endpoint, {
     responseType: "text" as const,
     transformResponse: [(raw) => raw],
   });
@@ -19,23 +22,32 @@ export async function getTutorialContent(): Promise<TutorialContentPayload> {
 }
 
 export async function updateTutorialContent(
+  slug: string,
   payload: TutorialContentPayload,
 ): Promise<{ saved: boolean }> {
+  const endpoint = slug === "user-tutorial"
+    ? "/admin/tutorial/content"
+    : `/admin/tutorials/${encodeURIComponent(slug)}/content`;
   const { data } = await apiClient.put<{ saved: boolean }>(
-    "/admin/tutorial/content",
+    endpoint,
     payload,
   );
   return data;
 }
 
 export async function uploadTutorialAsset(
+  slug: string,
   file: File,
 ): Promise<TutorialAssetUploadResponse> {
   const formData = new FormData();
   formData.append("file", file);
 
+  const endpoint = slug === "user-tutorial"
+    ? "/admin/tutorial/assets"
+    : `/admin/tutorials/${encodeURIComponent(slug)}/assets`;
+
   const { data } = await apiClient.post<TutorialAssetUploadResponse>(
-    "/admin/tutorial/assets",
+    endpoint,
     formData,
     {
       headers: {

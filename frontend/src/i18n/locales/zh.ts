@@ -380,6 +380,7 @@ export default {
     docs: '文档',
     myOrders: '我的订单',
     tutorial: '使用教程',
+    migrationTutorial: '迁移教程',
     orderManagement: '订单管理',
     paymentDashboard: '支付概览',
     paymentConfig: '支付配置',
@@ -6603,8 +6604,11 @@ export default {
     notConfiguredTitle: '页面链接未配置',
     notConfiguredDesc: '该自定义页面的 URL 未正确配置。',
     editTutorial: '编辑教程',
+    editMigrationTutorial: '编辑迁移教程',
     tutorialMarkdownHint: '此页面内容由站内 Markdown 渲染，管理员可直接维护，普通用户仅可查看。',
+    migrationTutorialMarkdownHint: '此页面用于展示迁移接入说明，内容由站内 Markdown 渲染，管理员可直接维护。',
     tutorialEditorHint: '支持标准 Markdown 语法，保存后会立即更新用户侧展示内容。',
+    migrationTutorialEditorHint: '支持标准 Markdown 语法，保存后会立即更新迁移教程展示内容。',
     uploadTutorialAsset: '上传图片/视频/附件',
     uploadingTutorialAsset: '上传中...',
     tutorialAssetHint: '上传后会自动插入对应的 Markdown 或媒体片段。',
@@ -6612,6 +6616,8 @@ export default {
     tutorialAssetUploadFailed: '资源上传失败',
     tutorialSaveSuccess: '教程内容已保存',
     tutorialSaveFailed: '保存教程内容失败',
+    migrationTutorialSaveSuccess: '迁移教程已保存',
+    migrationTutorialSaveFailed: '保存迁移教程失败',
   },
 
   // Announcements Page

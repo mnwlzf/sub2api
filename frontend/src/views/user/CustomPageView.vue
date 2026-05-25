@@ -30,8 +30,8 @@
         <div v-else-if="isBuiltinTutorialRoute" class="flex h-full flex-col overflow-hidden">
           <div class="tutorial-header-bar">
             <div class="tutorial-header-copy">
-              <h2 class="tutorial-header-title">{{ t('nav.tutorial') }}</h2>
-              <p class="tutorial-header-desc">{{ t('customPage.tutorialMarkdownHint') }}</p>
+              <h2 class="tutorial-header-title">{{ builtinTutorialTitle }}</h2>
+              <p class="tutorial-header-desc">{{ builtinTutorialHint }}</p>
             </div>
             <button
               v-if="authStore.isAdmin"
@@ -40,7 +40,7 @@
               @click="openTutorialEditor"
             >
               <Icon name="edit" size="sm" class="mr-1.5" :stroke-width="2" />
-              {{ t('customPage.editTutorial') }}
+              {{ builtinTutorialEditLabel }}
             </button>
           </div>
 
@@ -179,14 +179,14 @@
 
   <BaseDialog
     :show="showTutorialEditor"
-    :title="t('customPage.editTutorial')"
+    :title="builtinTutorialEditLabel"
     width="extra-wide"
     close-on-click-outside
     @close="closeTutorialEditor"
   >
     <div class="space-y-4">
       <p class="text-sm text-gray-500 dark:text-dark-300">
-        {{ t('customPage.tutorialEditorHint') }}
+        {{ builtinTutorialEditorHint }}
       </p>
       <div class="tutorial-editor-toolbar">
         <label class="btn btn-secondary btn-sm cursor-pointer">
@@ -254,8 +254,10 @@ const appStore = useAppStore()
 const authStore = useAuthStore()
 const adminSettingsStore = useAdminSettingsStore()
 
-const BUILTIN_TUTORIAL_ID = 'builtin-user-tutorial'
-const BUILTIN_TUTORIAL_SLUG = 'user-tutorial'
+const BUILTIN_USER_TUTORIAL_ID = 'builtin-user-tutorial'
+const BUILTIN_MIGRATION_TUTORIAL_ID = 'builtin-migration-tutorial'
+const BUILTIN_USER_TUTORIAL_SLUG = 'user-tutorial'
+const BUILTIN_MIGRATION_TUTORIAL_SLUG = 'migration-tutorial'
 
 const loading = ref(false)
 const pageTheme = ref<'light' | 'dark'>('light')
@@ -272,16 +274,44 @@ const uploadingTutorialAsset = ref(false)
 let themeObserver: MutationObserver | null = null
 
 const menuItemId = computed(() => route.params.id as string)
-const isBuiltinTutorialRoute = computed(() => route.name === 'UserTutorial' || route.path === '/tutorial')
+const builtinTutorialSlug = computed(() => {
+  if (route.name === 'UserTutorial' || route.path === '/tutorial') {
+    return BUILTIN_USER_TUTORIAL_SLUG
+  }
+  if (route.name === 'MigrationTutorial' || route.path === '/migration-tutorial') {
+    return BUILTIN_MIGRATION_TUTORIAL_SLUG
+  }
+  return ''
+})
+const isBuiltinTutorialRoute = computed(() => !!builtinTutorialSlug.value)
+const isMigrationTutorialRoute = computed(() => builtinTutorialSlug.value === BUILTIN_MIGRATION_TUTORIAL_SLUG)
+const builtinTutorialTitle = computed(() => (
+  isMigrationTutorialRoute.value ? t('nav.migrationTutorial') : t('nav.tutorial')
+))
+const builtinTutorialHint = computed(() => (
+  isMigrationTutorialRoute.value ? t('customPage.migrationTutorialMarkdownHint') : t('customPage.tutorialMarkdownHint')
+))
+const builtinTutorialEditorHint = computed(() => (
+  isMigrationTutorialRoute.value ? t('customPage.migrationTutorialEditorHint') : t('customPage.tutorialEditorHint')
+))
+const builtinTutorialEditLabel = computed(() => (
+  isMigrationTutorialRoute.value ? t('customPage.editMigrationTutorial') : t('customPage.editTutorial')
+))
+const builtinTutorialSaveSuccess = computed(() => (
+  isMigrationTutorialRoute.value ? t('customPage.migrationTutorialSaveSuccess') : t('customPage.tutorialSaveSuccess')
+))
+const builtinTutorialSaveFailed = computed(() => (
+  isMigrationTutorialRoute.value ? t('customPage.migrationTutorialSaveFailed') : t('customPage.tutorialSaveFailed')
+))
 
 const menuItem = computed(() => {
   if (isBuiltinTutorialRoute.value) {
     return {
-      id: BUILTIN_TUTORIAL_ID,
-      label: t('nav.tutorial'),
-      url: `md:${BUILTIN_TUTORIAL_SLUG}`,
+      id: isMigrationTutorialRoute.value ? BUILTIN_MIGRATION_TUTORIAL_ID : BUILTIN_USER_TUTORIAL_ID,
+      label: builtinTutorialTitle.value,
+      url: `md:${builtinTutorialSlug.value}`,
       icon_svg: '',
-      page_slug: BUILTIN_TUTORIAL_SLUG,
+      page_slug: builtinTutorialSlug.value,
       visibility: 'user',
       sort_order: 9999,
     }
@@ -360,7 +390,11 @@ async function fetchAndRenderMarkdown(slug: string) {
   activeHeadingId.value = ''
   try {
     const endpoint = isBuiltinTutorialRoute.value
-      ? '/api/v1/tutorial/content'
+      ? (
+        builtinTutorialSlug.value === BUILTIN_USER_TUTORIAL_SLUG
+          ? '/api/v1/tutorial/content'
+          : `/api/v1/tutorials/${encodeURIComponent(builtinTutorialSlug.value)}/content`
+      )
       : `/api/v1/pages/${encodeURIComponent(slug)}`
     const resp = await fetch(endpoint, {
       headers: authStore.token ? { Authorization: `Bearer ${authStore.token}` } : {},
@@ -488,13 +522,14 @@ async function saveTutorialContent() {
   if (!authStore.isAdmin) return
   savingTutorial.value = true
   try {
-    await adminAPI.tutorial.updateTutorialContent({ content: tutorialDraft.value })
+    const currentTutorialSlug = builtinTutorialSlug.value || BUILTIN_USER_TUTORIAL_SLUG
+    await adminAPI.tutorial.updateTutorialContent(currentTutorialSlug, { content: tutorialDraft.value })
     rawMarkdown.value = tutorialDraft.value
     showTutorialEditor.value = false
-    await fetchAndRenderMarkdown(BUILTIN_TUTORIAL_SLUG)
-    appStore.showSuccess(t('customPage.tutorialSaveSuccess'))
+    await fetchAndRenderMarkdown(currentTutorialSlug)
+    appStore.showSuccess(builtinTutorialSaveSuccess.value)
   } catch (error: any) {
-    appStore.showError(error?.message || t('customPage.tutorialSaveFailed'))
+    appStore.showError(error?.message || builtinTutorialSaveFailed.value)
   } finally {
     savingTutorial.value = false
   }
@@ -507,7 +542,10 @@ async function handleTutorialAssetUpload(event: Event) {
 
   uploadingTutorialAsset.value = true
   try {
-    const result = await adminAPI.tutorial.uploadTutorialAsset(file)
+    const result = await adminAPI.tutorial.uploadTutorialAsset(
+      builtinTutorialSlug.value || BUILTIN_USER_TUTORIAL_SLUG,
+      file,
+    )
     const snippet = result.markdown_snippet
     tutorialDraft.value = tutorialDraft.value
       ? `${tutorialDraft.value}\n\n${snippet}\n`

@@ -21,9 +21,10 @@ import (
 var validSlugPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
 
 const maxPageFileSize = 1 << 20 // 1MB
-const builtinTutorialSlug = "user-tutorial"
 const maxTutorialAssetSize = 100 << 20 // 100MB
-const defaultTutorialMarkdown = `# 使用教程
+const userTutorialSlug = "user-tutorial"
+const migrationTutorialSlug = "migration-tutorial"
+const defaultUserTutorialMarkdown = `# 使用教程
 
 欢迎使用本系统。
 
@@ -38,6 +39,28 @@ const defaultTutorialMarkdown = `# 使用教程
 - 本页面内容支持 Markdown 语法。
 - 管理员可以直接在页面右上角编辑教程内容。
 - 普通用户只能查看渲染后的教程内容。
+`
+const defaultMigrationTutorialMarkdown = `# 迁移教程
+
+欢迎使用迁移教程。
+
+## 迁移前准备
+
+1. 先确认原平台的接口地址、模型名称和 API Key。
+2. 在本系统中创建可用的分组、账号和 API Key。
+3. 如需平滑切换，建议先在测试环境完成连通性验证。
+
+## 常见迁移步骤
+
+1. 将原有客户端中的 Base URL 替换为本系统提供的地址。
+2. 将原有 Key 替换为本系统生成的 API Key。
+3. 按需调整模型映射、分组和额度限制配置。
+
+## 常见说明
+
+- 本页面内容支持 Markdown 语法。
+- 管理员可以直接在页面右上角编辑迁移教程内容。
+- 普通用户只能查看渲染后的迁移教程内容。
 `
 
 type PageHandler struct {
@@ -61,12 +84,46 @@ type tutorialAssetUploadResponse struct {
 	MarkdownSnippet string `json:"markdown_snippet"`
 }
 
-func (h *PageHandler) tutorialFilePath() string {
-	return filepath.Join(h.pagesDir, builtinTutorialSlug+".md")
+type builtinTutorialConfig struct {
+	Slug            string
+	DefaultMarkdown string
 }
 
-func (h *PageHandler) tutorialAssetsDir() string {
-	return filepath.Join(h.pagesDir, builtinTutorialSlug)
+var builtinTutorialConfigs = map[string]builtinTutorialConfig{
+	userTutorialSlug: {
+		Slug:            userTutorialSlug,
+		DefaultMarkdown: defaultUserTutorialMarkdown,
+	},
+	migrationTutorialSlug: {
+		Slug:            migrationTutorialSlug,
+		DefaultMarkdown: defaultMigrationTutorialMarkdown,
+	},
+}
+
+func getBuiltinTutorialConfig(slug string) (builtinTutorialConfig, bool) {
+	config, ok := builtinTutorialConfigs[slug]
+	return config, ok
+}
+
+func (h *PageHandler) builtinTutorialFilePath(slug string) string {
+	return filepath.Join(h.pagesDir, slug+".md")
+}
+
+func (h *PageHandler) builtinTutorialAssetsDir(slug string) string {
+	return filepath.Join(h.pagesDir, slug)
+}
+
+func (h *PageHandler) resolveBuiltinTutorialSlug(c *gin.Context) (string, builtinTutorialConfig, bool) {
+	slug := c.Param("slug")
+	if slug == "" {
+		slug = userTutorialSlug
+	}
+
+	config, ok := getBuiltinTutorialConfig(slug)
+	if !ok {
+		return "", builtinTutorialConfig{}, false
+	}
+	return slug, config, true
 }
 
 // GetPageContent serves raw markdown content for a given slug.
@@ -114,10 +171,16 @@ func (h *PageHandler) GetPageContent(c *gin.Context) {
 // GetTutorialContent serves the built-in tutorial markdown content for authenticated users.
 // GET /api/v1/tutorial/content
 func (h *PageHandler) GetTutorialContent(c *gin.Context) {
-	content, err := os.ReadFile(h.tutorialFilePath())
+	slug, config, ok := h.resolveBuiltinTutorialSlug(c)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "tutorial not found"})
+		return
+	}
+
+	content, err := os.ReadFile(h.builtinTutorialFilePath(slug))
 	if err != nil {
 		if os.IsNotExist(err) {
-			c.Data(http.StatusOK, "text/markdown; charset=utf-8", []byte(defaultTutorialMarkdown))
+			c.Data(http.StatusOK, "text/markdown; charset=utf-8", []byte(config.DefaultMarkdown))
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read tutorial"})
@@ -135,6 +198,12 @@ func (h *PageHandler) GetTutorialContent(c *gin.Context) {
 // UpdateTutorialContent saves the built-in tutorial markdown content.
 // PUT /api/v1/admin/tutorial/content
 func (h *PageHandler) UpdateTutorialContent(c *gin.Context) {
+	slug, _, ok := h.resolveBuiltinTutorialSlug(c)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "tutorial not found"})
+		return
+	}
+
 	var req updateTutorialContentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
@@ -152,7 +221,7 @@ func (h *PageHandler) UpdateTutorialContent(c *gin.Context) {
 		return
 	}
 
-	if err := os.WriteFile(h.tutorialFilePath(), content, 0644); err != nil {
+	if err := os.WriteFile(h.builtinTutorialFilePath(slug), content, 0644); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save tutorial"})
 		return
 	}
@@ -164,8 +233,14 @@ func (h *PageHandler) UpdateTutorialContent(c *gin.Context) {
 // cannot attach authorization headers.
 // GET /api/v1/tutorial/assets/*filename
 func (h *PageHandler) ServeTutorialAsset(c *gin.Context) {
+	slug, _, ok := h.resolveBuiltinTutorialSlug(c)
+	if !ok {
+		c.Status(http.StatusNotFound)
+		return
+	}
+
 	filename := strings.TrimPrefix(c.Param("filename"), "/")
-	cleaned, ok := resolvePageImagePath(h.pagesDir, h.tutorialAssetsDir(), filename)
+	cleaned, ok := resolvePageImagePath(h.pagesDir, h.builtinTutorialAssetsDir(slug), filename)
 	if !ok {
 		c.Status(http.StatusNotFound)
 		return
@@ -183,6 +258,12 @@ func (h *PageHandler) ServeTutorialAsset(c *gin.Context) {
 // UploadTutorialAsset stores an uploaded image/video/file for the tutorial page.
 // POST /api/v1/admin/tutorial/assets
 func (h *PageHandler) UploadTutorialAsset(c *gin.Context) {
+	slug, _, ok := h.resolveBuiltinTutorialSlug(c)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "tutorial not found"})
+		return
+	}
+
 	fileHeader, err := c.FormFile("file")
 	if err != nil {
 		response.BadRequest(c, "file is required")
@@ -204,13 +285,13 @@ func (h *PageHandler) UploadTutorialAsset(c *gin.Context) {
 	}
 	defer src.Close()
 
-	if err := os.MkdirAll(h.tutorialAssetsDir(), 0755); err != nil {
+	if err := os.MkdirAll(h.builtinTutorialAssetsDir(slug), 0755); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to prepare tutorial asset directory"})
 		return
 	}
 
 	filename := sanitizeTutorialAssetFilename(fileHeader.Filename)
-	targetPath := filepath.Join(h.tutorialAssetsDir(), filename)
+	targetPath := filepath.Join(h.builtinTutorialAssetsDir(slug), filename)
 	dst, err := os.Create(targetPath)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create tutorial asset"})
@@ -223,7 +304,7 @@ func (h *PageHandler) UploadTutorialAsset(c *gin.Context) {
 		return
 	}
 
-	assetURL := fmt.Sprintf("/api/v1/tutorial/assets/%s", url.PathEscape(filename))
+	assetURL := fmt.Sprintf("/api/v1/tutorials/%s/assets/%s", url.PathEscape(slug), url.PathEscape(filename))
 	response.Success(c, tutorialAssetUploadResponse{
 		Filename:        filename,
 		URL:             assetURL,
@@ -489,9 +570,20 @@ func RegisterPageRoutes(v1 *gin.RouterGroup, dataDir string, jwtAuth gin.Handler
 		tutorial.GET("/content", h.GetTutorialContent)
 	}
 
+	tutorials := v1.Group("/tutorials")
+	tutorials.Use(jwtAuth)
+	{
+		tutorials.GET("/:slug/content", h.GetTutorialContent)
+	}
+
 	tutorialAssets := v1.Group("/tutorial")
 	{
 		tutorialAssets.GET("/assets/*filename", h.ServeTutorialAsset)
+	}
+
+	tutorialsAssets := v1.Group("/tutorials")
+	{
+		tutorialsAssets.GET("/:slug/assets/*filename", h.ServeTutorialAsset)
 	}
 
 	adminTutorial := v1.Group("/admin/tutorial")
@@ -500,5 +592,13 @@ func RegisterPageRoutes(v1 *gin.RouterGroup, dataDir string, jwtAuth gin.Handler
 		adminTutorial.GET("/content", h.GetTutorialContent)
 		adminTutorial.PUT("/content", h.UpdateTutorialContent)
 		adminTutorial.POST("/assets", h.UploadTutorialAsset)
+	}
+
+	adminTutorials := v1.Group("/admin/tutorials")
+	adminTutorials.Use(adminAuth)
+	{
+		adminTutorials.GET("/:slug/content", h.GetTutorialContent)
+		adminTutorials.PUT("/:slug/content", h.UpdateTutorialContent)
+		adminTutorials.POST("/:slug/assets", h.UploadTutorialAsset)
 	}
 }

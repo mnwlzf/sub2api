@@ -380,6 +380,7 @@ export default {
     docs: 'Docs',
     myOrders: 'My Orders',
     tutorial: 'Tutorial',
+    migrationTutorial: 'Migration Tutorial',
     orderManagement: 'Orders',
     paymentDashboard: 'Payment Dashboard',
     paymentConfig: 'Payment Config',
@@ -6446,8 +6447,11 @@ export default {
     notConfiguredTitle: 'Page URL not configured',
     notConfiguredDesc: 'The URL for this custom page has not been properly configured.',
     editTutorial: 'Edit tutorial',
+    editMigrationTutorial: 'Edit migration tutorial',
     tutorialMarkdownHint: 'This page is rendered from built-in Markdown. Admins can edit it directly, while other users can only view the rendered content.',
+    migrationTutorialMarkdownHint: 'This page documents the migration process. It is rendered from built-in Markdown and can be maintained directly by admins.',
     tutorialEditorHint: 'Standard Markdown syntax is supported. Saving will update the user-facing content immediately.',
+    migrationTutorialEditorHint: 'Standard Markdown syntax is supported. Saving will update the migration tutorial immediately.',
     uploadTutorialAsset: 'Upload image/video/file',
     uploadingTutorialAsset: 'Uploading...',
     tutorialAssetHint: 'Uploaded assets will be inserted into the editor as Markdown or media snippets automatically.',
@@ -6455,6 +6459,8 @@ export default {
     tutorialAssetUploadFailed: 'Failed to upload asset',
     tutorialSaveSuccess: 'Tutorial content saved',
     tutorialSaveFailed: 'Failed to save tutorial content',
+    migrationTutorialSaveSuccess: 'Migration tutorial saved',
+    migrationTutorialSaveFailed: 'Failed to save migration tutorial',
   },
 
   // Announcements Page

@@ -382,6 +382,17 @@ const routes: RouteRecordRaw[] = [
       titleKey: 'nav.tutorial'
     }
   },
+  {
+    path: '/migration-tutorial',
+    name: 'MigrationTutorial',
+    component: () => import('@/views/user/CustomPageView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Migration Tutorial',
+      titleKey: 'nav.migrationTutorial'
+    }
+  },
 
   // ==================== Admin Routes ====================
   {

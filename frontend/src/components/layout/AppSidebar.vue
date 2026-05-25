@@ -712,6 +712,7 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
       iconSvg: item.icon_svg,
     })),
     { path: '/tutorial', label: t('nav.tutorial'), icon: BookOpenIcon },
+    { path: '/migration-tutorial', label: t('nav.migrationTutorial'), icon: BookOpenIcon },
   )
   return items
 }
