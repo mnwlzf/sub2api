@@ -140,6 +140,9 @@ const appStore = useAppStore()
 const authStore = useAuthStore()
 const adminSettingsStore = useAdminSettingsStore()
 
+const BUILTIN_TUTORIAL_ID = 'builtin-user-tutorial'
+const BUILTIN_TUTORIAL_URL = 'https://my.feishu.cn/wiki/AwqtwkSoKiJXKvkNVzKcAaO2nab'
+
 const loading = ref(false)
 const pageTheme = ref<'light' | 'dark'>('light')
 const renderedHtml = ref('')
@@ -150,8 +153,20 @@ const activeHeadingId = ref('')
 let themeObserver: MutationObserver | null = null
 
 const menuItemId = computed(() => route.params.id as string)
+const isBuiltinTutorialRoute = computed(() => route.name === 'UserTutorial' || route.path === '/tutorial')
 
 const menuItem = computed(() => {
+  if (isBuiltinTutorialRoute.value) {
+    return {
+      id: BUILTIN_TUTORIAL_ID,
+      label: t('nav.tutorial'),
+      url: BUILTIN_TUTORIAL_URL,
+      icon_svg: '',
+      page_slug: '',
+      visibility: 'user',
+      sort_order: 9999,
+    }
+  }
   const id = menuItemId.value
   const publicItems = appStore.cachedPublicSettings?.custom_menu_items ?? []
   const found = publicItems.find((item) => item.id === id) ?? null
