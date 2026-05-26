@@ -197,6 +197,7 @@ const jobTypeOptions = [
   { value: 'data_management_full_backup', labelKey: 'admin.scheduledJobs.types.data_management_full_backup' },
   { value: 'channel_monitor_maintenance', labelKey: 'admin.scheduledJobs.types.channel_monitor_maintenance' },
   { value: 'sync_codex_free_group_accounts', labelKey: 'admin.scheduledJobs.types.sync_codex_free_group_accounts' },
+  { value: 'cleanup_error_accounts', labelKey: 'admin.scheduledJobs.types.cleanup_error_accounts' },
 ] as const
 
 const form = reactive<CreateAdminScheduledJobRequest>({

@@ -10,6 +10,7 @@ const (
 	AdminScheduledJobTypeDataManagementFull  = "data_management_full_backup"
 	AdminScheduledJobTypeChannelMonitorMaint = "channel_monitor_maintenance"
 	AdminScheduledJobTypeSyncCodexFreeGroups = "sync_codex_free_group_accounts"
+	AdminScheduledJobTypeCleanupErrorAccounts = "cleanup_error_accounts"
 
 	AdminScheduledJobTriggerManual    = "manual"
 	AdminScheduledJobTriggerScheduled = "scheduled"

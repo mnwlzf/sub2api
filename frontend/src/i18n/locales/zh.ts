@@ -4176,7 +4176,8 @@ export default {
         backup_postgres: 'PostgreSQL 备份',
         data_management_full_backup: '数据管理全量备份',
         channel_monitor_maintenance: '渠道监控维护',
-        sync_codex_free_group_accounts: '同步codex-free分组账号'
+        sync_codex_free_group_accounts: '同步codex-free分组账号',
+        cleanup_error_accounts: '清理错误状态账号'
       }
     },
 

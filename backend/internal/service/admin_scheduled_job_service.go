@@ -180,7 +180,7 @@ func (s *AdminScheduledJobService) executeRun(ctx context.Context, job *AdminSch
 
 func validateAdminScheduledJob(jobType, cronExpr, payloadJSON string, retentionLimit int) error {
 	switch strings.TrimSpace(jobType) {
-	case AdminScheduledJobTypeBackup, AdminScheduledJobTypeDataManagementFull, AdminScheduledJobTypeChannelMonitorMaint, AdminScheduledJobTypeSyncCodexFreeGroups:
+	case AdminScheduledJobTypeBackup, AdminScheduledJobTypeDataManagementFull, AdminScheduledJobTypeChannelMonitorMaint, AdminScheduledJobTypeSyncCodexFreeGroups, AdminScheduledJobTypeCleanupErrorAccounts:
 	default:
 		return fmt.Errorf("unsupported job type")
 	}

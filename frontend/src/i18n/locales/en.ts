@@ -4081,7 +4081,8 @@ export default {
         backup_postgres: 'PostgreSQL Backup',
         data_management_full_backup: 'Data Management Full Backup',
         channel_monitor_maintenance: 'Channel Monitor Maintenance',
-        sync_codex_free_group_accounts: 'Sync Codex-Free Group Accounts'
+        sync_codex_free_group_accounts: 'Sync Codex-Free Group Accounts',
+        cleanup_error_accounts: 'Cleanup Error Accounts'
       }
     },
 

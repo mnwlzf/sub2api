@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 )
 
 type adminScheduledJobExecutor struct {
@@ -57,6 +59,8 @@ func (e *adminScheduledJobExecutor) Execute(ctx context.Context, job *AdminSched
 		return e.executeChannelMonitorMaintenance(ctx)
 	case AdminScheduledJobTypeSyncCodexFreeGroups:
 		return e.executeSyncCodexFreeGroups(ctx, job)
+	case AdminScheduledJobTypeCleanupErrorAccounts:
+		return e.executeCleanupErrorAccounts(ctx)
 	default:
 		return "", "", fmt.Errorf("unsupported job type: %s", job.JobType)
 	}
@@ -213,4 +217,52 @@ func (e *adminScheduledJobExecutor) filterOAuthOnlyAccounts(ctx context.Context,
 		}
 	}
 	return filtered, nil
+}
+
+func (e *adminScheduledJobExecutor) executeCleanupErrorAccounts(ctx context.Context) (string, string, error) {
+	if e.accountRepo == nil {
+		return "", "", fmt.Errorf("account repository unavailable")
+	}
+
+	params := pagination.DefaultPagination()
+	params.Page = 1
+	params.PageSize = 200
+	params.SortBy = "id"
+	params.SortOrder = pagination.SortOrderAsc
+
+	var totalMatched int64
+	var deleted int
+	var skipped int
+
+	for {
+		accounts, page, err := e.accountRepo.ListWithFilters(ctx, params, "", "", StatusError, "", 0, "")
+		if err != nil {
+			return "", "", fmt.Errorf("list error accounts: %w", err)
+		}
+		if page != nil && totalMatched == 0 {
+			totalMatched = page.Total
+		}
+		if len(accounts) == 0 {
+			break
+		}
+
+		for i := range accounts {
+			if err := e.accountRepo.Delete(ctx, accounts[i].ID); err != nil {
+				skipped++
+				continue
+			}
+			deleted++
+		}
+
+		// Always continue from page 1 because records are being deleted continuously.
+		params.Page = 1
+	}
+
+	result, _ := json.Marshal(map[string]any{
+		"matched":    totalMatched,
+		"deleted":    deleted,
+		"skipped":    skipped,
+		"finished_at": time.Now().UTC().Format(time.RFC3339),
+	})
+	return fmt.Sprintf("deleted %d error accounts", deleted), string(result), nil
 }
