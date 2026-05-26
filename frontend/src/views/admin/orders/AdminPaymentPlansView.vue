@@ -37,8 +37,17 @@
           <span class="text-sm">{{ value }} {{ t('payment.admin.' + (row.validity_unit || 'days')) }}</span>
         </template>
         <template #cell-purchase_limit="{ value }">
-          <span class="text-sm text-gray-700 dark:text-gray-300">
-            {{ value > 0 ? t('payment.admin.purchaseLimitValue', { count: value }) : t('payment.admin.unlimitedPurchase') }}
+          <span
+            v-if="value > 0"
+            class="inline-flex items-center rounded-full border border-amber-300/80 bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-800 shadow-sm ring-1 ring-amber-200/80 dark:border-amber-500/60 dark:bg-amber-900/25 dark:text-amber-200 dark:ring-amber-500/30"
+          >
+            {{ t('payment.admin.purchaseLimitValue', { count: value }) }}
+          </span>
+          <span
+            v-else
+            class="inline-flex items-center rounded-full border border-gray-200 bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600 dark:border-dark-600 dark:bg-dark-700 dark:text-gray-300"
+          >
+            {{ t('payment.admin.unlimitedPurchase') }}
           </span>
         </template>
         <template #cell-for_sale="{ value, row }">
