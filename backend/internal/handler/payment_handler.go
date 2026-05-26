@@ -65,6 +65,7 @@ func (h *PaymentHandler) GetPlans(c *gin.Context) {
 		ValidityUnit  string   `json:"validity_unit"`
 		Features      string   `json:"features"`
 		ProductName   string   `json:"product_name"`
+		PurchaseLimit int      `json:"purchase_limit"`
 		ForSale       bool     `json:"for_sale"`
 		SortOrder     int      `json:"sort_order"`
 	}
@@ -75,7 +76,7 @@ func (h *PaymentHandler) GetPlans(c *gin.Context) {
 			ID: int64(p.ID), GroupID: p.GroupID, GroupPlatform: platformMap[p.GroupID],
 			Name: p.Name, Description: p.Description, Price: p.Price, OriginalPrice: p.OriginalPrice,
 			ValidityDays: p.ValidityDays, ValidityUnit: p.ValidityUnit, Features: p.Features,
-			ProductName: p.ProductName, ForSale: p.ForSale, SortOrder: p.SortOrder,
+			ProductName: p.ProductName, PurchaseLimit: p.PurchaseLimit, ForSale: p.ForSale, SortOrder: p.SortOrder,
 		})
 	}
 	response.Success(c, result)
@@ -126,7 +127,7 @@ func (h *PaymentHandler) GetCheckoutInfo(c *gin.Context) {
 			ModelScopes: gi.ModelScopes,
 			Name:        p.Name, Description: p.Description, Price: p.Price, OriginalPrice: p.OriginalPrice,
 			ValidityDays: p.ValidityDays, ValidityUnit: p.ValidityUnit, Features: parseFeatures(p.Features),
-			ProductName: p.ProductName,
+			ProductName: p.ProductName, PurchaseLimit: p.PurchaseLimit,
 		})
 	}
 
@@ -177,6 +178,7 @@ type checkoutPlan struct {
 	ValidityUnit    string   `json:"validity_unit"`
 	Features        []string `json:"features"`
 	ProductName     string   `json:"product_name"`
+	PurchaseLimit   int      `json:"purchase_limit"`
 }
 
 // parseFeatures splits a newline-separated features string into a string slice.

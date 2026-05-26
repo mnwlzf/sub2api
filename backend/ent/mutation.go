@@ -30783,6 +30783,8 @@ type SubscriptionPlanMutation struct {
 	validity_unit     *string
 	features          *string
 	product_name      *string
+	purchase_limit    *int
+	addpurchase_limit *int
 	for_sale          *bool
 	sort_order        *int
 	addsort_order     *int
@@ -31310,6 +31312,62 @@ func (m *SubscriptionPlanMutation) ResetProductName() {
 	m.product_name = nil
 }
 
+// SetPurchaseLimit sets the "purchase_limit" field.
+func (m *SubscriptionPlanMutation) SetPurchaseLimit(i int) {
+	m.purchase_limit = &i
+	m.addpurchase_limit = nil
+}
+
+// PurchaseLimit returns the value of the "purchase_limit" field in the mutation.
+func (m *SubscriptionPlanMutation) PurchaseLimit() (r int, exists bool) {
+	v := m.purchase_limit
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPurchaseLimit returns the old "purchase_limit" field's value of the SubscriptionPlan entity.
+// If the SubscriptionPlan object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SubscriptionPlanMutation) OldPurchaseLimit(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPurchaseLimit is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPurchaseLimit requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPurchaseLimit: %w", err)
+	}
+	return oldValue.PurchaseLimit, nil
+}
+
+// AddPurchaseLimit adds i to the "purchase_limit" field.
+func (m *SubscriptionPlanMutation) AddPurchaseLimit(i int) {
+	if m.addpurchase_limit != nil {
+		*m.addpurchase_limit += i
+	} else {
+		m.addpurchase_limit = &i
+	}
+}
+
+// AddedPurchaseLimit returns the value that was added to the "purchase_limit" field in this mutation.
+func (m *SubscriptionPlanMutation) AddedPurchaseLimit() (r int, exists bool) {
+	v := m.addpurchase_limit
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetPurchaseLimit resets all changes to the "purchase_limit" field.
+func (m *SubscriptionPlanMutation) ResetPurchaseLimit() {
+	m.purchase_limit = nil
+	m.addpurchase_limit = nil
+}
+
 // SetForSale sets the "for_sale" field.
 func (m *SubscriptionPlanMutation) SetForSale(b bool) {
 	m.for_sale = &b
@@ -31508,7 +31566,7 @@ func (m *SubscriptionPlanMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *SubscriptionPlanMutation) Fields() []string {
-	fields := make([]string, 0, 13)
+	fields := make([]string, 0, 14)
 	if m.group_id != nil {
 		fields = append(fields, subscriptionplan.FieldGroupID)
 	}
@@ -31535,6 +31593,9 @@ func (m *SubscriptionPlanMutation) Fields() []string {
 	}
 	if m.product_name != nil {
 		fields = append(fields, subscriptionplan.FieldProductName)
+	}
+	if m.purchase_limit != nil {
+		fields = append(fields, subscriptionplan.FieldPurchaseLimit)
 	}
 	if m.for_sale != nil {
 		fields = append(fields, subscriptionplan.FieldForSale)
@@ -31574,6 +31635,8 @@ func (m *SubscriptionPlanMutation) Field(name string) (ent.Value, bool) {
 		return m.Features()
 	case subscriptionplan.FieldProductName:
 		return m.ProductName()
+	case subscriptionplan.FieldPurchaseLimit:
+		return m.PurchaseLimit()
 	case subscriptionplan.FieldForSale:
 		return m.ForSale()
 	case subscriptionplan.FieldSortOrder:
@@ -31609,6 +31672,8 @@ func (m *SubscriptionPlanMutation) OldField(ctx context.Context, name string) (e
 		return m.OldFeatures(ctx)
 	case subscriptionplan.FieldProductName:
 		return m.OldProductName(ctx)
+	case subscriptionplan.FieldPurchaseLimit:
+		return m.OldPurchaseLimit(ctx)
 	case subscriptionplan.FieldForSale:
 		return m.OldForSale(ctx)
 	case subscriptionplan.FieldSortOrder:
@@ -31689,6 +31754,13 @@ func (m *SubscriptionPlanMutation) SetField(name string, value ent.Value) error 
 		}
 		m.SetProductName(v)
 		return nil
+	case subscriptionplan.FieldPurchaseLimit:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPurchaseLimit(v)
+		return nil
 	case subscriptionplan.FieldForSale:
 		v, ok := value.(bool)
 		if !ok {
@@ -31737,6 +31809,9 @@ func (m *SubscriptionPlanMutation) AddedFields() []string {
 	if m.addvalidity_days != nil {
 		fields = append(fields, subscriptionplan.FieldValidityDays)
 	}
+	if m.addpurchase_limit != nil {
+		fields = append(fields, subscriptionplan.FieldPurchaseLimit)
+	}
 	if m.addsort_order != nil {
 		fields = append(fields, subscriptionplan.FieldSortOrder)
 	}
@@ -31756,6 +31831,8 @@ func (m *SubscriptionPlanMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedOriginalPrice()
 	case subscriptionplan.FieldValidityDays:
 		return m.AddedValidityDays()
+	case subscriptionplan.FieldPurchaseLimit:
+		return m.AddedPurchaseLimit()
 	case subscriptionplan.FieldSortOrder:
 		return m.AddedSortOrder()
 	}
@@ -31794,6 +31871,13 @@ func (m *SubscriptionPlanMutation) AddField(name string, value ent.Value) error 
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddValidityDays(v)
+		return nil
+	case subscriptionplan.FieldPurchaseLimit:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddPurchaseLimit(v)
 		return nil
 	case subscriptionplan.FieldSortOrder:
 		v, ok := value.(int)
@@ -31864,6 +31948,9 @@ func (m *SubscriptionPlanMutation) ResetField(name string) error {
 		return nil
 	case subscriptionplan.FieldProductName:
 		m.ResetProductName()
+		return nil
+	case subscriptionplan.FieldPurchaseLimit:
+		m.ResetPurchaseLimit()
 		return nil
 	case subscriptionplan.FieldForSale:
 		m.ResetForSale()

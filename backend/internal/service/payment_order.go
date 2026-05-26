@@ -144,7 +144,33 @@ func (s *PaymentService) validateSubOrder(ctx context.Context, req CreateOrderRe
 	if !group.IsSubscriptionType() {
 		return nil, infraerrors.BadRequest("GROUP_TYPE_MISMATCH", "group is not a subscription type")
 	}
+	if err := s.checkSubscriptionPlanPurchaseLimit(ctx, req.UserID, plan); err != nil {
+		return nil, err
+	}
 	return plan, nil
+}
+
+func (s *PaymentService) checkSubscriptionPlanPurchaseLimit(ctx context.Context, userID int64, plan *dbent.SubscriptionPlan) error {
+	if plan == nil || plan.PurchaseLimit <= 0 {
+		return nil
+	}
+	used, err := s.entClient.PaymentOrder.Query().Where(
+		paymentorder.UserIDEQ(userID),
+		paymentorder.PlanIDEQ(plan.ID),
+		paymentorder.OrderTypeEQ(payment.OrderTypeSubscription),
+		paymentorder.StatusIn(OrderStatusPaid, OrderStatusRecharging, OrderStatusCompleted),
+	).Count(ctx)
+	if err != nil {
+		return fmt.Errorf("count plan purchase usage: %w", err)
+	}
+	if used >= plan.PurchaseLimit {
+		return infraerrors.Forbidden("PLAN_PURCHASE_LIMIT_EXCEEDED", "purchase limit exceeded for this plan").
+			WithMetadata(map[string]string{
+				"limit": strconv.Itoa(plan.PurchaseLimit),
+				"used":  strconv.Itoa(used),
+			})
+	}
+	return nil
 }
 
 func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderRequest, user *User, plan *dbent.SubscriptionPlan, cfg *PaymentConfig, orderAmount, limitAmount, feeRate, payAmount float64, sel *payment.InstanceSelection) (*dbent.PaymentOrder, error) {

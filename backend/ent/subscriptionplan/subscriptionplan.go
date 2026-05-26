@@ -31,6 +31,8 @@ const (
 	FieldFeatures = "features"
 	// FieldProductName holds the string denoting the product_name field in the database.
 	FieldProductName = "product_name"
+	// FieldPurchaseLimit holds the string denoting the purchase_limit field in the database.
+	FieldPurchaseLimit = "purchase_limit"
 	// FieldForSale holds the string denoting the for_sale field in the database.
 	FieldForSale = "for_sale"
 	// FieldSortOrder holds the string denoting the sort_order field in the database.
@@ -55,6 +57,7 @@ var Columns = []string{
 	FieldValidityUnit,
 	FieldFeatures,
 	FieldProductName,
+	FieldPurchaseLimit,
 	FieldForSale,
 	FieldSortOrder,
 	FieldCreatedAt,
@@ -88,6 +91,8 @@ var (
 	DefaultProductName string
 	// ProductNameValidator is a validator for the "product_name" field. It is called by the builders before save.
 	ProductNameValidator func(string) error
+	// DefaultPurchaseLimit holds the default value on creation for the "purchase_limit" field.
+	DefaultPurchaseLimit int
 	// DefaultForSale holds the default value on creation for the "for_sale" field.
 	DefaultForSale bool
 	// DefaultSortOrder holds the default value on creation for the "sort_order" field.
@@ -151,6 +156,11 @@ func ByFeatures(opts ...sql.OrderTermOption) OrderOption {
 // ByProductName orders the results by the product_name field.
 func ByProductName(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldProductName, opts...).ToFunc()
+}
+
+// ByPurchaseLimit orders the results by the purchase_limit field.
+func ByPurchaseLimit(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPurchaseLimit, opts...).ToFunc()
 }
 
 // ByForSale orders the results by the for_sale field.

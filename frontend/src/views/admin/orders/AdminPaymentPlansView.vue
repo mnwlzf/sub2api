@@ -36,6 +36,11 @@
         <template #cell-validity_days="{ value, row }">
           <span class="text-sm">{{ value }} {{ t('payment.admin.' + (row.validity_unit || 'days')) }}</span>
         </template>
+        <template #cell-purchase_limit="{ value }">
+          <span class="text-sm text-gray-700 dark:text-gray-300">
+            {{ value > 0 ? t('payment.admin.purchaseLimitValue', { count: value }) : t('payment.admin.unlimitedPurchase') }}
+          </span>
+        </template>
         <template #cell-for_sale="{ value, row }">
           <button
             type="button"
@@ -133,6 +138,7 @@ const planColumns = computed((): Column[] => [
   { key: 'group_id', label: t('payment.admin.group') },
   { key: 'price', label: t('payment.admin.price') },
   { key: 'validity_days', label: t('payment.admin.validityDays') },
+  { key: 'purchase_limit', label: t('payment.admin.purchaseLimit') },
   { key: 'for_sale', label: t('payment.admin.forSale') },
   { key: 'sort_order', label: t('payment.admin.sortOrder') },
   { key: 'actions', label: t('common.actions') },

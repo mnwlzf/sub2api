@@ -59,6 +59,10 @@
           <span class="text-gray-400 dark:text-dark-500">{{ t('payment.planCard.quota') }}</span>
           <span class="font-medium text-gray-700 dark:text-gray-300">{{ t('payment.planCard.unlimited') }}</span>
         </div>
+        <div v-if="plan.purchase_limit > 0" class="col-span-2 flex items-center justify-between">
+          <span class="text-gray-400 dark:text-dark-500">{{ t('payment.planCard.purchaseLimit') }}</span>
+          <span class="font-medium text-gray-700 dark:text-gray-300">{{ t('payment.planCard.purchaseLimitValue', { count: plan.purchase_limit }) }}</span>
+        </div>
         <div v-if="modelScopeLabels.length > 0" class="col-span-2 flex items-center justify-between">
           <span class="text-gray-400 dark:text-dark-500">{{ t('payment.planCard.models') }}</span>
           <div class="flex flex-wrap justify-end gap-1">

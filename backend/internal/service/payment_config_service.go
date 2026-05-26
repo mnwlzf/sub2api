@@ -159,6 +159,7 @@ type CreatePlanRequest struct {
 	ValidityUnit  string   `json:"validity_unit"`
 	Features      string   `json:"features"`
 	ProductName   string   `json:"product_name"`
+	PurchaseLimit int      `json:"purchase_limit"`
 	ForSale       bool     `json:"for_sale"`
 	SortOrder     int      `json:"sort_order"`
 }
@@ -173,6 +174,7 @@ type UpdatePlanRequest struct {
 	ValidityUnit  *string  `json:"validity_unit"`
 	Features      *string  `json:"features"`
 	ProductName   *string  `json:"product_name"`
+	PurchaseLimit *int     `json:"purchase_limit"`
 	ForSale       *bool    `json:"for_sale"`
 	SortOrder     *int     `json:"sort_order"`
 }

@@ -124,6 +124,20 @@ func (_c *SubscriptionPlanCreate) SetNillableProductName(v *string) *Subscriptio
 	return _c
 }
 
+// SetPurchaseLimit sets the "purchase_limit" field.
+func (_c *SubscriptionPlanCreate) SetPurchaseLimit(v int) *SubscriptionPlanCreate {
+	_c.mutation.SetPurchaseLimit(v)
+	return _c
+}
+
+// SetNillablePurchaseLimit sets the "purchase_limit" field if the given value is not nil.
+func (_c *SubscriptionPlanCreate) SetNillablePurchaseLimit(v *int) *SubscriptionPlanCreate {
+	if v != nil {
+		_c.SetPurchaseLimit(*v)
+	}
+	return _c
+}
+
 // SetForSale sets the "for_sale" field.
 func (_c *SubscriptionPlanCreate) SetForSale(v bool) *SubscriptionPlanCreate {
 	_c.mutation.SetForSale(v)
@@ -235,6 +249,10 @@ func (_c *SubscriptionPlanCreate) defaults() {
 		v := subscriptionplan.DefaultProductName
 		_c.mutation.SetProductName(v)
 	}
+	if _, ok := _c.mutation.PurchaseLimit(); !ok {
+		v := subscriptionplan.DefaultPurchaseLimit
+		_c.mutation.SetPurchaseLimit(v)
+	}
 	if _, ok := _c.mutation.ForSale(); !ok {
 		v := subscriptionplan.DefaultForSale
 		_c.mutation.SetForSale(v)
@@ -293,6 +311,9 @@ func (_c *SubscriptionPlanCreate) check() error {
 		if err := subscriptionplan.ProductNameValidator(v); err != nil {
 			return &ValidationError{Name: "product_name", err: fmt.Errorf(`ent: validator failed for field "SubscriptionPlan.product_name": %w`, err)}
 		}
+	}
+	if _, ok := _c.mutation.PurchaseLimit(); !ok {
+		return &ValidationError{Name: "purchase_limit", err: errors.New(`ent: missing required field "SubscriptionPlan.purchase_limit"`)}
 	}
 	if _, ok := _c.mutation.ForSale(); !ok {
 		return &ValidationError{Name: "for_sale", err: errors.New(`ent: missing required field "SubscriptionPlan.for_sale"`)}
@@ -368,6 +389,10 @@ func (_c *SubscriptionPlanCreate) createSpec() (*SubscriptionPlan, *sqlgraph.Cre
 	if value, ok := _c.mutation.ProductName(); ok {
 		_spec.SetField(subscriptionplan.FieldProductName, field.TypeString, value)
 		_node.ProductName = value
+	}
+	if value, ok := _c.mutation.PurchaseLimit(); ok {
+		_spec.SetField(subscriptionplan.FieldPurchaseLimit, field.TypeInt, value)
+		_node.PurchaseLimit = value
 	}
 	if value, ok := _c.mutation.ForSale(); ok {
 		_spec.SetField(subscriptionplan.FieldForSale, field.TypeBool, value)
@@ -572,6 +597,24 @@ func (u *SubscriptionPlanUpsert) SetProductName(v string) *SubscriptionPlanUpser
 // UpdateProductName sets the "product_name" field to the value that was provided on create.
 func (u *SubscriptionPlanUpsert) UpdateProductName() *SubscriptionPlanUpsert {
 	u.SetExcluded(subscriptionplan.FieldProductName)
+	return u
+}
+
+// SetPurchaseLimit sets the "purchase_limit" field.
+func (u *SubscriptionPlanUpsert) SetPurchaseLimit(v int) *SubscriptionPlanUpsert {
+	u.Set(subscriptionplan.FieldPurchaseLimit, v)
+	return u
+}
+
+// UpdatePurchaseLimit sets the "purchase_limit" field to the value that was provided on create.
+func (u *SubscriptionPlanUpsert) UpdatePurchaseLimit() *SubscriptionPlanUpsert {
+	u.SetExcluded(subscriptionplan.FieldPurchaseLimit)
+	return u
+}
+
+// AddPurchaseLimit adds v to the "purchase_limit" field.
+func (u *SubscriptionPlanUpsert) AddPurchaseLimit(v int) *SubscriptionPlanUpsert {
+	u.Add(subscriptionplan.FieldPurchaseLimit, v)
 	return u
 }
 
@@ -820,6 +863,27 @@ func (u *SubscriptionPlanUpsertOne) SetProductName(v string) *SubscriptionPlanUp
 func (u *SubscriptionPlanUpsertOne) UpdateProductName() *SubscriptionPlanUpsertOne {
 	return u.Update(func(s *SubscriptionPlanUpsert) {
 		s.UpdateProductName()
+	})
+}
+
+// SetPurchaseLimit sets the "purchase_limit" field.
+func (u *SubscriptionPlanUpsertOne) SetPurchaseLimit(v int) *SubscriptionPlanUpsertOne {
+	return u.Update(func(s *SubscriptionPlanUpsert) {
+		s.SetPurchaseLimit(v)
+	})
+}
+
+// AddPurchaseLimit adds v to the "purchase_limit" field.
+func (u *SubscriptionPlanUpsertOne) AddPurchaseLimit(v int) *SubscriptionPlanUpsertOne {
+	return u.Update(func(s *SubscriptionPlanUpsert) {
+		s.AddPurchaseLimit(v)
+	})
+}
+
+// UpdatePurchaseLimit sets the "purchase_limit" field to the value that was provided on create.
+func (u *SubscriptionPlanUpsertOne) UpdatePurchaseLimit() *SubscriptionPlanUpsertOne {
+	return u.Update(func(s *SubscriptionPlanUpsert) {
+		s.UpdatePurchaseLimit()
 	})
 }
 
@@ -1241,6 +1305,27 @@ func (u *SubscriptionPlanUpsertBulk) SetProductName(v string) *SubscriptionPlanU
 func (u *SubscriptionPlanUpsertBulk) UpdateProductName() *SubscriptionPlanUpsertBulk {
 	return u.Update(func(s *SubscriptionPlanUpsert) {
 		s.UpdateProductName()
+	})
+}
+
+// SetPurchaseLimit sets the "purchase_limit" field.
+func (u *SubscriptionPlanUpsertBulk) SetPurchaseLimit(v int) *SubscriptionPlanUpsertBulk {
+	return u.Update(func(s *SubscriptionPlanUpsert) {
+		s.SetPurchaseLimit(v)
+	})
+}
+
+// AddPurchaseLimit adds v to the "purchase_limit" field.
+func (u *SubscriptionPlanUpsertBulk) AddPurchaseLimit(v int) *SubscriptionPlanUpsertBulk {
+	return u.Update(func(s *SubscriptionPlanUpsert) {
+		s.AddPurchaseLimit(v)
+	})
+}
+
+// UpdatePurchaseLimit sets the "purchase_limit" field to the value that was provided on create.
+func (u *SubscriptionPlanUpsertBulk) UpdatePurchaseLimit() *SubscriptionPlanUpsertBulk {
+	return u.Update(func(s *SubscriptionPlanUpsert) {
+		s.UpdatePurchaseLimit()
 	})
 }
 

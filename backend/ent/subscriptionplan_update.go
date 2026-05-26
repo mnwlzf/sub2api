@@ -188,6 +188,27 @@ func (_u *SubscriptionPlanUpdate) SetNillableProductName(v *string) *Subscriptio
 	return _u
 }
 
+// SetPurchaseLimit sets the "purchase_limit" field.
+func (_u *SubscriptionPlanUpdate) SetPurchaseLimit(v int) *SubscriptionPlanUpdate {
+	_u.mutation.ResetPurchaseLimit()
+	_u.mutation.SetPurchaseLimit(v)
+	return _u
+}
+
+// SetNillablePurchaseLimit sets the "purchase_limit" field if the given value is not nil.
+func (_u *SubscriptionPlanUpdate) SetNillablePurchaseLimit(v *int) *SubscriptionPlanUpdate {
+	if v != nil {
+		_u.SetPurchaseLimit(*v)
+	}
+	return _u
+}
+
+// AddPurchaseLimit adds value to the "purchase_limit" field.
+func (_u *SubscriptionPlanUpdate) AddPurchaseLimit(v int) *SubscriptionPlanUpdate {
+	_u.mutation.AddPurchaseLimit(v)
+	return _u
+}
+
 // SetForSale sets the "for_sale" field.
 func (_u *SubscriptionPlanUpdate) SetForSale(v bool) *SubscriptionPlanUpdate {
 	_u.mutation.SetForSale(v)
@@ -343,6 +364,12 @@ func (_u *SubscriptionPlanUpdate) sqlSave(ctx context.Context) (_node int, err e
 	}
 	if value, ok := _u.mutation.ProductName(); ok {
 		_spec.SetField(subscriptionplan.FieldProductName, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.PurchaseLimit(); ok {
+		_spec.SetField(subscriptionplan.FieldPurchaseLimit, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedPurchaseLimit(); ok {
+		_spec.AddField(subscriptionplan.FieldPurchaseLimit, field.TypeInt, value)
 	}
 	if value, ok := _u.mutation.ForSale(); ok {
 		_spec.SetField(subscriptionplan.FieldForSale, field.TypeBool, value)
@@ -536,6 +563,27 @@ func (_u *SubscriptionPlanUpdateOne) SetNillableProductName(v *string) *Subscrip
 	return _u
 }
 
+// SetPurchaseLimit sets the "purchase_limit" field.
+func (_u *SubscriptionPlanUpdateOne) SetPurchaseLimit(v int) *SubscriptionPlanUpdateOne {
+	_u.mutation.ResetPurchaseLimit()
+	_u.mutation.SetPurchaseLimit(v)
+	return _u
+}
+
+// SetNillablePurchaseLimit sets the "purchase_limit" field if the given value is not nil.
+func (_u *SubscriptionPlanUpdateOne) SetNillablePurchaseLimit(v *int) *SubscriptionPlanUpdateOne {
+	if v != nil {
+		_u.SetPurchaseLimit(*v)
+	}
+	return _u
+}
+
+// AddPurchaseLimit adds value to the "purchase_limit" field.
+func (_u *SubscriptionPlanUpdateOne) AddPurchaseLimit(v int) *SubscriptionPlanUpdateOne {
+	_u.mutation.AddPurchaseLimit(v)
+	return _u
+}
+
 // SetForSale sets the "for_sale" field.
 func (_u *SubscriptionPlanUpdateOne) SetForSale(v bool) *SubscriptionPlanUpdateOne {
 	_u.mutation.SetForSale(v)
@@ -721,6 +769,12 @@ func (_u *SubscriptionPlanUpdateOne) sqlSave(ctx context.Context) (_node *Subscr
 	}
 	if value, ok := _u.mutation.ProductName(); ok {
 		_spec.SetField(subscriptionplan.FieldProductName, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.PurchaseLimit(); ok {
+		_spec.SetField(subscriptionplan.FieldPurchaseLimit, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedPurchaseLimit(); ok {
+		_spec.AddField(subscriptionplan.FieldPurchaseLimit, field.TypeInt, value)
 	}
 	if value, ok := _u.mutation.ForSale(); ok {
 		_spec.SetField(subscriptionplan.FieldForSale, field.TypeBool, value)
