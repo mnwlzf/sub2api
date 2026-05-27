@@ -1,6 +1,25 @@
 <template>
   <AppLayout>
     <div class="space-y-6">
+      <div class="grid grid-cols-1 gap-4 xl:grid-cols-4">
+        <div class="card p-4">
+          <div class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{{ t('admin.dashboard.todayRequests') }}</div>
+          <div class="mt-2 text-2xl font-bold text-gray-900 dark:text-white">{{ formatNumber(usageStats?.total_requests ?? 0) }}</div>
+        </div>
+        <div class="card p-4">
+          <div class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{{ t('admin.dashboard.totalTokens') }}</div>
+          <div class="mt-2 text-2xl font-bold text-gray-900 dark:text-white">{{ formatTokens(usageStats?.total_tokens ?? 0) }}</div>
+        </div>
+        <div class="card p-4">
+          <div class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{{ t('admin.usageMonitor.actualCost') }}</div>
+          <div class="mt-2 text-2xl font-bold text-green-600 dark:text-green-400">${{ formatCost(usageStats?.total_actual_cost ?? 0) }}</div>
+        </div>
+        <div class="card p-4">
+          <div class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{{ t('admin.dashboard.avgResponse') }}</div>
+          <div class="mt-2 text-2xl font-bold text-gray-900 dark:text-white">{{ formatDuration(usageStats?.average_duration_ms ?? 0) }}</div>
+        </div>
+      </div>
+
       <div class="card p-4">
         <div class="flex flex-wrap items-start gap-3">
           <div class="w-full sm:w-40">
@@ -51,6 +70,10 @@
             <DateRangePicker :start-date="startDate" :end-date="endDate" @change="handleRangeChange" />
           </div>
 
+          <div class="w-full sm:w-40">
+            <Select v-model="trendMetric" :options="trendMetricOptions" @change="loadDashboard" />
+          </div>
+
           <div class="ml-auto text-sm text-gray-500 dark:text-gray-400">
             {{ granularity === 'day' ? t('admin.usageMonitor.last24h') : t('admin.usageMonitor.limitedRange') }}
           </div>
@@ -62,18 +85,17 @@
       </div>
 
       <template v-else>
-        <div class="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
           <div class="card p-4 xl:col-span-2">
-            <div class="mb-4">
-              <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.usageMonitor.title') }}</h3>
-              <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.usageMonitor.hoverHint') }}</p>
-            </div>
-
-            <div class="h-[480px]">
-              <Line v-if="chartData" :data="chartData" :options="chartOptions" />
-              <div v-else class="flex h-full items-center justify-center text-sm text-gray-500 dark:text-gray-400">
-                {{ t('admin.usageMonitor.noData') }}
+            <div class="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.usageMonitor.title') }}</h3>
+                <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.usageMonitor.hoverHint') }}</p>
               </div>
+            </div>
+            <div class="h-[420px]">
+              <Line v-if="summaryTrendChartData" :data="summaryTrendChartData" :options="summaryTrendChartOptions" />
+              <div v-else class="flex h-full items-center justify-center text-sm text-gray-500 dark:text-gray-400">{{ t('admin.usageMonitor.noData') }}</div>
             </div>
           </div>
 
@@ -81,7 +103,7 @@
             <h3 class="mb-3 text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.usageMonitor.topUsers') }}</h3>
             <div class="space-y-3">
               <div
-                v-for="(user, index) in data?.top_users ?? []"
+                v-for="(user, index) in usageMonitorData?.top_users ?? []"
                 :key="user.user_id"
                 class="rounded-lg border border-gray-200 p-3 dark:border-gray-700"
               >
@@ -92,11 +114,95 @@
                     </div>
                     <div class="text-xs text-gray-500 dark:text-gray-400">#{{ index + 1 }} / {{ user.user_id }}</div>
                   </div>
-                  <div class="text-sm font-semibold text-gray-900 dark:text-white">
-                    ${{ formatCost(user.total_actual_cost) }}
-                  </div>
+                  <div class="text-sm font-semibold text-gray-900 dark:text-white">${{ formatCost(user.total_actual_cost) }}</div>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card p-4">
+          <div class="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.dashboard.recentUsage') }}</h3>
+              <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.usageMonitor.models') }}</p>
+            </div>
+          </div>
+          <div class="h-[360px]">
+            <Line v-if="topUserChartData" :data="topUserChartData" :options="topUserChartOptions" />
+            <div v-else class="flex h-full items-center justify-center text-sm text-gray-500 dark:text-gray-400">{{ t('admin.usageMonitor.noData') }}</div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <ModelDistributionChart
+            v-model:source="modelSource"
+            v-model:metric="distributionMetric"
+            :model-stats="modelStats"
+            :upstream-model-stats="[]"
+            :mapping-model-stats="[]"
+            :loading="sectionLoading"
+            :show-source-toggle="false"
+            :show-metric-toggle="true"
+            :start-date="startDate"
+            :end-date="endDate"
+            :filters="breakdownFilters"
+          />
+          <GroupDistributionChart
+            v-model:metric="distributionMetric"
+            :group-stats="groupStats"
+            :loading="sectionLoading"
+            :show-metric-toggle="true"
+            :start-date="startDate"
+            :end-date="endDate"
+            :filters="breakdownFilters"
+          />
+        </div>
+
+        <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <EndpointDistributionChart
+            v-model:source="endpointSource"
+            v-model:metric="distributionMetric"
+            :endpoint-stats="endpointStats"
+            :upstream-endpoint-stats="upstreamEndpointStats"
+            :endpoint-path-stats="endpointPathStats"
+            :loading="sectionLoading"
+            :show-source-toggle="true"
+            :show-metric-toggle="true"
+            :start-date="startDate"
+            :end-date="endDate"
+            :filters="breakdownFilters"
+          />
+          <div class="card p-4">
+            <div class="mb-4 flex items-center justify-between gap-3">
+              <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.dashboard.spendingRankingTitle') }}</h3>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm">
+                <thead>
+                  <tr class="text-left text-gray-500 dark:text-gray-400">
+                    <th class="pb-3">{{ t('admin.dashboard.spendingRankingUser') }}</th>
+                    <th class="pb-3 text-right">{{ t('admin.dashboard.spendingRankingRequests') }}</th>
+                    <th class="pb-3 text-right">{{ t('admin.dashboard.spendingRankingTokens') }}</th>
+                    <th class="pb-3 text-right">{{ t('admin.dashboard.spendingRankingSpend') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="item in rankingItems"
+                    :key="item.user_id"
+                    class="border-t border-gray-100 dark:border-gray-700"
+                  >
+                    <td class="py-3 text-gray-900 dark:text-white">{{ item.email || `User #${item.user_id}` }}</td>
+                    <td class="py-3 text-right text-gray-600 dark:text-gray-300">{{ formatNumber(item.requests) }}</td>
+                    <td class="py-3 text-right text-gray-600 dark:text-gray-300">{{ formatTokens(item.tokens) }}</td>
+                    <td class="py-3 text-right text-green-600 dark:text-green-400">${{ formatCost(item.actual_cost) }}</td>
+                  </tr>
+                  <tr v-if="rankingItems.length === 0">
+                    <td colspan="4" class="py-8 text-center text-sm text-gray-500 dark:text-gray-400">{{ t('admin.usageMonitor.noData') }}</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -108,24 +214,63 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Chart as ChartJS, CategoryScale, LinearScale, LineElement, PointElement, Tooltip, Legend, Filler } from 'chart.js'
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  LineElement,
+  PointElement,
+  Tooltip,
+  Legend,
+  Filler
+} from 'chart.js'
 import { Line } from 'vue-chartjs'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import Select from '@/components/common/Select.vue'
 import Icon from '@/components/icons/Icon.vue'
+import ModelDistributionChart from '@/components/charts/ModelDistributionChart.vue'
+import GroupDistributionChart from '@/components/charts/GroupDistributionChart.vue'
+import EndpointDistributionChart from '@/components/charts/EndpointDistributionChart.vue'
 import { adminAPI } from '@/api/admin'
 import type { SimpleUser } from '@/api/admin/usage'
-import type { UsageCostMonitorData } from '@/types'
+import type {
+  UsageCostMonitorData,
+  TrendDataPoint,
+  ModelStat,
+  GroupStat,
+  EndpointStat,
+  UserSpendingRankingItem
+} from '@/types'
+import type { AdminUsageStatsResponse } from '@/api/admin/usage'
 
 ChartJS.register(CategoryScale, LinearScale, LineElement, PointElement, Tooltip, Legend, Filler)
 
 const { t } = useI18n()
 
+type Granularity = 'day' | 'week' | 'month'
+type TrendMetric = 'requests' | 'tokens' | 'actual_cost'
+type DistributionMetric = 'tokens' | 'actual_cost'
+type EndpointSource = 'inbound' | 'upstream' | 'path'
+
 const loading = ref(false)
-const data = ref<UsageCostMonitorData | null>(null)
-const granularity = ref<'day' | 'week' | 'month'>('week')
+const sectionLoading = ref(false)
+const usageStats = ref<AdminUsageStatsResponse | null>(null)
+const summaryTrend = ref<TrendDataPoint[]>([])
+const usageMonitorData = ref<UsageCostMonitorData | null>(null)
+const modelStats = ref<ModelStat[]>([])
+const groupStats = ref<GroupStat[]>([])
+const endpointStats = ref<EndpointStat[]>([])
+const upstreamEndpointStats = ref<EndpointStat[]>([])
+const endpointPathStats = ref<EndpointStat[]>([])
+const rankingItems = ref<UserSpendingRankingItem[]>([])
+
+const granularity = ref<Granularity>('week')
+const trendMetric = ref<TrendMetric>('actual_cost')
+const distributionMetric = ref<DistributionMetric>('actual_cost')
+const endpointSource = ref<EndpointSource>('inbound')
+const modelSource = ref<'requested'>('requested')
 const startDate = ref('')
 const endDate = ref('')
 
@@ -136,7 +281,10 @@ const showUserDropdown = ref(false)
 const selectedUser = ref<SimpleUser | null>(null)
 const userDropdownRef = ref<HTMLElement | null>(null)
 let userSearchTimer: number | undefined
+
 const userTimezone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+const formatDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+const formatHourLabel = (bucket: string) => bucket.slice(11, 16)
 
 const granularityOptions = computed(() => ([
   { value: 'day', label: t('admin.usageMonitor.day') },
@@ -144,7 +292,11 @@ const granularityOptions = computed(() => ([
   { value: 'month', label: t('admin.usageMonitor.month') }
 ]))
 
-const formatDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+const trendMetricOptions = computed(() => ([
+  { value: 'actual_cost', label: t('admin.usageMonitor.actualCost') },
+  { value: 'tokens', label: t('admin.dashboard.tokens') },
+  { value: 'requests', label: t('admin.dashboard.requests') }
+]))
 
 const initRange = () => {
   const end = new Date()
@@ -154,7 +306,156 @@ const initRange = () => {
   endDate.value = formatDate(end)
 }
 
-const formatCost = (value: number) => value.toFixed(2)
+const formatNumber = (value: number) => value.toLocaleString()
+const formatTokens = (value: number) => {
+  if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(2)}B`
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`
+  if (value >= 1_000) return `${(value / 1_000).toFixed(2)}K`
+  return value.toLocaleString()
+}
+const formatCost = (value: number) => {
+  if (value >= 1000) return (value / 1000).toFixed(2) + 'K'
+  if (value >= 1) return value.toFixed(2)
+  if (value >= 0.01) return value.toFixed(3)
+  return value.toFixed(4)
+}
+const formatDuration = (value: number) => {
+  if (value >= 1000) return `${(value / 1000).toFixed(2)}s`
+  return `${Math.round(value)}ms`
+}
+
+const breakdownFilters = computed(() => {
+  const filters: Record<string, unknown> = {}
+  if (selectedUser.value?.id) filters.user_id = selectedUser.value.id
+  return filters
+})
+
+const trendParams = computed(() => ({
+  start_date: startDate.value,
+  end_date: endDate.value,
+  granularity: (granularity.value === 'day' ? 'hour' : 'day') as 'hour' | 'day',
+  user_id: selectedUser.value?.id,
+  timezone: userTimezone()
+}))
+
+const statsParams = computed(() => ({
+  start_date: startDate.value,
+  end_date: endDate.value,
+  user_id: selectedUser.value?.id,
+  timezone: userTimezone()
+}))
+
+const monitorParams = computed(() => ({
+  granularity: granularity.value,
+  start_date: startDate.value,
+  end_date: endDate.value,
+  user_id: selectedUser.value?.id,
+  timezone: userTimezone()
+}))
+
+const pointLookup = computed(() => {
+  const map = new Map<string, { actual_cost: number; models: { model: string; actual_cost: number }[] }>()
+  for (const item of usageMonitorData.value?.series ?? []) {
+    map.set(`${item.user_id}:${item.bucket}`, { actual_cost: item.actual_cost, models: item.models })
+  }
+  return map
+})
+
+const summaryTrendChartData = computed(() => {
+  if (!summaryTrend.value.length) return null
+  const labels = summaryTrend.value.map(item => granularity.value === 'day' ? formatHourLabel(item.date) : item.date)
+  const data = summaryTrend.value.map(item => {
+    if (trendMetric.value === 'requests') return item.requests
+    if (trendMetric.value === 'tokens') return item.total_tokens
+    return item.actual_cost
+  })
+  return {
+    labels,
+    datasets: [
+      {
+        label: trendMetric.value === 'requests' ? t('admin.dashboard.requests') : trendMetric.value === 'tokens' ? t('admin.dashboard.tokens') : t('admin.usageMonitor.actualCost'),
+        data,
+        borderColor: '#2563eb',
+        backgroundColor: 'rgba(37,99,235,0.15)',
+        fill: true,
+        tension: 0.25,
+        pointRadius: 2
+      }
+    ]
+  }
+})
+
+const topUserChartData = computed(() => {
+  if (!usageMonitorData.value?.series.length) return null
+  const labels = Array.from(new Set(usageMonitorData.value.series.map(item => item.bucket)))
+  const palette = ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed']
+  return {
+    labels: labels.map(label => granularity.value === 'day' ? formatHourLabel(label) : label),
+    datasets: usageMonitorData.value.top_users.map((user, index) => {
+      const userMap = new Map(
+        usageMonitorData.value!.series.filter(item => item.user_id === user.user_id).map(item => [item.bucket, item.actual_cost])
+      )
+      return {
+        label: user.email || `User #${user.user_id}`,
+        userId: user.user_id,
+        data: labels.map(label => userMap.get(label) ?? 0),
+        borderColor: palette[index % palette.length],
+        backgroundColor: `${palette[index % palette.length]}22`,
+        fill: false,
+        tension: 0.25,
+        pointRadius: 2
+      }
+    })
+  }
+})
+
+const baseLineOptions = {
+  responsive: true,
+  maintainAspectRatio: false,
+  interaction: { intersect: false, mode: 'index' as const },
+  plugins: { legend: { position: 'top' as const } },
+  scales: { x: { ticks: { maxRotation: 0 } } }
+}
+
+const summaryTrendChartOptions = computed(() => ({
+  ...baseLineOptions,
+  scales: {
+    ...baseLineOptions.scales,
+    y: {
+      ticks: {
+        callback: (value: string | number) => {
+          if (trendMetric.value === 'requests') return String(value)
+          if (trendMetric.value === 'tokens') return formatTokens(Number(value))
+          return `$${value}`
+        }
+      }
+    }
+  }
+}))
+
+const topUserChartOptions = computed(() => ({
+  ...baseLineOptions,
+  plugins: {
+    ...baseLineOptions.plugins,
+    tooltip: {
+      callbacks: {
+        label: (ctx: any) => {
+          const userId = Number(ctx.dataset.userId ?? 0)
+          const rawLabel = usageMonitorData.value?.series.find(item => item.user_id === userId && (granularity.value === 'day' ? formatHourLabel(item.bucket) : item.bucket) === String(ctx.label || ''))?.bucket || String(ctx.label || '')
+          const point = pointLookup.value.get(`${userId}:${rawLabel}`)
+          const userLabel = String(ctx.dataset.label || '')
+          if (!point) return `${userLabel}: $${formatCost(Number(ctx.raw ?? 0))}`
+          const modelText = point.models.map(m => `${m.model}: $${formatCost(m.actual_cost)}`).join(', ')
+          return [`${userLabel}: $${formatCost(point.actual_cost)}`, modelText || t('common.noData')]
+        }
+      }
+    }
+  },
+  scales: {
+    ...baseLineOptions.scales,
+    y: { ticks: { callback: (value: string | number) => `$${value}` } }
+  }
+}))
 
 const debounceSearchUsers = () => {
   if (userSearchTimer) window.clearTimeout(userSearchTimer)
@@ -165,12 +466,10 @@ const searchUsers = async () => {
   const keyword = userKeyword.value.trim()
   if (selectedUser.value && keyword !== selectedUser.value.email) {
     selectedUser.value = null
-    await loadData()
+    loadDashboard()
   }
   if (!keyword) {
     userResults.value = []
-    selectedUser.value = null
-    await loadData()
     return
   }
   userLoading.value = true
@@ -185,7 +484,7 @@ const selectUser = (user: SimpleUser) => {
   selectedUser.value = user
   userKeyword.value = user.email
   showUserDropdown.value = false
-  loadData()
+  loadDashboard()
 }
 
 const clearUser = () => {
@@ -193,7 +492,7 @@ const clearUser = () => {
   userKeyword.value = ''
   userResults.value = []
   showUserDropdown.value = false
-  loadData()
+  loadDashboard()
 }
 
 const handleGranularityChange = async () => {
@@ -202,29 +501,42 @@ const handleGranularityChange = async () => {
     const start = new Date(end.getTime() - 24 * 60 * 60 * 1000)
     startDate.value = formatDate(start)
     endDate.value = formatDate(end)
+  } else {
+    initRange()
   }
-  await loadData()
+  await loadDashboard()
 }
 
 const handleRangeChange = (range: { startDate: string; endDate: string }) => {
   startDate.value = range.startDate
   endDate.value = range.endDate
-  loadData()
+  loadDashboard()
 }
 
-const loadData = async () => {
+const loadDashboard = async () => {
   loading.value = true
+  sectionLoading.value = true
   try {
-    const res = await adminAPI.dashboard.getUsageCostMonitor({
-      granularity: granularity.value,
-      start_date: startDate.value,
-      end_date: endDate.value,
-      user_id: selectedUser.value?.id,
-      timezone: userTimezone()
-    })
-    data.value = res.data
+    const [statsRes, trendRes, modelRes, groupRes, rankingRes, monitorRes] = await Promise.all([
+      adminAPI.usage.getStats(statsParams.value),
+      adminAPI.dashboard.getUsageTrend(trendParams.value),
+      adminAPI.dashboard.getModelStats({ start_date: startDate.value, end_date: endDate.value, user_id: selectedUser.value?.id, model_source: 'requested' }),
+      adminAPI.dashboard.getGroupStats({ start_date: startDate.value, end_date: endDate.value, user_id: selectedUser.value?.id }),
+      adminAPI.dashboard.getUserSpendingRanking({ start_date: startDate.value, end_date: endDate.value, limit: 10 }),
+      adminAPI.dashboard.getUsageCostMonitor(monitorParams.value)
+    ])
+    usageStats.value = statsRes
+    endpointStats.value = statsRes.endpoints || []
+    upstreamEndpointStats.value = statsRes.upstream_endpoints || []
+    endpointPathStats.value = statsRes.endpoint_paths || []
+    summaryTrend.value = trendRes.trend
+    modelStats.value = modelRes.models
+    groupStats.value = groupRes.groups
+    rankingItems.value = rankingRes.ranking
+    usageMonitorData.value = monitorRes.data
   } finally {
     loading.value = false
+    sectionLoading.value = false
   }
 }
 
@@ -235,71 +547,9 @@ const handleClickOutside = (event: MouseEvent) => {
   }
 }
 
-const bucketLabels = computed(() => {
-  const buckets = new Set<string>()
-  for (const item of data.value?.series ?? []) buckets.add(item.bucket)
-  return Array.from(buckets)
-})
-
-const pointLookup = computed(() => {
-  const map = new Map<string, { actual_cost: number; models: { model: string; actual_cost: number }[] }>()
-  for (const item of data.value?.series ?? []) {
-    map.set(`${item.user_id}:${item.bucket}`, { actual_cost: item.actual_cost, models: item.models })
-  }
-  return map
-})
-
-const chartData = computed(() => {
-  if (!data.value?.series.length) return null
-  const palette = ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed']
-  const users = data.value.top_users
-  const labels = bucketLabels.value
-  const datasets = users.map((user, index) => {
-    const points = data.value!.series.filter(item => item.user_id === user.user_id)
-    const map = new Map(points.map(item => [item.bucket, item.actual_cost]))
-    return {
-      label: user.email || `User #${user.user_id}`,
-      userId: user.user_id,
-      data: labels.map(label => map.get(label) ?? 0),
-      borderColor: palette[index % palette.length],
-      backgroundColor: `${palette[index % palette.length]}22`,
-      pointRadius: 2,
-      tension: 0.25,
-      fill: false
-    }
-  })
-  return { labels, datasets }
-})
-
-const chartOptions = computed(() => ({
-  responsive: true,
-  maintainAspectRatio: false,
-  interaction: { intersect: false, mode: 'index' as const },
-  plugins: {
-    legend: { position: 'top' as const },
-    tooltip: {
-      callbacks: {
-        label: (ctx: any) => {
-          const userId = Number(ctx.dataset.userId ?? 0)
-          const userLabel = String(ctx.dataset.label || '')
-          const bucket = String(ctx.label || '')
-          const point = pointLookup.value.get(`${userId}:${bucket}`)
-          if (!point) return `${userLabel}: $${formatCost(Number(ctx.raw ?? 0))}`
-          const modelText = point.models.map(m => `${m.model}: $${formatCost(m.actual_cost)}`).join(', ')
-          return [`${userLabel}: $${formatCost(point.actual_cost)}`, modelText || t('common.noData')]
-        }
-      }
-    }
-  },
-  scales: {
-    x: { ticks: { maxRotation: 0 } },
-    y: { ticks: { callback: (value: string | number) => `$${value}` } }
-  }
-}))
-
 onMounted(async () => {
   initRange()
-  await loadData()
+  await loadDashboard()
   document.addEventListener('click', handleClickOutside)
 })
 
