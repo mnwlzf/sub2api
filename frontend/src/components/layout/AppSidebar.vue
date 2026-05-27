@@ -856,6 +856,9 @@ function handleMenuItemClick(itemPath: string) {
 }
 
 function isActive(path: string): boolean {
+  if (path === '/admin/ops') {
+    return route.path === path
+  }
   return route.path === path || route.path.startsWith(path + '/')
 }
 

@@ -212,6 +212,12 @@ const trendMetricOptions = computed(() => ([
 const userTimezone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
 const formatDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const formatHourLabel = (bucket: string) => bucket.includes(' ') ? bucket.slice(11, 16) : bucket
+const parseBucketTime = (bucket: string): number => {
+  const normalized = bucket.includes(' ') ? bucket.replace(' ', 'T') : bucket
+  const timestamp = Date.parse(normalized)
+  return Number.isNaN(timestamp) ? 0 : timestamp
+}
+const sortBuckets = (buckets: string[]) => [...buckets].sort((a, b) => parseBucketTime(a) - parseBucketTime(b))
 
 const initRange = () => {
   const end = new Date()
@@ -253,7 +259,9 @@ const summaryTrendChartData = computed(() => {
         backgroundColor: 'rgba(37,99,235,0.15)',
         fill: true,
         tension: 0.25,
-        pointRadius: 2
+        pointRadius: 2,
+        pointHoverRadius: 6,
+        pointHitRadius: 12
       }
     ]
   }
@@ -269,7 +277,7 @@ const pointLookup = computed(() => {
 
 const topUserChartData = computed(() => {
   if (!usageMonitorData.value?.series.length) return null
-  const buckets = Array.from(new Set(usageMonitorData.value.series.map(item => item.bucket)))
+  const buckets = sortBuckets(Array.from(new Set(usageMonitorData.value.series.map(item => item.bucket))))
   const palette = ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed']
   return {
     labels: buckets.map(label => granularity.value === 'day' ? formatHourLabel(label) : label),
@@ -285,7 +293,9 @@ const topUserChartData = computed(() => {
         backgroundColor: `${palette[index % palette.length]}22`,
         fill: false,
         tension: 0.25,
-        pointRadius: 2
+        pointRadius: 2,
+        pointHoverRadius: 6,
+        pointHitRadius: 12
       }
     })
   }
@@ -308,7 +318,7 @@ const tooltipBase = {
 const summaryTrendChartOptions = computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
-  interaction: { intersect: false, mode: 'index' as const },
+  interaction: { intersect: false, mode: 'index' as const, axis: 'x' as const },
   plugins: {
     legend: { display: false },
     tooltip: {
@@ -324,7 +334,14 @@ const summaryTrendChartOptions = computed(() => ({
     }
   },
   scales: {
-    x: { ticks: { maxRotation: 0 } },
+    x: {
+      ticks: {
+        autoSkip: true,
+        maxRotation: 0,
+        minRotation: 0,
+        maxTicksLimit: granularity.value === 'day' ? 8 : 10
+      }
+    },
     y: {
       ticks: {
         callback: (value: string | number) => {
@@ -340,7 +357,7 @@ const summaryTrendChartOptions = computed(() => ({
 const topUserChartOptions = computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
-  interaction: { intersect: false, mode: 'index' as const },
+  interaction: { intersect: false, mode: 'index' as const, axis: 'x' as const },
   plugins: {
     legend: { position: 'top' as const, labels: { usePointStyle: true, pointStyle: 'circle' } },
     tooltip: {
@@ -368,7 +385,14 @@ const topUserChartOptions = computed(() => ({
     }
   },
   scales: {
-    x: { ticks: { maxRotation: 0 } },
+    x: {
+      ticks: {
+        autoSkip: true,
+        maxRotation: 0,
+        minRotation: 0,
+        maxTicksLimit: granularity.value === 'day' ? 8 : 10
+      }
+    },
     y: { ticks: { callback: (value: string | number) => `$${value}` } }
   }
 }))
