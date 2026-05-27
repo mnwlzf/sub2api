@@ -350,6 +350,7 @@ export default {
     announcements: 'Announcements',
     apiKeys: 'API Keys',
     usage: 'Usage',
+    usageMonitor: 'Usage Monitor',
     redeem: 'Redeem',
     affiliate: 'Affiliate Rebates',
     affiliateManagement: 'Affiliate Rebates',
@@ -1424,6 +1425,24 @@ export default {
       requestsShort: 'Req',
       tokensShort: 'Tok',
       failedToLoad: 'Failed to load dashboard statistics'
+    },
+    usageMonitor: {
+      title: 'Usage Monitor',
+      description: 'View actual spend by user and model',
+      granularity: 'Granularity',
+      day: 'Day',
+      week: 'Week',
+      month: 'Month',
+      userFilter: 'User Filter',
+      allUsers: 'All Users',
+      topUsers: 'Top 5 Users',
+      models: 'Model Breakdown',
+      noData: 'No monitor data',
+      last24h: 'Showing the last 24 hours',
+      limitedRange: 'Supports up to the last 31 days',
+      hoverHint: 'Hover to inspect model breakdown',
+      actualCost: 'Actual Cost',
+      bucket: 'Time Bucket'
     },
 
     backup: {

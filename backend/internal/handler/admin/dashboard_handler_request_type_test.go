@@ -22,6 +22,9 @@ type dashboardUsageRepoCapture struct {
 	rankingLimit     int
 	ranking          []usagestats.UserSpendingRankingItem
 	rankingTotal     float64
+	usageMonitorGranularity string
+	usageMonitorUserID      int64
+	usageMonitorLimit       int
 }
 
 func (s *dashboardUsageRepoCapture) GetUsageTrendWithFilters(
@@ -66,6 +69,19 @@ func (s *dashboardUsageRepoCapture) GetUserSpendingRanking(
 	}, nil
 }
 
+func (s *dashboardUsageRepoCapture) GetUsageCostMonitor(
+	ctx context.Context,
+	startTime, endTime time.Time,
+	granularity, timezone string,
+	userID int64,
+	limit int,
+) (*usagestats.UsageCostMonitorData, error) {
+	s.usageMonitorGranularity = granularity
+	s.usageMonitorUserID = userID
+	s.usageMonitorLimit = limit
+	return &usagestats.UsageCostMonitorData{}, nil
+}
+
 func newDashboardRequestTypeTestRouter(repo *dashboardUsageRepoCapture) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	dashboardSvc := service.NewDashboardService(repo, nil, nil, nil)
@@ -74,6 +90,7 @@ func newDashboardRequestTypeTestRouter(repo *dashboardUsageRepoCapture) *gin.Eng
 	router.GET("/admin/dashboard/trend", handler.GetUsageTrend)
 	router.GET("/admin/dashboard/models", handler.GetModelStats)
 	router.GET("/admin/dashboard/users-ranking", handler.GetUserSpendingRanking)
+	router.GET("/admin/dashboard/usage-cost-monitor", handler.GetUsageCostMonitor)
 	return router
 }
 
@@ -198,4 +215,18 @@ func TestDashboardUsersRankingLimitAndCache(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rec2.Code)
 	require.Equal(t, "hit", rec2.Header().Get("X-Snapshot-Cache"))
+}
+
+func TestDashboardUsageCostMonitorRangeAndLimit(t *testing.T) {
+	repo := &dashboardUsageRepoCapture{}
+	router := newDashboardRequestTypeTestRouter(repo)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/dashboard/usage-cost-monitor?granularity=day", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "hour", repo.usageMonitorGranularity)
+	require.Equal(t, int64(0), repo.usageMonitorUserID)
+	require.Equal(t, 5, repo.usageMonitorLimit)
 }

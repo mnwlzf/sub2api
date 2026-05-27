@@ -1477,6 +1477,37 @@ export interface UserSpendingRankingResponse {
   end_date: string
 }
 
+export interface UsageCostMonitorModelBreakdown {
+  model: string
+  actual_cost: number
+}
+
+export interface UsageCostMonitorPoint {
+  bucket: string
+  user_id: number
+  email: string
+  actual_cost: number
+  models: UsageCostMonitorModelBreakdown[]
+}
+
+export interface UsageCostMonitorTopUser {
+  user_id: number
+  email: string
+  total_actual_cost: number
+}
+
+export interface UsageCostMonitorData {
+  top_users: UsageCostMonitorTopUser[]
+  series: UsageCostMonitorPoint[]
+}
+
+export interface UsageCostMonitorResponse {
+  start_date: string
+  end_date: string
+  granularity: 'day' | 'week' | 'month'
+  data: UsageCostMonitorData
+}
+
 export interface ApiKeyUsageTrendPoint {
   date: string
   api_key_id: number

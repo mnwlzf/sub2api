@@ -13,6 +13,7 @@ import type {
   UserUsageTrendPoint,
   UserSpendingRankingResponse,
   UserBreakdownItem,
+  UsageCostMonitorResponse,
   UsageRequestType
 } from '@/types'
 
@@ -305,6 +306,14 @@ export interface BatchApiKeysUsageResponse {
   stats: Record<string, BatchApiKeyUsageStats>
 }
 
+export interface UsageCostMonitorParams {
+  granularity?: 'day' | 'week' | 'month'
+  start_date?: string
+  end_date?: string
+  user_id?: number
+  timezone?: string
+}
+
 /**
  * Get batch usage stats for multiple API keys
  * @param apiKeyIds - Array of API key IDs
@@ -322,6 +331,16 @@ export async function getBatchApiKeysUsage(
   return data
 }
 
+export async function getUsageCostMonitor(
+  params?: UsageCostMonitorParams
+): Promise<UsageCostMonitorResponse> {
+  const { data } = await apiClient.get<UsageCostMonitorResponse>(
+    '/admin/dashboard/usage-cost-monitor',
+    { params }
+  )
+  return data
+}
+
 export const dashboardAPI = {
   getStats,
   getRealtimeMetrics,
@@ -333,7 +352,8 @@ export const dashboardAPI = {
   getUserUsageTrend,
   getUserSpendingRanking,
   getBatchUsersUsage,
-  getBatchApiKeysUsage
+  getBatchApiKeysUsage,
+  getUsageCostMonitor
 }
 
 export default dashboardAPI

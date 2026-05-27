@@ -162,6 +162,34 @@ type UserSpendingRankingResponse struct {
 	TotalTokens     int64                     `json:"total_tokens"`
 }
 
+// UsageCostMonitorTopUser represents a ranked user in the cost monitor.
+type UsageCostMonitorTopUser struct {
+	UserID          int64   `json:"user_id"`
+	Email           string  `json:"email"`
+	TotalActualCost float64 `json:"total_actual_cost"`
+}
+
+// UsageCostMonitorModelBreakdown represents one model's cost in a bucket.
+type UsageCostMonitorModelBreakdown struct {
+	Model      string  `json:"model"`
+	ActualCost float64 `json:"actual_cost"`
+}
+
+// UsageCostMonitorPoint represents one user bucket point with model breakdowns.
+type UsageCostMonitorPoint struct {
+	Bucket     string                          `json:"bucket"`
+	UserID     int64                           `json:"user_id"`
+	Email      string                          `json:"email"`
+	ActualCost float64                         `json:"actual_cost"`
+	Models     []UsageCostMonitorModelBreakdown `json:"models"`
+}
+
+// UsageCostMonitorData represents the core series payload for the admin monitor page.
+type UsageCostMonitorData struct {
+	TopUsers []UsageCostMonitorTopUser `json:"top_users"`
+	Series   []UsageCostMonitorPoint   `json:"series"`
+}
+
 // UserBreakdownItem represents per-user usage breakdown within a dimension (group, model, endpoint).
 type UserBreakdownItem struct {
 	UserID      int64   `json:"user_id"`

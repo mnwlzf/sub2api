@@ -2427,6 +2427,264 @@ func (r *usageLogRepository) GetUserSpendingRanking(ctx context.Context, startTi
 	}, nil
 }
 
+type usageCostMonitorTopUserRow struct {
+	UserID          int64
+	Email           string
+	TotalActualCost float64
+}
+
+type usageCostMonitorSeriesRow struct {
+	BucketStart time.Time
+	Bucket     string
+	UserID     int64
+	Email      string
+	ActualCost float64
+}
+
+type usageCostMonitorModelRow struct {
+	BucketStart time.Time
+	Bucket     string
+	UserID     int64
+	Model      string
+	ActualCost float64
+}
+
+func (r *usageLogRepository) GetUsageCostMonitor(ctx context.Context, startTime, endTime time.Time, granularity, userTZ string, userID int64, limit int) (result *usagestats.UsageCostMonitorData, err error) {
+	bucketGranularity := "day"
+	if granularity == "hour" {
+		bucketGranularity = "hour"
+	}
+	if limit <= 0 || limit > 5 {
+		limit = 5
+	}
+
+	topQuery := `
+		SELECT
+			ul.user_id,
+			COALESCE(u.email, '') AS email,
+			COALESCE(SUM(ul.actual_cost), 0) AS total_actual_cost
+		FROM usage_logs ul
+		LEFT JOIN users u ON u.id = ul.user_id
+		WHERE ul.created_at >= $1
+		  AND ul.created_at < $2
+	`
+	topArgs := []any{startTime, endTime}
+	if userID > 0 {
+		topQuery += " AND ul.user_id = $3"
+		topArgs = append(topArgs, userID)
+	}
+	topQuery += " GROUP BY ul.user_id, u.email ORDER BY total_actual_cost DESC, ul.user_id ASC LIMIT $"
+	topQuery += strconv.Itoa(len(topArgs) + 1)
+	topArgs = append(topArgs, limit)
+
+	topRows, err := r.sql.QueryContext(ctx, topQuery, topArgs...)
+	if err != nil {
+		return nil, err
+	}
+	topUserRows := make([]usageCostMonitorTopUserRow, 0)
+	func() {
+		defer func() {
+			if closeErr := topRows.Close(); closeErr != nil && err == nil {
+				err = closeErr
+			}
+		}()
+		for topRows.Next() {
+			var row usageCostMonitorTopUserRow
+			if err = topRows.Scan(&row.UserID, &row.Email, &row.TotalActualCost); err != nil {
+				return
+			}
+			topUserRows = append(topUserRows, row)
+		}
+		if err == nil {
+			err = topRows.Err()
+		}
+	}()
+	if err != nil {
+		return nil, err
+	}
+
+	result = &usagestats.UsageCostMonitorData{
+		TopUsers: make([]usagestats.UsageCostMonitorTopUser, 0, len(topUserRows)),
+		Series:   []usagestats.UsageCostMonitorPoint{},
+	}
+	for _, row := range topUserRows {
+		result.TopUsers = append(result.TopUsers, usagestats.UsageCostMonitorTopUser{
+			UserID:          row.UserID,
+			Email:           row.Email,
+			TotalActualCost: row.TotalActualCost,
+		})
+	}
+	if len(topUserRows) == 0 {
+		return result, nil
+	}
+
+	result.Series = make([]usagestats.UsageCostMonitorPoint, 0)
+
+	bucketStarts := make([]time.Time, 0)
+	for ts := startTime; ts.Before(endTime); {
+		bucketStarts = append(bucketStarts, ts)
+		if bucketGranularity == "hour" {
+			ts = ts.Add(time.Hour)
+		} else {
+			ts = ts.AddDate(0, 0, 1)
+		}
+	}
+
+	userIDs := make([]int64, 0, len(topUserRows))
+	for _, row := range topUserRows {
+		userIDs = append(userIDs, row.UserID)
+	}
+
+	bucketExpr := "date_trunc('day', ul.created_at)"
+	bucketLabelExpr := "TO_CHAR(date_trunc('day', ul.created_at), 'YYYY-MM-DD')"
+	if bucketGranularity == "hour" {
+		bucketExpr = "date_trunc('hour', ul.created_at)"
+		bucketLabelExpr = "TO_CHAR(date_trunc('hour', ul.created_at), 'YYYY-MM-DD HH24:00')"
+	}
+
+	seriesQuery := fmt.Sprintf(`
+		SELECT
+			%s AS bucket_start,
+			%s AS bucket,
+			ul.user_id,
+			COALESCE(u.email, '') AS email,
+			COALESCE(SUM(ul.actual_cost), 0) AS actual_cost
+		FROM usage_logs ul
+		LEFT JOIN users u ON u.id = ul.user_id
+		WHERE ul.created_at >= $1
+		  AND ul.created_at < $2
+		  AND ul.user_id = ANY($3)
+		GROUP BY 1, 2, 3, 4
+		ORDER BY bucket_start ASC, actual_cost DESC, ul.user_id ASC
+	`, bucketExpr, bucketLabelExpr)
+
+	seriesRows := make([]usageCostMonitorSeriesRow, 0)
+	rows, err := r.sql.QueryContext(ctx, seriesQuery, startTime, endTime, pq.Array(userIDs))
+	if err != nil {
+		return nil, err
+	}
+	func() {
+		defer func() {
+			if closeErr := rows.Close(); closeErr != nil && err == nil {
+				err = closeErr
+			}
+		}()
+		for rows.Next() {
+			var row usageCostMonitorSeriesRow
+			if err = rows.Scan(&row.BucketStart, &row.Bucket, &row.UserID, &row.Email, &row.ActualCost); err != nil {
+				return
+			}
+			seriesRows = append(seriesRows, row)
+		}
+		if err == nil {
+			err = rows.Err()
+		}
+	}()
+	if err != nil {
+		return nil, err
+	}
+
+	modelQuery := fmt.Sprintf(`
+		SELECT
+			%s AS bucket_start,
+			%s AS bucket,
+			ul.user_id,
+			ul.model,
+			COALESCE(SUM(ul.actual_cost), 0) AS actual_cost
+		FROM usage_logs ul
+		WHERE ul.created_at >= $1
+		  AND ul.created_at < $2
+		  AND ul.user_id = ANY($3)
+		GROUP BY 1, 2, 3, 4
+		ORDER BY bucket_start ASC, actual_cost DESC, ul.user_id ASC, ul.model ASC
+	`, bucketExpr, bucketLabelExpr)
+
+	modelRows := make([]usageCostMonitorModelRow, 0)
+	rows, err = r.sql.QueryContext(ctx, modelQuery, startTime, endTime, pq.Array(userIDs))
+	if err != nil {
+		return nil, err
+	}
+	func() {
+		defer func() {
+			if closeErr := rows.Close(); closeErr != nil && err == nil {
+				err = closeErr
+			}
+		}()
+		for rows.Next() {
+			var row usageCostMonitorModelRow
+			if err = rows.Scan(&row.BucketStart, &row.Bucket, &row.UserID, &row.Model, &row.ActualCost); err != nil {
+				return
+			}
+			modelRows = append(modelRows, row)
+		}
+		if err == nil {
+			err = rows.Err()
+		}
+	}()
+	if err != nil {
+		return nil, err
+	}
+
+	loc := timezone.Location()
+	if userLoc, loadErr := time.LoadLocation(userTZ); loadErr == nil {
+		loc = userLoc
+	}
+
+	modelsByBucketUser := make(map[string][]usagestats.UsageCostMonitorModelBreakdown, len(modelRows))
+	for _, row := range modelRows {
+		keyLabel := row.BucketStart.In(loc).Format("2006-01-02")
+		if bucketGranularity == "hour" {
+			keyLabel = row.BucketStart.In(loc).Format("2006-01-02 15:00")
+		}
+		key := fmt.Sprintf("%s:%d", keyLabel, row.UserID)
+		modelsByBucketUser[key] = append(modelsByBucketUser[key], usagestats.UsageCostMonitorModelBreakdown{
+			Model:      row.Model,
+			ActualCost: row.ActualCost,
+		})
+	}
+
+	seriesMap := make(map[string]usageCostMonitorSeriesRow, len(seriesRows))
+	for _, row := range seriesRows {
+		keyLabel := row.BucketStart.In(loc).Format("2006-01-02")
+		if bucketGranularity == "hour" {
+			keyLabel = row.BucketStart.In(loc).Format("2006-01-02 15:00")
+		}
+		seriesMap[fmt.Sprintf("%s:%d", keyLabel, row.UserID)] = row
+	}
+	for _, ts := range bucketStarts {
+		localBucket := ts.In(loc)
+		bucketLabel := ""
+		if bucketGranularity == "hour" {
+			bucketLabel = localBucket.Format("2006-01-02 15:00")
+		} else {
+			bucketLabel = localBucket.Format("2006-01-02")
+		}
+		for _, userRow := range topUserRows {
+			key := fmt.Sprintf("%s:%d", bucketLabel, userRow.UserID)
+			seriesRow, ok := seriesMap[key]
+			if !ok {
+				result.Series = append(result.Series, usagestats.UsageCostMonitorPoint{
+					Bucket:     bucketLabel,
+					UserID:     userRow.UserID,
+					Email:      userRow.Email,
+					ActualCost: 0,
+					Models:     []usagestats.UsageCostMonitorModelBreakdown{},
+				})
+				continue
+			}
+			result.Series = append(result.Series, usagestats.UsageCostMonitorPoint{
+				Bucket:     bucketLabel,
+				UserID:     seriesRow.UserID,
+				Email:      seriesRow.Email,
+				ActualCost: seriesRow.ActualCost,
+				Models:     modelsByBucketUser[key],
+			})
+		}
+	}
+
+	return result, nil
+}
+
 // UserDashboardStats 用户仪表盘统计
 type UserDashboardStats = usagestats.UserDashboardStats
 

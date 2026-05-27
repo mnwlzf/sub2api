@@ -608,6 +608,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/usage-monitor',
+    name: 'AdminUsageMonitor',
+    component: () => import('@/views/admin/UsageMonitorView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Usage Cost Monitor',
+      titleKey: 'admin.usageMonitor.title',
+      descriptionKey: 'admin.usageMonitor.description'
+    }
+  },
+  {
     path: '/admin/affiliates',
     redirect: '/admin/affiliates/invites'
   },

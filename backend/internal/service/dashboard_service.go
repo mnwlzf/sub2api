@@ -365,6 +365,14 @@ func (s *DashboardService) GetUserSpendingRanking(ctx context.Context, startTime
 	return ranking, nil
 }
 
+func (s *DashboardService) GetUsageCostMonitor(ctx context.Context, startTime, endTime time.Time, granularity, timezone string, userID int64, limit int) (*usagestats.UsageCostMonitorData, error) {
+	data, err := s.usageRepo.GetUsageCostMonitor(ctx, startTime, endTime, granularity, timezone, userID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("get usage cost monitor: %w", err)
+	}
+	return data, nil
+}
+
 func (s *DashboardService) GetUserBreakdownStats(ctx context.Context, startTime, endTime time.Time, dim usagestats.UserBreakdownDimension, limit int) ([]usagestats.UserBreakdownItem, error) {
 	stats, err := s.usageRepo.GetUserBreakdownStats(ctx, startTime, endTime, dim, limit)
 	if err != nil {

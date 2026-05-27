@@ -350,6 +350,7 @@ export default {
     announcements: '公告',
     apiKeys: 'API 密钥',
     usage: '使用记录',
+    usageMonitor: '用量监控',
     redeem: '兑换',
     affiliate: '邀请返利',
     affiliateManagement: '邀请返利',
@@ -1445,6 +1446,24 @@ export default {
       systemSettings: '系统设置',
       configureSystem: '配置系统设置',
       failedToLoad: '加载仪表盘数据失败'
+    },
+    usageMonitor: {
+      title: '用量监控',
+      description: '按用户与模型查看实际消费趋势',
+      granularity: '粒度',
+      day: '天',
+      week: '周',
+      month: '月',
+      userFilter: '用户筛选',
+      allUsers: '全部用户',
+      topUsers: 'Top 5 用户',
+      models: '模型明细',
+      noData: '暂无监控数据',
+      last24h: '展示最近 24 小时',
+      limitedRange: '最多支持最近 31 天',
+      hoverHint: '悬停查看模型拆分',
+      actualCost: '实际消费',
+      bucket: '时间桶'
     },
 
     backup: {
