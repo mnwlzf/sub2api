@@ -373,13 +373,26 @@ const topUserChartOptions = computed(() => ({
           return `${userLabel}: $${formatCost(point.actual_cost)}`
         },
         afterBody: (items: any[]) => {
-          const first = items[0]
-          if (!first) return []
-          const userId = Number(first.dataset.userId ?? 0)
-          const bucketLabel = usageMonitorData.value?.series.find(item => item.user_id === userId && (granularity.value === 'day' ? formatHourLabel(item.bucket) : item.bucket) === String(first.label || ''))?.bucket || String(first.label || '')
-          const point = pointLookup.value.get(`${userId}:${bucketLabel}`)
-          if (!point?.models?.length) return [t('common.noData')]
-          return ['模型拆分', ...point.models.map(m => `${m.model}: $${formatCost(m.actual_cost)}`)]
+          if (!items.length) return []
+
+          const sections = items.flatMap((item: any, index: number) => {
+            const userId = Number(item.dataset.userId ?? 0)
+            const userLabel = String(item.dataset.label || `User #${userId}`)
+            const bucketLabel = usageMonitorData.value?.series.find(seriesItem =>
+              seriesItem.user_id === userId &&
+              (granularity.value === 'day' ? formatHourLabel(seriesItem.bucket) : seriesItem.bucket) === String(item.label || '')
+            )?.bucket || String(item.label || '')
+            const point = pointLookup.value.get(`${userId}:${bucketLabel}`)
+
+            const header = `用户 ${userLabel}`
+            const details = point?.models?.length
+              ? point.models.map(model => `- ${model.model}: $${formatCost(model.actual_cost)}`)
+              : [`- ${t('common.noData')}`]
+
+            return index === 0 ? [header, ...details] : ['', header, ...details]
+          })
+
+          return sections
         }
       }
     }
