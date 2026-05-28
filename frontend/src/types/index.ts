@@ -1507,6 +1507,8 @@ export interface UsageCostMonitorPoint {
   user_id: number
   email: string
   actual_cost: number
+  requests: number
+  tokens: number
   models: UsageCostMonitorModelBreakdown[]
 }
 
@@ -1514,6 +1516,8 @@ export interface UsageCostMonitorTopUser {
   user_id: number
   email: string
   total_actual_cost: number
+  requests: number
+  tokens: number
 }
 
 export interface UsageCostMonitorData {
@@ -1524,7 +1528,9 @@ export interface UsageCostMonitorData {
 export interface UsageCostMonitorResponse {
   start_date: string
   end_date: string
-  granularity: 'day' | 'week' | 'month'
+  start_time?: string
+  end_time?: string
+  granularity: 'hour' | 'day' | 'week' | 'month'
   data: UsageCostMonitorData
 }
 

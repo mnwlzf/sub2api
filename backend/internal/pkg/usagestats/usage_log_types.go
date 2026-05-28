@@ -167,6 +167,8 @@ type UsageCostMonitorTopUser struct {
 	UserID          int64   `json:"user_id"`
 	Email           string  `json:"email"`
 	TotalActualCost float64 `json:"total_actual_cost"`
+	Requests        int64   `json:"requests"`
+	Tokens          int64   `json:"tokens"`
 }
 
 // UsageCostMonitorModelBreakdown represents one model's cost in a bucket.
@@ -181,6 +183,8 @@ type UsageCostMonitorPoint struct {
 	UserID     int64                           `json:"user_id"`
 	Email      string                          `json:"email"`
 	ActualCost float64                         `json:"actual_cost"`
+	Requests   int64                           `json:"requests"`
+	Tokens     int64                           `json:"tokens"`
 	Models     []UsageCostMonitorModelBreakdown `json:"models"`
 }
 

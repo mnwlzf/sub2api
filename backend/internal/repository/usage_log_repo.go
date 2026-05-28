@@ -2431,6 +2431,8 @@ type usageCostMonitorTopUserRow struct {
 	UserID          int64
 	Email           string
 	TotalActualCost float64
+	Requests        int64
+	Tokens          int64
 }
 
 type usageCostMonitorSeriesRow struct {
@@ -2439,6 +2441,8 @@ type usageCostMonitorSeriesRow struct {
 	UserID     int64
 	Email      string
 	ActualCost float64
+	Requests   int64
+	Tokens     int64
 }
 
 type usageCostMonitorModelRow struct {
@@ -2451,18 +2455,25 @@ type usageCostMonitorModelRow struct {
 
 func (r *usageLogRepository) GetUsageCostMonitor(ctx context.Context, startTime, endTime time.Time, granularity, userTZ string, userID int64, limit int) (result *usagestats.UsageCostMonitorData, err error) {
 	bucketGranularity := "day"
-	if granularity == "hour" {
+	if granularity == "minute" {
+		bucketGranularity = "minute"
+	} else if granularity == "hour" {
 		bucketGranularity = "hour"
 	}
-	if limit <= 0 || limit > 5 {
+	if limit <= 0 {
 		limit = 5
+	}
+	if limit > 10 {
+		limit = 10
 	}
 
 	topQuery := `
 		SELECT
 			ul.user_id,
 			COALESCE(u.email, '') AS email,
-			COALESCE(SUM(ul.actual_cost), 0) AS total_actual_cost
+			COALESCE(SUM(ul.actual_cost), 0) AS total_actual_cost,
+			COUNT(*) AS requests,
+			COALESCE(SUM(ul.input_tokens + ul.output_tokens + ul.cache_creation_tokens + ul.cache_read_tokens), 0) AS tokens
 		FROM usage_logs ul
 		LEFT JOIN users u ON u.id = ul.user_id
 		WHERE ul.created_at >= $1
@@ -2490,7 +2501,7 @@ func (r *usageLogRepository) GetUsageCostMonitor(ctx context.Context, startTime,
 		}()
 		for topRows.Next() {
 			var row usageCostMonitorTopUserRow
-			if err = topRows.Scan(&row.UserID, &row.Email, &row.TotalActualCost); err != nil {
+			if err = topRows.Scan(&row.UserID, &row.Email, &row.TotalActualCost, &row.Requests, &row.Tokens); err != nil {
 				return
 			}
 			topUserRows = append(topUserRows, row)
@@ -2512,6 +2523,8 @@ func (r *usageLogRepository) GetUsageCostMonitor(ctx context.Context, startTime,
 			UserID:          row.UserID,
 			Email:           row.Email,
 			TotalActualCost: row.TotalActualCost,
+			Requests:        row.Requests,
+			Tokens:          row.Tokens,
 		})
 	}
 	if len(topUserRows) == 0 {
@@ -2523,7 +2536,9 @@ func (r *usageLogRepository) GetUsageCostMonitor(ctx context.Context, startTime,
 	bucketStarts := make([]time.Time, 0)
 	for ts := startTime; ts.Before(endTime); {
 		bucketStarts = append(bucketStarts, ts)
-		if bucketGranularity == "hour" {
+		if bucketGranularity == "minute" {
+			ts = ts.Add(time.Minute)
+		} else if bucketGranularity == "hour" {
 			ts = ts.Add(time.Hour)
 		} else {
 			ts = ts.AddDate(0, 0, 1)
@@ -2537,7 +2552,10 @@ func (r *usageLogRepository) GetUsageCostMonitor(ctx context.Context, startTime,
 
 	bucketExpr := "date_trunc('day', ul.created_at)"
 	bucketLabelExpr := "TO_CHAR(date_trunc('day', ul.created_at), 'YYYY-MM-DD')"
-	if bucketGranularity == "hour" {
+	if bucketGranularity == "minute" {
+		bucketExpr = "date_trunc('minute', ul.created_at)"
+		bucketLabelExpr = "TO_CHAR(date_trunc('minute', ul.created_at), 'YYYY-MM-DD HH24:MI')"
+	} else if bucketGranularity == "hour" {
 		bucketExpr = "date_trunc('hour', ul.created_at)"
 		bucketLabelExpr = "TO_CHAR(date_trunc('hour', ul.created_at), 'YYYY-MM-DD HH24:00')"
 	}
@@ -2548,7 +2566,9 @@ func (r *usageLogRepository) GetUsageCostMonitor(ctx context.Context, startTime,
 			%s AS bucket,
 			ul.user_id,
 			COALESCE(u.email, '') AS email,
-			COALESCE(SUM(ul.actual_cost), 0) AS actual_cost
+			COALESCE(SUM(ul.actual_cost), 0) AS actual_cost,
+			COUNT(*) AS requests,
+			COALESCE(SUM(ul.input_tokens + ul.output_tokens + ul.cache_creation_tokens + ul.cache_read_tokens), 0) AS tokens
 		FROM usage_logs ul
 		LEFT JOIN users u ON u.id = ul.user_id
 		WHERE ul.created_at >= $1
@@ -2571,7 +2591,7 @@ func (r *usageLogRepository) GetUsageCostMonitor(ctx context.Context, startTime,
 		}()
 		for rows.Next() {
 			var row usageCostMonitorSeriesRow
-			if err = rows.Scan(&row.BucketStart, &row.Bucket, &row.UserID, &row.Email, &row.ActualCost); err != nil {
+			if err = rows.Scan(&row.BucketStart, &row.Bucket, &row.UserID, &row.Email, &row.ActualCost, &row.Requests, &row.Tokens); err != nil {
 				return
 			}
 			seriesRows = append(seriesRows, row)
@@ -2633,7 +2653,9 @@ func (r *usageLogRepository) GetUsageCostMonitor(ctx context.Context, startTime,
 	modelsByBucketUser := make(map[string][]usagestats.UsageCostMonitorModelBreakdown, len(modelRows))
 	for _, row := range modelRows {
 		keyLabel := row.BucketStart.In(loc).Format("2006-01-02")
-		if bucketGranularity == "hour" {
+		if bucketGranularity == "minute" {
+			keyLabel = row.BucketStart.In(loc).Format("2006-01-02 15:04")
+		} else if bucketGranularity == "hour" {
 			keyLabel = row.BucketStart.In(loc).Format("2006-01-02 15:00")
 		}
 		key := fmt.Sprintf("%s:%d", keyLabel, row.UserID)
@@ -2646,7 +2668,9 @@ func (r *usageLogRepository) GetUsageCostMonitor(ctx context.Context, startTime,
 	seriesMap := make(map[string]usageCostMonitorSeriesRow, len(seriesRows))
 	for _, row := range seriesRows {
 		keyLabel := row.BucketStart.In(loc).Format("2006-01-02")
-		if bucketGranularity == "hour" {
+		if bucketGranularity == "minute" {
+			keyLabel = row.BucketStart.In(loc).Format("2006-01-02 15:04")
+		} else if bucketGranularity == "hour" {
 			keyLabel = row.BucketStart.In(loc).Format("2006-01-02 15:00")
 		}
 		seriesMap[fmt.Sprintf("%s:%d", keyLabel, row.UserID)] = row
@@ -2654,7 +2678,9 @@ func (r *usageLogRepository) GetUsageCostMonitor(ctx context.Context, startTime,
 	for _, ts := range bucketStarts {
 		localBucket := ts.In(loc)
 		bucketLabel := ""
-		if bucketGranularity == "hour" {
+		if bucketGranularity == "minute" {
+			bucketLabel = localBucket.Format("2006-01-02 15:04")
+		} else if bucketGranularity == "hour" {
 			bucketLabel = localBucket.Format("2006-01-02 15:00")
 		} else {
 			bucketLabel = localBucket.Format("2006-01-02")
@@ -2668,6 +2694,8 @@ func (r *usageLogRepository) GetUsageCostMonitor(ctx context.Context, startTime,
 					UserID:     userRow.UserID,
 					Email:      userRow.Email,
 					ActualCost: 0,
+					Requests:   0,
+					Tokens:     0,
 					Models:     []usagestats.UsageCostMonitorModelBreakdown{},
 				})
 				continue
@@ -2677,6 +2705,8 @@ func (r *usageLogRepository) GetUsageCostMonitor(ctx context.Context, startTime,
 				UserID:     seriesRow.UserID,
 				Email:      seriesRow.Email,
 				ActualCost: seriesRow.ActualCost,
+				Requests:   seriesRow.Requests,
+				Tokens:     seriesRow.Tokens,
 				Models:     modelsByBucketUser[key],
 			})
 		}

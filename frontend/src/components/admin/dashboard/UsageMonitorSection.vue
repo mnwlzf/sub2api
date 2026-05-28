@@ -22,7 +22,7 @@
             @focus="showUserDropdown = true"
           />
           <button
-            v-if="selectedUser"
+            v-if="selectedUsers.length"
             type="button"
             class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
             @click="clearUser"
@@ -51,7 +51,20 @@
           </div>
         </div>
 
-        <div v-if="granularity !== 'day'" class="w-full sm:w-auto">
+        <div v-if="selectedUsers.length" class="flex w-full flex-wrap gap-2">
+          <button
+            v-for="user in selectedUsers"
+            :key="user.id"
+            type="button"
+            class="inline-flex max-w-full items-center gap-1.5 rounded-full border border-primary-200 bg-primary-50 px-3 py-1 text-xs font-medium text-primary-700 hover:bg-primary-100 dark:border-primary-700/60 dark:bg-primary-500/10 dark:text-primary-300"
+            @click="removeSelectedUser(user.id)"
+          >
+            <span class="max-w-[220px] truncate">{{ user.email }}</span>
+            <Icon name="x" size="xs" />
+          </button>
+        </div>
+
+        <div v-if="granularity !== 'hour' && granularity !== 'day'" class="w-full sm:w-auto">
           <DateRangePicker :start-date="startDate" :end-date="endDate" @change="handleRangeChange" />
         </div>
 
@@ -60,7 +73,7 @@
         </div>
 
         <div class="ml-auto text-sm text-gray-500 dark:text-gray-400">
-          {{ granularity === 'day' ? t('admin.usageMonitor.last24h') : t('admin.usageMonitor.limitedRange') }}
+          {{ rangeHint }}
         </div>
       </div>
     </div>
@@ -104,7 +117,10 @@
                   </div>
                   <div class="text-xs text-gray-500 dark:text-gray-400">#{{ index + 1 }} / {{ user.user_id }}</div>
                 </div>
-                <div class="text-sm font-semibold text-gray-900 dark:text-white">${{ formatCost(user.total_actual_cost) }}</div>
+                <div class="shrink-0 text-right">
+                  <div class="text-[11px] text-gray-500 dark:text-gray-400">{{ metricLabel }}</div>
+                  <div class="text-sm font-semibold text-gray-900 dark:text-white">{{ formatMetricValue(topUserMetricTotal(user.user_id)) }}</div>
+                </div>
               </div>
             </div>
           </div>
@@ -129,8 +145,7 @@
             class="pointer-events-none absolute z-20 w-[340px] max-w-[calc(100vw-2rem)] rounded-2xl border border-gray-700/70 bg-gray-950/95 px-3 py-2.5 text-xs text-gray-100 shadow-[0_18px_48px_-18px_rgba(15,23,42,0.75)] backdrop-blur-sm"
             :style="{
               left: `${topUserTooltip.x}px`,
-              top: `${topUserTooltip.y}px`,
-              transform: topUserTooltip.placement === 'top' ? 'translateY(-100%)' : 'none'
+              top: `${topUserTooltip.y}px`
             }"
           >
             <div class="text-[11px] font-semibold text-white">
@@ -139,7 +154,7 @@
             <div class="mt-2 flex items-center gap-2">
               <span class="h-2.5 w-2.5 rounded-full" :style="{ backgroundColor: topUserTooltip.color }"></span>
               <span class="min-w-0 flex-1 truncate text-[11px] text-gray-200">{{ topUserTooltip.seriesLabel }}</span>
-              <span class="shrink-0 text-[11px] font-medium text-white">${{ formatCost(topUserTooltip.actualCost) }}</span>
+              <span class="shrink-0 text-[11px] font-medium text-white">{{ formatMetricValue(topUserTooltip.actualCost) }}</span>
             </div>
             <div class="mt-2 border-t border-white/10 pt-2">
               <div class="mb-1 text-[10px] font-medium uppercase tracking-wide text-gray-400">{{ t('admin.usageMonitor.models') }}</div>
@@ -209,21 +224,20 @@ import Select from '@/components/common/Select.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { adminAPI } from '@/api/admin'
 import type { SimpleUser } from '@/api/admin/usage'
-import type { TrendDataPoint, UserSpendingRankingItem, UsageCostMonitorData } from '@/types'
+import type { UserSpendingRankingItem, UsageCostMonitorData } from '@/types'
 
 ChartJS.register(CategoryScale, LinearScale, LineElement, PointElement, Tooltip, Legend, Filler)
 
 const { t } = useI18n()
 
-type Granularity = 'day' | 'week' | 'month'
+type Granularity = 'hour' | 'day' | 'week' | 'month'
 type TrendMetric = 'requests' | 'tokens' | 'actual_cost'
 
 const loading = ref(false)
-const summaryTrend = ref<TrendDataPoint[]>([])
 const usageMonitorData = ref<UsageCostMonitorData | null>(null)
 const rankingItems = ref<UserSpendingRankingItem[]>([])
 
-const granularity = ref<Granularity>('day')
+const granularity = ref<Granularity>('hour')
 const trendMetric = ref<TrendMetric>('actual_cost')
 const startDate = ref('')
 const endDate = ref('')
@@ -232,7 +246,7 @@ const userKeyword = ref('')
 const userResults = ref<SimpleUser[]>([])
 const userLoading = ref(false)
 const showUserDropdown = ref(false)
-const selectedUser = ref<SimpleUser | null>(null)
+const selectedUsers = ref<SimpleUser[]>([])
 const userDropdownRef = ref<HTMLElement | null>(null)
 let userSearchTimer: number | undefined
 const hoveredUserId = ref<number | null>(null)
@@ -250,6 +264,7 @@ const topUserTooltip = ref({
 })
 
 const granularityOptions = computed(() => ([
+  { value: 'hour', label: t('admin.usageMonitor.hour') },
   { value: 'day', label: t('admin.usageMonitor.day') },
   { value: 'week', label: t('admin.usageMonitor.week') },
   { value: 'month', label: t('admin.usageMonitor.month') }
@@ -260,6 +275,12 @@ const trendMetricOptions = computed(() => ([
   { value: 'tokens', label: t('admin.dashboard.tokens') },
   { value: 'requests', label: t('admin.dashboard.requests') }
 ]))
+
+const rangeHint = computed(() => {
+  if (granularity.value === 'hour') return t('admin.usageMonitor.lastHour')
+  if (granularity.value === 'day') return t('admin.usageMonitor.last24h')
+  return t('admin.usageMonitor.limitedRange')
+})
 
 const HOUR_MS = 60 * 60 * 1000
 const DAY_WINDOW_HOURS = 24
@@ -280,11 +301,22 @@ const nextHour = (date = new Date()) => {
   end.setHours(end.getHours() + 1)
   return end
 }
+const nextMinute = (date = new Date()) => {
+  const end = new Date(date)
+  end.setSeconds(0, 0)
+  end.setMinutes(end.getMinutes() + 1)
+  return end
+}
 const formatHourLabel = (bucket: string, offsetHours = 0) => {
   const parsed = parseBucketDate(bucket)
   if (!parsed) return bucket.includes(' ') ? bucket.slice(11, 16) : bucket
   const displayTime = offsetHours ? addHours(parsed, offsetHours) : parsed
   return `${String(displayTime.getHours()).padStart(2, '0')}:00`
+}
+const formatMinuteLabel = (bucket: string) => {
+  const parsed = parseBucketDate(bucket)
+  if (!parsed) return bucket.includes(' ') ? bucket.slice(11, 16) : bucket
+  return `${String(parsed.getHours()).padStart(2, '0')}:${String(parsed.getMinutes()).padStart(2, '0')}`
 }
 const formatHourTooltipLabel = (bucket: string, offsetHours = 0) => {
   const parsed = parseBucketDate(bucket)
@@ -292,12 +324,29 @@ const formatHourTooltipLabel = (bucket: string, offsetHours = 0) => {
   const displayTime = offsetHours ? addHours(parsed, offsetHours) : parsed
   return `${formatDate(displayTime)} ${String(displayTime.getHours()).padStart(2, '0')}:00`
 }
+const formatMinuteTooltipLabel = (bucket: string) => {
+  const parsed = parseBucketDate(bucket)
+  if (!parsed) return bucket
+  return `${formatDate(parsed)} ${String(parsed.getHours()).padStart(2, '0')}:${String(parsed.getMinutes()).padStart(2, '0')}`
+}
+const currentHourWindow = () => {
+  const end = nextMinute()
+  return {
+    start: new Date(end.getTime() - HOUR_MS),
+    end
+  }
+}
 const currentDayWindow = () => {
   const end = nextHour()
   return {
     start: new Date(end.getTime() - DAY_WINDOW_HOURS * HOUR_MS),
     end
   }
+}
+const initHourRange = () => {
+  const { start, end } = currentHourWindow()
+  startDate.value = formatDate(start)
+  endDate.value = formatDate(end)
 }
 
 const initRange = () => {
@@ -330,6 +379,7 @@ const formatCost = (value: number) => {
 const formatTopUserTooltipTitle = (bucket: string) => {
   const parsed = parseBucketDate(bucket)
   if (!parsed) return `时间 ${bucket}`
+  if (granularity.value === 'hour') return `时间 ${formatMinuteTooltipLabel(bucket)}`
   if (granularity.value === 'day') return `时间 ${formatHourTooltipLabel(bucket, 1)}`
   return `时间 ${formatDate(parsed)}`
 }
@@ -354,15 +404,17 @@ const updateTopUserTooltip = (chartTooltip: any, chartWidth: number, chartHeight
   const caretY = Number(chartTooltip.caretY ?? 0)
   const placeLeft = caretX + width + 24 > chartWidth
   const placeTop = caretY + height + 24 > chartHeight
+  const x = placeLeft ? caretX - width - 16 : caretX + 16
+  const y = placeTop ? caretY - height - 16 : caretY + 16
 
   topUserTooltip.value = {
     visible: true,
-    x: placeLeft ? Math.max(12, caretX - width - 16) : caretX + 16,
-    y: placeTop ? Math.max(12, caretY - 16) : caretY + 16,
+    x: Math.min(Math.max(12, x), Math.max(12, chartWidth - width - 12)),
+    y: Math.min(Math.max(12, y), Math.max(12, chartHeight - height - 12)),
     placement: placeTop ? 'top' : 'bottom',
     title: formatTopUserTooltipTitle(bucket),
     seriesLabel: String(point?.dataset?.label || ''),
-    actualCost: record?.actual_cost ?? Number(point?.raw ?? 0),
+    actualCost: record?.metric_value ?? Number(point?.raw ?? 0),
     color: String(point?.dataset?.borderColor || '#2563eb'),
     models,
     remainingModels,
@@ -370,22 +422,27 @@ const updateTopUserTooltip = (chartTooltip: any, chartWidth: number, chartHeight
 }
 
 const summaryTrendChartData = computed(() => {
-  if (!summaryTrend.value.length) return null
-  const dayWindow = granularity.value === 'day' ? currentDayWindow() : null
-  const trendItems = dayWindow
-    ? summaryTrend.value.filter(item => {
-      const bucketTime = parseBucketDate(item.date)
-      return bucketTime && bucketTime >= dayWindow.start && bucketTime < dayWindow.end
-    })
-    : summaryTrend.value
-  if (!trendItems.length) return null
+  if (!usageMonitorData.value?.series.length) return null
+  const buckets = topUserBucketKeys.value
+  if (!buckets.length) return null
 
-  const labels = trendItems.map(item => granularity.value === 'day' ? formatHourLabel(item.date, 1) : item.date)
-  const data = trendItems.map(item => {
-    if (trendMetric.value === 'requests') return item.requests
-    if (trendMetric.value === 'tokens') return item.total_tokens
-    return item.actual_cost
-  })
+  const totalsByBucket = new Map<string, number>()
+  for (const item of usageMonitorData.value.series) {
+    const value = trendMetric.value === 'requests'
+      ? item.requests
+      : trendMetric.value === 'tokens'
+        ? item.tokens
+        : item.actual_cost
+    totalsByBucket.set(item.bucket, (totalsByBucket.get(item.bucket) || 0) + value)
+  }
+  const data = buckets.map(bucket => totalsByBucket.get(bucket) || 0)
+  if (!data.some(value => value > 0)) return null
+
+  const labels = buckets.map(bucket => granularity.value === 'hour'
+    ? formatMinuteLabel(bucket)
+    : granularity.value === 'day'
+      ? formatHourLabel(bucket, 1)
+      : bucket)
   return {
     labels,
     datasets: [
@@ -404,23 +461,64 @@ const summaryTrendChartData = computed(() => {
   }
 })
 
+const metricValueFromPoint = (point: UsageCostMonitorData['series'][number]) => {
+  if (trendMetric.value === 'requests') return point.requests
+  if (trendMetric.value === 'tokens') return point.tokens
+  return point.actual_cost
+}
+
+const formatMetricValue = (value: number) => {
+  if (trendMetric.value === 'requests') return formatNumber(value)
+  if (trendMetric.value === 'tokens') return formatTokens(value)
+  return `$${formatCost(value)}`
+}
+
+const metricLabel = computed(() => (
+  trendMetric.value === 'requests'
+    ? t('admin.dashboard.requests')
+    : trendMetric.value === 'tokens'
+      ? t('admin.dashboard.tokens')
+      : t('admin.usageMonitor.actualCost')
+))
+
+const topUserMetricTotal = (userId: number) => {
+  if (trendMetric.value === 'actual_cost') {
+    return usageMonitorData.value?.top_users.find(user => user.user_id === userId)?.total_actual_cost || 0
+  }
+  return (usageMonitorData.value?.series || []).reduce((total, point) => (
+    point.user_id === userId ? total + metricValueFromPoint(point) : total
+  ), 0)
+}
+
 const pointLookup = computed(() => {
-  const map = new Map<string, { actual_cost: number; models: { model: string; actual_cost: number }[] }>()
+  const map = new Map<string, { actual_cost: number; requests: number; tokens: number; metric_value: number; models: { model: string; actual_cost: number }[] }>()
   for (const item of usageMonitorData.value?.series ?? []) {
-    map.set(`${item.user_id}:${item.bucket}`, { actual_cost: item.actual_cost, models: item.models })
+    map.set(`${item.user_id}:${item.bucket}`, {
+      actual_cost: item.actual_cost,
+      requests: item.requests,
+      tokens: item.tokens,
+      metric_value: metricValueFromPoint(item),
+      models: item.models
+    })
   }
   return map
 })
 
 const topUserChartData = computed(() => {
   if (!usageMonitorData.value?.series.length) return null
-  const buckets = sortBuckets(Array.from(new Set(usageMonitorData.value.series.map(item => item.bucket))))
-  const palette = ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed']
+  const buckets = topUserBucketKeys.value
+  const palette = ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#be123c', '#4d7c0f', '#9333ea', '#0f766e']
   return {
-    labels: buckets.map(label => granularity.value === 'day' ? formatHourLabel(label, 1) : label),
+    labels: buckets.map(label => granularity.value === 'hour'
+      ? formatMinuteLabel(label)
+      : granularity.value === 'day'
+        ? formatHourLabel(label, 1)
+        : label),
     datasets: usageMonitorData.value.top_users.map((user, index) => {
       const userMap = new Map(
-        usageMonitorData.value!.series.filter(item => item.user_id === user.user_id).map(item => [item.bucket, item.actual_cost])
+        usageMonitorData.value!.series
+          .filter(item => item.user_id === user.user_id)
+          .map(item => [item.bucket, metricValueFromPoint(item)])
       )
       return {
         label: user.email || `User #${user.user_id}`,
@@ -443,14 +541,47 @@ const topUserBucketKeys = computed(() => {
   return sortBuckets(Array.from(new Set(usageMonitorData.value.series.map(item => item.bucket))))
 })
 
-const formatSummaryTrendLabel = (bucket: string, granularityValue: Granularity) => {
-  if (granularityValue === 'day') return formatHourLabel(bucket, 1)
-  const parsed = parseBucketDate(bucket)
-  if (!parsed) return bucket
-  return `${String(parsed.getMonth() + 1).padStart(2, '0')}/${String(parsed.getDate()).padStart(2, '0')}`
+const mergeUsageMonitorResponses = (responses: UsageCostMonitorData[]) => {
+  const topUsers = new Map<number, { user_id: number; email: string; total_actual_cost: number; requests: number; tokens: number }>()
+  const series: UsageCostMonitorData['series'] = []
+
+  for (const data of responses) {
+    for (const user of data.top_users || []) {
+      const existing = topUsers.get(user.user_id)
+      if (!existing) {
+        topUsers.set(user.user_id, { ...user })
+      } else {
+        existing.total_actual_cost += user.total_actual_cost
+        existing.requests += user.requests
+        existing.tokens += user.tokens
+      }
+    }
+    series.push(...(data.series || []))
+  }
+
+  return {
+    top_users: Array.from(topUsers.values()).sort((a, b) => {
+      const left = trendMetric.value === 'requests' ? a.requests : trendMetric.value === 'tokens' ? a.tokens : a.total_actual_cost
+      const right = trendMetric.value === 'requests' ? b.requests : trendMetric.value === 'tokens' ? b.tokens : b.total_actual_cost
+      return right - left
+    }),
+    series,
+  }
+}
+
+const buildRankingFromMonitorData = (data: UsageCostMonitorData | null): UserSpendingRankingItem[] => {
+  if (!data?.top_users?.length) return []
+  return data.top_users.map(user => ({
+    user_id: user.user_id,
+    email: user.email,
+    actual_cost: user.total_actual_cost,
+    requests: user.requests,
+    tokens: user.tokens,
+  }))
 }
 
 const formatSummaryTooltipTitle = (bucket: string, granularityValue: Granularity) => {
+  if (granularityValue === 'hour') return `时间 ${formatMinuteTooltipLabel(bucket)}`
   if (granularityValue === 'day') return `时间 ${formatHourTooltipLabel(bucket, 1)}`
   const parsed = parseBucketDate(bucket)
   if (!parsed) return `时间 ${bucket}`
@@ -500,13 +631,11 @@ const summaryTrendChartOptions = computed(() => ({
       xAlign: 'right' as const,
       callbacks: {
         title: (items: any[]) => {
-          const bucket = String(items[0]?.label || '')
+          const bucket = topUserBucketKeys.value[items[0]?.dataIndex ?? -1] || String(items[0]?.label || '')
           return bucket ? formatSummaryTooltipTitle(bucket, granularity.value) : ''
         },
         label: (ctx: any) => {
-          if (trendMetric.value === 'requests') return `${ctx.dataset.label}: ${formatNumber(Number(ctx.raw ?? 0))}`
-          if (trendMetric.value === 'tokens') return `${ctx.dataset.label}: ${formatTokens(Number(ctx.raw ?? 0))}`
-          return `${ctx.dataset.label}: $${formatCost(Number(ctx.raw ?? 0))}`
+          return `${ctx.dataset.label}: ${formatMetricValue(Number(ctx.raw ?? 0))}`
         }
       }
     }
@@ -519,18 +648,15 @@ const summaryTrendChartOptions = computed(() => ({
         maxRotation: 0,
         minRotation: 0,
         maxTicksLimit: granularity.value === 'day' ? 5 : 8,
-        callback: (value: string | number) => {
-          const bucket = String(value)
-          return formatSummaryTrendLabel(bucket, granularity.value)
+        callback: function (this: any, value: string | number) {
+          return this.getLabelForValue(Number(value))
         }
       }
     },
     y: {
       ticks: {
         callback: (value: string | number) => {
-          if (trendMetric.value === 'requests') return String(value)
-          if (trendMetric.value === 'tokens') return formatTokens(Number(value))
-          return `$${value}`
+          return formatMetricValue(Number(value))
         }
       }
     }
@@ -559,44 +685,48 @@ const topUserChartOptions = computed(() => ({
         maxRotation: 0,
         minRotation: 0,
         maxTicksLimit: granularity.value === 'day' ? 5 : 8,
-        callback: (value: string | number) => {
-          const bucket = String(value)
-          return granularity.value === 'day'
-            ? formatSummaryTrendLabel(bucket, granularity.value)
-            : bucket
+        callback: function (this: any, value: string | number) {
+          return this.getLabelForValue(Number(value))
         }
       }
     },
-    y: { ticks: { callback: (value: string | number) => `$${value}` } }
+    y: { ticks: { callback: (value: string | number) => formatMetricValue(Number(value)) } }
   }
 }))
 
 const loadData = async () => {
   loading.value = true
   try {
-    const [trendRes, rankingRes, monitorRes] = await Promise.all([
-      adminAPI.dashboard.getUsageTrend({
-        start_date: startDate.value,
-        end_date: endDate.value,
-        granularity: granularity.value === 'day' ? 'hour' : 'day',
-        user_id: selectedUser.value?.id
-      }),
+    const monitorParams = {
+      granularity: granularity.value,
+      start_date: startDate.value,
+      end_date: endDate.value,
+      timezone: userTimezone(),
+      limit: selectedUsers.value.length ? Math.max(selectedUsers.value.length, 1) : 8,
+    }
+    const monitorPromise = selectedUsers.value.length
+      ? Promise.all(selectedUsers.value.map(user =>
+          adminAPI.dashboard.getUsageCostMonitor({
+            ...monitorParams,
+            user_id: user.id,
+            limit: 1,
+          })
+        )).then(responses => ({ data: mergeUsageMonitorResponses(responses.map(response => response.data)) }))
+      : adminAPI.dashboard.getUsageCostMonitor(monitorParams)
+
+    const [rankingRes, monitorRes] = await Promise.all([
       adminAPI.dashboard.getUserSpendingRanking({
         start_date: startDate.value,
         end_date: endDate.value,
         limit: 10
       }),
-      adminAPI.dashboard.getUsageCostMonitor({
-        granularity: granularity.value,
-        start_date: startDate.value,
-        end_date: endDate.value,
-        user_id: selectedUser.value?.id,
-        timezone: userTimezone()
-      })
+      monitorPromise
     ])
-    summaryTrend.value = trendRes.trend
-    rankingItems.value = rankingRes.ranking
     usageMonitorData.value = monitorRes.data
+    rankingItems.value = buildRankingFromMonitorData(monitorRes.data)
+    if (!rankingItems.value.length) {
+      rankingItems.value = rankingRes.ranking
+    }
   } finally {
     loading.value = false
   }
@@ -609,10 +739,6 @@ const debounceSearchUsers = () => {
 
 const searchUsers = async () => {
   const keyword = userKeyword.value.trim()
-  if (selectedUser.value && keyword !== selectedUser.value.email) {
-    selectedUser.value = null
-    await loadData()
-  }
   if (!keyword) {
     userResults.value = []
     return
@@ -626,14 +752,22 @@ const searchUsers = async () => {
 }
 
 const selectUser = (user: SimpleUser) => {
-  selectedUser.value = user
-  userKeyword.value = user.email
+  if (!selectedUsers.value.some(item => item.id === user.id)) {
+    selectedUsers.value = [...selectedUsers.value, user].slice(0, 10)
+  }
+  userKeyword.value = ''
+  userResults.value = []
   showUserDropdown.value = false
   loadData()
 }
 
+const removeSelectedUser = (userID: number) => {
+  selectedUsers.value = selectedUsers.value.filter(user => user.id !== userID)
+  loadData()
+}
+
 const clearUser = () => {
-  selectedUser.value = null
+  selectedUsers.value = []
   userKeyword.value = ''
   userResults.value = []
   showUserDropdown.value = false
@@ -641,7 +775,9 @@ const clearUser = () => {
 }
 
 const handleGranularityChange = async () => {
-  if (granularity.value === 'day') {
+  if (granularity.value === 'hour') {
+    initHourRange()
+  } else if (granularity.value === 'day') {
     initDayRange()
   } else {
     initRange()
@@ -663,7 +799,7 @@ const handleClickOutside = (event: MouseEvent) => {
 }
 
 onMounted(async () => {
-  initDayRange()
+  initHourRange()
   await loadData()
   document.addEventListener('click', handleClickOutside)
 })

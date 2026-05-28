@@ -70,7 +70,7 @@ func clampUsageMonitorRange(c *gin.Context) (time.Time, time.Time, string, strin
 	userTZ := c.Query("timezone")
 	now := timezone.NowInUserLocation(userTZ)
 	granularity := strings.TrimSpace(c.DefaultQuery("granularity", "week"))
-	if granularity != "day" && granularity != "week" && granularity != "month" {
+	if granularity != "hour" && granularity != "day" && granularity != "week" && granularity != "month" {
 		granularity = "week"
 	}
 
@@ -78,6 +78,9 @@ func clampUsageMonitorRange(c *gin.Context) (time.Time, time.Time, string, strin
 	start := timezone.StartOfDayInUserLocation(now.AddDate(0, 0, -30), userTZ)
 
 	switch granularity {
+	case "hour":
+		end = now.Truncate(time.Minute).Add(time.Minute)
+		start = end.Add(-time.Hour)
 	case "day":
 		end = time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), 0, 0, 0, now.Location()).Add(time.Hour)
 		start = end.Add(-24 * time.Hour)
@@ -597,12 +600,27 @@ func (h *DashboardHandler) GetUsageCostMonitor(c *gin.Context) {
 		userID = id
 	}
 
+	limit := 5
+	if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed <= 0 {
+			response.BadRequest(c, "Invalid limit")
+			return
+		}
+		limit = parsed
+	}
+	if limit > 10 {
+		limit = 10
+	}
+
 	repoGranularity := "day"
-	if granularity == "day" {
+	if granularity == "hour" {
+		repoGranularity = "minute"
+	} else if granularity == "day" {
 		repoGranularity = "hour"
 	}
 
-	data, hit, err := h.getUsageMonitorCached(c.Request.Context(), startTime, endTime, repoGranularity, userTZ, userID, 5)
+	data, hit, err := h.getUsageMonitorCached(c.Request.Context(), startTime, endTime, repoGranularity, userTZ, userID, limit)
 	if err != nil {
 		response.Error(c, 500, "Failed to get usage monitor data")
 		return

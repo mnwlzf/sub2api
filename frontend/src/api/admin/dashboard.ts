@@ -307,10 +307,11 @@ export interface BatchApiKeysUsageResponse {
 }
 
 export interface UsageCostMonitorParams {
-  granularity?: 'day' | 'week' | 'month'
+  granularity?: 'hour' | 'day' | 'week' | 'month'
   start_date?: string
   end_date?: string
   user_id?: number
+  limit?: number
   timezone?: string
 }
 
