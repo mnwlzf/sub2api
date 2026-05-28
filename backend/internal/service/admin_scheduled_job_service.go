@@ -180,7 +180,7 @@ func (s *AdminScheduledJobService) executeRun(ctx context.Context, job *AdminSch
 
 func validateAdminScheduledJob(jobType, cronExpr, payloadJSON string, retentionLimit int) error {
 	switch strings.TrimSpace(jobType) {
-	case AdminScheduledJobTypeBackup, AdminScheduledJobTypeDataManagementFull, AdminScheduledJobTypeChannelMonitorMaint, AdminScheduledJobTypeSyncCodexFreeGroups, AdminScheduledJobTypeCleanupErrorAccounts:
+	case AdminScheduledJobTypeBackup, AdminScheduledJobTypeDataManagementFull, AdminScheduledJobTypeChannelMonitorMaint, AdminScheduledJobTypeSyncCodexFreeGroups, AdminScheduledJobTypeCleanupErrorAccounts, AdminScheduledJobTypeUpdateOpenAIOAuthModelMapping:
 	default:
 		return fmt.Errorf("unsupported job type")
 	}
@@ -204,6 +204,26 @@ func validateAdminScheduledJob(jobType, cronExpr, payloadJSON string, retentionL
 
 func validateAdminScheduledJobPayload(jobType, payloadJSON string) error {
 	switch jobType {
+	case AdminScheduledJobTypeUpdateOpenAIOAuthModelMapping:
+		var payload adminScheduledOpenAIOAuthModelMappingPayload
+		if err := json.Unmarshal([]byte(payloadJSON), &payload); err != nil {
+			return fmt.Errorf("invalid payload_json: %w", err)
+		}
+		if len(payload.ModelMapping) == 0 {
+			return fmt.Errorf("model_mapping is required")
+		}
+		seen := make(map[string]struct{}, len(payload.ModelMapping))
+		for source, target := range payload.ModelMapping {
+			source = strings.TrimSpace(source)
+			target = strings.TrimSpace(target)
+			if source == "" || target == "" {
+				return fmt.Errorf("model_mapping contains empty model")
+			}
+			if _, exists := seen[source]; exists {
+				return fmt.Errorf("model_mapping contains duplicate source model")
+			}
+			seen[source] = struct{}{}
+		}
 	case AdminScheduledJobTypeSyncCodexFreeGroups:
 		var payload adminScheduledSyncCodexFreeGroupsPayload
 		if err := json.Unmarshal([]byte(payloadJSON), &payload); err != nil {

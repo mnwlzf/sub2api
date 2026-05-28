@@ -4190,8 +4190,15 @@ export default {
       noTargetGroups: '暂无可选目标分组',
       sourceGroupRequired: '请选择源分组',
       targetGroupsRequired: '请至少选择一个目标分组',
+      modelMapping: 'OpenAI OAuth 模型映射',
+      modelMappingHint: '将用户请求模型映射为实际调用模型；执行后会更新所有 OpenAI OAuth 账号并刷新调度缓存。',
+      addMapping: '添加映射',
+      requestModel: '用户请求模型',
+      upstreamModel: '实际调用模型',
+      modelMappingRequired: '请至少填写一条模型映射',
       typeAsName: '任务类型即任务名称，同一类型仅允许存在一个任务。',
       syncResult: '已同步 {accounts} 个账号，从分组 {sourceGroup} 到 {targetGroups} 个分组',
+      openAIModelMappingResult: '已更新 {accounts} 个 OpenAI OAuth 账号的模型映射',
       columns: {
         name: '任务名称',
         type: '任务类型',
@@ -4205,7 +4212,8 @@ export default {
         data_management_full_backup: '数据管理全量备份',
         channel_monitor_maintenance: '渠道监控维护',
         sync_codex_free_group_accounts: '同步codex-free分组账号',
-        cleanup_error_accounts: '清理错误状态账号'
+        cleanup_error_accounts: '清理错误状态账号',
+        update_openai_oauth_model_mapping: '更新 OpenAI OAuth 模型映射'
       }
     },
 

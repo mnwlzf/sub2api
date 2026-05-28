@@ -1955,6 +1955,10 @@ export interface AdminScheduledSyncCodexFreeGroupsPayload {
   target_group_ids: number[]
 }
 
+export interface AdminScheduledOpenAIOAuthModelMappingPayload {
+  model_mapping: Record<string, string>
+}
+
 // Payment types
 export type { SubscriptionPlan, PaymentOrder, CheckoutInfoResponse } from './payment'
 

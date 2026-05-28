@@ -133,6 +133,40 @@
                 </div>
               </div>
             </template>
+            <template v-else-if="form.job_type === 'update_openai_oauth_model_mapping'">
+              <div class="space-y-3">
+                <div class="flex items-center justify-between gap-3">
+                  <div>
+                    <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.scheduledJobs.modelMapping') }}</label>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.scheduledJobs.modelMappingHint') }}</p>
+                  </div>
+                  <button type="button" class="btn btn-secondary btn-xs" @click="addOpenAIModelMappingRow">
+                    {{ t('admin.scheduledJobs.addMapping') }}
+                  </button>
+                </div>
+                <div class="space-y-2">
+                  <div
+                    v-for="(row, index) in openAIModelMappingRows"
+                    :key="row.id"
+                    class="grid grid-cols-1 gap-2 rounded-xl border border-gray-200 p-3 dark:border-dark-600 md:grid-cols-[1fr_1fr_auto]"
+                  >
+                    <div>
+                      <label class="mb-1 block text-[11px] font-medium text-gray-500 dark:text-gray-400">{{ t('admin.scheduledJobs.requestModel') }}</label>
+                      <Select v-model="row.source" :options="openAIModelCandidateOptions" />
+                    </div>
+                    <div>
+                      <label class="mb-1 block text-[11px] font-medium text-gray-500 dark:text-gray-400">{{ t('admin.scheduledJobs.upstreamModel') }}</label>
+                      <Select v-model="row.target" :options="openAIModelCandidateOptions" />
+                    </div>
+                    <div class="flex items-end">
+                      <button type="button" class="btn btn-danger btn-xs w-full md:w-auto" @click="removeOpenAIModelMappingRow(index)">
+                        {{ t('common.delete') }}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </template>
             <template v-else>
               <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.scheduledJobs.payloadJson') }}</label>
               <textarea v-model="form.payload_json" rows="8" class="input w-full font-mono text-xs"></textarea>
@@ -174,9 +208,10 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
 import BaseDialog from '@/components/common/BaseDialog.vue'
+import Select from '@/components/common/Select.vue'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import { useAppStore } from '@/stores/app'
-import type { AdminGroup, AdminScheduledJob, AdminScheduledJobRun, AdminScheduledSyncCodexFreeGroupsPayload, CreateAdminScheduledJobRequest, UpdateAdminScheduledJobRequest } from '@/types'
+import type { AdminGroup, AdminScheduledJob, AdminScheduledJobRun, AdminScheduledOpenAIOAuthModelMappingPayload, AdminScheduledSyncCodexFreeGroupsPayload, CreateAdminScheduledJobRequest, UpdateAdminScheduledJobRequest } from '@/types'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -198,7 +233,23 @@ const jobTypeOptions = [
   { value: 'channel_monitor_maintenance', labelKey: 'admin.scheduledJobs.types.channel_monitor_maintenance' },
   { value: 'sync_codex_free_group_accounts', labelKey: 'admin.scheduledJobs.types.sync_codex_free_group_accounts' },
   { value: 'cleanup_error_accounts', labelKey: 'admin.scheduledJobs.types.cleanup_error_accounts' },
+  { value: 'update_openai_oauth_model_mapping', labelKey: 'admin.scheduledJobs.types.update_openai_oauth_model_mapping' },
 ] as const
+
+type OpenAIModelMappingRow = {
+  id: number
+  source: string
+  target: string
+}
+
+const openAIModelCandidates = [
+  'gpt-5.5',
+  'gpt-5.4',
+  'gpt-5.4-mini',
+  'gpt-5.3-codex',
+  'gpt-5.2',
+]
+const openAIModelCandidateOptions = openAIModelCandidates.map((model) => ({ value: model, label: model }))
 
 const form = reactive<CreateAdminScheduledJobRequest>({
   name: '',
@@ -213,6 +264,8 @@ const syncCodexFreeForm = reactive<AdminScheduledSyncCodexFreeGroupsPayload>({
   source_group_id: 0,
   target_group_ids: [],
 })
+const openAIModelMappingRows = ref<OpenAIModelMappingRow[]>([])
+let openAIModelMappingRowID = 1
 
 const targetGroupOptions = computed(() =>
   availableGroups.value.filter((group) => group.id !== syncCodexFreeForm.source_group_id)
@@ -244,6 +297,7 @@ function resetForm() {
   form.retention_limit = 100
   syncCodexFreeForm.source_group_id = 0
   syncCodexFreeForm.target_group_ids = []
+  openAIModelMappingRows.value = defaultOpenAIModelMappingRows()
 }
 
 function openCreate() {
@@ -271,9 +325,15 @@ function openEdit(job: AdminScheduledJob) {
       syncCodexFreeForm.source_group_id = 0
       syncCodexFreeForm.target_group_ids = []
     }
+    openAIModelMappingRows.value = defaultOpenAIModelMappingRows()
+  } else if (job.job_type === 'update_openai_oauth_model_mapping') {
+    syncCodexFreeForm.source_group_id = 0
+    syncCodexFreeForm.target_group_ids = []
+    openAIModelMappingRows.value = parseOpenAIModelMappingRows(job.payload_json)
   } else {
     syncCodexFreeForm.source_group_id = 0
     syncCodexFreeForm.target_group_ids = []
+    openAIModelMappingRows.value = defaultOpenAIModelMappingRows()
   }
   showEditor.value = true
 }
@@ -317,6 +377,49 @@ function toggleTargetGroup(groupID: number) {
   syncCodexFreeForm.target_group_ids = [...syncCodexFreeForm.target_group_ids, groupID]
 }
 
+function createOpenAIModelMappingRow(source = '', target = ''): OpenAIModelMappingRow {
+  return { id: openAIModelMappingRowID++, source, target }
+}
+
+function defaultOpenAIModelMappingRows() {
+  return [
+    createOpenAIModelMappingRow('gpt-5.4', 'gpt-5.4-mini'),
+    createOpenAIModelMappingRow('gpt-5.5', 'gpt-5.5'),
+    createOpenAIModelMappingRow('gpt-5.4-mini', 'gpt-5.4-mini'),
+    createOpenAIModelMappingRow('gpt-5.3-codex', 'gpt-5.4-mini'),
+  ]
+}
+
+function parseOpenAIModelMappingRows(payloadJSON: string) {
+  try {
+    const payload = JSON.parse(payloadJSON || '{}') as Partial<AdminScheduledOpenAIOAuthModelMappingPayload>
+    const entries = Object.entries(payload.model_mapping || {})
+    if (!entries.length) return defaultOpenAIModelMappingRows()
+    return entries.map(([source, target]) => createOpenAIModelMappingRow(source, String(target || '')))
+  } catch {
+    return defaultOpenAIModelMappingRows()
+  }
+}
+
+function addOpenAIModelMappingRow() {
+  openAIModelMappingRows.value = [...openAIModelMappingRows.value, createOpenAIModelMappingRow()]
+}
+
+function removeOpenAIModelMappingRow(index: number) {
+  openAIModelMappingRows.value = openAIModelMappingRows.value.filter((_, i) => i !== index)
+}
+
+function buildOpenAIModelMappingPayload() {
+  const mapping: Record<string, string> = {}
+  for (const row of openAIModelMappingRows.value) {
+    const source = row.source.trim()
+    const target = row.target.trim()
+    if (!source || !target) continue
+    mapping[source] = target
+  }
+  return { model_mapping: mapping }
+}
+
 async function submitForm() {
   saving.value = true
   try {
@@ -330,13 +433,20 @@ async function submitForm() {
         appStore.showError(t('admin.scheduledJobs.targetGroupsRequired'))
         return
       }
+    } else if (form.job_type === 'update_openai_oauth_model_mapping') {
+      if (Object.keys(buildOpenAIModelMappingPayload().model_mapping).length === 0) {
+        appStore.showError(t('admin.scheduledJobs.modelMappingRequired'))
+        return
+      }
     }
     const payloadJSON = form.job_type === 'sync_codex_free_group_accounts'
       ? JSON.stringify({
           source_group_id: syncCodexFreeForm.source_group_id,
           target_group_ids: syncCodexFreeForm.target_group_ids,
         })
-      : form.payload_json
+      : form.job_type === 'update_openai_oauth_model_mapping'
+        ? JSON.stringify(buildOpenAIModelMappingPayload())
+        : form.payload_json
 
     if (editingId.value) {
       const payload: UpdateAdminScheduledJobRequest = {
@@ -418,6 +528,10 @@ function formatJobMessage(message: string) {
       sourceGroup: syncMatch[2],
       targetGroups: syncMatch[3],
     })
+  }
+  const mappingMatch = message.match(/^updated\s+(\d+)\s+openai oauth accounts?$/i)
+  if (mappingMatch) {
+    return t('admin.scheduledJobs.openAIModelMappingResult', { accounts: mappingMatch[1] })
   }
   return message
 }

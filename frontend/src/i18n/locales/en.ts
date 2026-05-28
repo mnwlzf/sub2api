@@ -4096,8 +4096,15 @@ export default {
       noTargetGroups: 'No target groups available',
       sourceGroupRequired: 'Please select a source group',
       targetGroupsRequired: 'Please select at least one target group',
+      modelMapping: 'OpenAI OAuth Model Mapping',
+      modelMappingHint: 'Map user requested models to upstream models. After running, all OpenAI OAuth accounts are updated and scheduler cache is refreshed.',
+      addMapping: 'Add Mapping',
+      requestModel: 'Requested Model',
+      upstreamModel: 'Upstream Model',
+      modelMappingRequired: 'Please enter at least one model mapping',
       typeAsName: 'Task type is used as the task name, and only one job is allowed per type.',
       syncResult: 'Synced {accounts} accounts from group {sourceGroup} to {targetGroups} groups',
+      openAIModelMappingResult: 'Updated model mapping for {accounts} OpenAI OAuth accounts',
       columns: {
         name: 'Name',
         type: 'Type',
@@ -4111,7 +4118,8 @@ export default {
         data_management_full_backup: 'Data Management Full Backup',
         channel_monitor_maintenance: 'Channel Monitor Maintenance',
         sync_codex_free_group_accounts: 'Sync Codex-Free Group Accounts',
-        cleanup_error_accounts: 'Cleanup Error Accounts'
+        cleanup_error_accounts: 'Cleanup Error Accounts',
+        update_openai_oauth_model_mapping: 'Update OpenAI OAuth Model Mapping'
       }
     },
 

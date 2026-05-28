@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
@@ -31,6 +32,14 @@ type adminScheduledDataManagementPayload struct {
 type adminScheduledSyncCodexFreeGroupsPayload struct {
 	SourceGroupID  int64   `json:"source_group_id"`
 	TargetGroupIDs []int64 `json:"target_group_ids"`
+}
+
+type adminScheduledOpenAIOAuthModelMappingPayload struct {
+	ModelMapping map[string]string `json:"model_mapping"`
+}
+
+type openAIOAuthModelMappingUpdater interface {
+	UpdateOpenAIOAuthModelMapping(ctx context.Context, mapping map[string]string) (matched int64, updatedIDs []int64, err error)
 }
 
 func NewAdminScheduledJobExecutor(
@@ -61,6 +70,8 @@ func (e *adminScheduledJobExecutor) Execute(ctx context.Context, job *AdminSched
 		return e.executeSyncCodexFreeGroups(ctx, job)
 	case AdminScheduledJobTypeCleanupErrorAccounts:
 		return e.executeCleanupErrorAccounts(ctx)
+	case AdminScheduledJobTypeUpdateOpenAIOAuthModelMapping:
+		return e.executeUpdateOpenAIOAuthModelMapping(ctx, job)
 	default:
 		return "", "", fmt.Errorf("unsupported job type: %s", job.JobType)
 	}
@@ -265,4 +276,46 @@ func (e *adminScheduledJobExecutor) executeCleanupErrorAccounts(ctx context.Cont
 		"finished_at": time.Now().UTC().Format(time.RFC3339),
 	})
 	return fmt.Sprintf("deleted %d error accounts", deleted), string(result), nil
+}
+
+func (e *adminScheduledJobExecutor) executeUpdateOpenAIOAuthModelMapping(ctx context.Context, job *AdminScheduledJob) (string, string, error) {
+	updater, ok := e.accountRepo.(openAIOAuthModelMappingUpdater)
+	if !ok || updater == nil {
+		return "", "", fmt.Errorf("account repository does not support openai oauth model mapping update")
+	}
+
+	payload := adminScheduledOpenAIOAuthModelMappingPayload{}
+	if err := json.Unmarshal([]byte(job.PayloadJSON), &payload); err != nil {
+		return "", "", fmt.Errorf("invalid payload_json: %w", err)
+	}
+	modelMapping := normalizeModelMapping(payload.ModelMapping)
+	if len(modelMapping) == 0 {
+		return "", "", fmt.Errorf("model_mapping is required")
+	}
+
+	matched, updatedIDs, err := updater.UpdateOpenAIOAuthModelMapping(ctx, modelMapping)
+	if err != nil {
+		return "", "", err
+	}
+	result, _ := json.Marshal(map[string]any{
+		"matched":       matched,
+		"updated":       len(updatedIDs),
+		"updated_ids":   updatedIDs,
+		"model_mapping": modelMapping,
+		"finished_at":   time.Now().UTC().Format(time.RFC3339),
+	})
+	return fmt.Sprintf("updated %d openai oauth accounts", len(updatedIDs)), string(result), nil
+}
+
+func normalizeModelMapping(input map[string]string) map[string]string {
+	out := make(map[string]string, len(input))
+	for source, target := range input {
+		source = strings.TrimSpace(source)
+		target = strings.TrimSpace(target)
+		if source == "" || target == "" {
+			continue
+		}
+		out[source] = target
+	}
+	return out
 }

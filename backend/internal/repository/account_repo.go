@@ -419,6 +419,58 @@ func (r *accountRepository) UpdateCredentials(ctx context.Context, id int64, cre
 	return nil
 }
 
+func (r *accountRepository) UpdateOpenAIOAuthModelMapping(ctx context.Context, mapping map[string]string) (int64, []int64, error) {
+	if len(mapping) == 0 {
+		return 0, nil, nil
+	}
+	payload, err := json.Marshal(mapping)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	rows, err := r.sql.QueryContext(ctx, `
+		UPDATE accounts
+		SET credentials = jsonb_set(
+		      COALESCE(credentials, '{}'::jsonb) - 'model_whitelist',
+		      '{model_mapping}',
+		      $1::jsonb,
+		      true
+		    ),
+		    updated_at = NOW()
+		WHERE platform = $2
+		  AND type = $3
+		  AND deleted_at IS NULL
+		RETURNING id
+	`, payload, service.PlatformOpenAI, service.AccountTypeOAuth)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	ids := make([]int64, 0)
+	for rows.Next() {
+		var id int64
+		if scanErr := rows.Scan(&id); scanErr != nil {
+			return 0, nil, scanErr
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, nil, err
+	}
+
+	matched := int64(len(ids))
+	if matched == 0 {
+		return 0, ids, nil
+	}
+	payloadOutbox := map[string]any{"account_ids": ids}
+	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountBulkChanged, nil, nil, payloadOutbox); err != nil {
+		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue openai oauth model mapping update failed: err=%v", err)
+	}
+	r.syncSchedulerAccountSnapshots(ctx, ids)
+	return matched, ids, nil
+}
+
 func (r *accountRepository) Delete(ctx context.Context, id int64) error {
 	groupIDs, err := r.loadAccountGroupIDs(ctx, id)
 	if err != nil {
