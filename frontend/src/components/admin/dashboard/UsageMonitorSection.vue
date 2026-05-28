@@ -115,10 +115,45 @@
             <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.usageMonitor.models') }}</p>
           </div>
         </div>
-        <div class="h-[360px]">
+        <div class="relative h-[360px]">
           <Line v-if="topUserChartData" :data="topUserChartData" :options="topUserChartOptions" />
           <div v-else class="flex h-full items-center justify-center text-sm text-gray-500 dark:text-gray-400">
             {{ t('admin.usageMonitor.noData') }}
+          </div>
+
+          <div
+            v-if="topUserTooltip.visible"
+            class="pointer-events-none absolute z-20 w-[340px] max-w-[calc(100vw-2rem)] rounded-2xl border border-gray-700/70 bg-gray-950/95 px-3 py-2.5 text-xs text-gray-100 shadow-[0_18px_48px_-18px_rgba(15,23,42,0.75)] backdrop-blur-sm"
+            :style="{
+              left: `${topUserTooltip.x}px`,
+              top: `${topUserTooltip.y}px`,
+              transform: topUserTooltip.placement === 'top' ? 'translateY(-100%)' : 'none'
+            }"
+          >
+            <div class="text-[11px] font-semibold text-white">
+              {{ topUserTooltip.title }}
+            </div>
+            <div class="mt-2 flex items-center gap-2">
+              <span class="h-2.5 w-2.5 rounded-full" :style="{ backgroundColor: topUserTooltip.color }"></span>
+              <span class="min-w-0 flex-1 truncate text-[11px] text-gray-200">{{ topUserTooltip.seriesLabel }}</span>
+              <span class="shrink-0 text-[11px] font-medium text-white">${{ formatCost(topUserTooltip.actualCost) }}</span>
+            </div>
+            <div class="mt-2 border-t border-white/10 pt-2">
+              <div class="mb-1 text-[10px] font-medium uppercase tracking-wide text-gray-400">{{ t('admin.usageMonitor.models') }}</div>
+              <div class="space-y-1">
+                <div
+                  v-for="model in topUserTooltip.models"
+                  :key="model.model"
+                  class="flex items-center justify-between gap-3"
+                >
+                  <span class="min-w-0 flex-1 truncate text-[11px] text-gray-200">{{ model.model }}</span>
+                  <span class="shrink-0 font-medium text-cyan-300">${{ formatCost(model.actual_cost) }}</span>
+                </div>
+                <div v-if="topUserTooltip.remainingModels > 0" class="text-[11px] text-gray-400">
+                  +{{ topUserTooltip.remainingModels }} more
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -196,6 +231,18 @@ const showUserDropdown = ref(false)
 const selectedUser = ref<SimpleUser | null>(null)
 const userDropdownRef = ref<HTMLElement | null>(null)
 let userSearchTimer: number | undefined
+const topUserTooltip = ref({
+  visible: false,
+  x: 0,
+  y: 0,
+  placement: 'bottom' as 'bottom' | 'top',
+  title: '',
+  seriesLabel: '',
+  actualCost: 0,
+  color: '#2563eb',
+  models: [] as { model: string; actual_cost: number }[],
+  remainingModels: 0,
+})
 
 const granularityOptions = computed(() => ([
   { value: 'day', label: t('admin.usageMonitor.day') },
@@ -275,6 +322,46 @@ const formatCost = (value: number) => {
   return value.toFixed(4)
 }
 
+const formatTopUserTooltipTitle = (bucket: string) => {
+  const parsed = parseBucketDate(bucket)
+  if (!parsed) return `时间 ${bucket}`
+  if (granularity.value === 'day') return `时间 ${formatHourTooltipLabel(bucket, 1)}`
+  return `时间 ${formatDate(parsed)}`
+}
+
+const updateTopUserTooltip = (chartTooltip: any, chartWidth: number, chartHeight: number) => {
+  if (!chartTooltip || chartTooltip.opacity === 0 || !chartTooltip.dataPoints?.length) {
+    topUserTooltip.value.visible = false
+    return
+  }
+
+  const point = chartTooltip.dataPoints[0]
+  const userId = Number(point?.dataset?.userId ?? 0)
+  const bucket = topUserBucketKeys.value[point?.dataIndex ?? -1] || String(point?.label || '')
+  const record = pointLookup.value.get(`${userId}:${bucket}`)
+  const models = (record?.models || []).slice(0, 4)
+  const remainingModels = Math.max((record?.models?.length || 0) - models.length, 0)
+  const width = 340
+  const height = 116 + models.length * 22 + (remainingModels > 0 ? 18 : 0)
+  const caretX = Number(chartTooltip.caretX ?? 0)
+  const caretY = Number(chartTooltip.caretY ?? 0)
+  const placeLeft = caretX + width + 24 > chartWidth
+  const placeTop = caretY + height + 24 > chartHeight
+
+  topUserTooltip.value = {
+    visible: true,
+    x: placeLeft ? Math.max(12, caretX - width - 16) : caretX + 16,
+    y: placeTop ? Math.max(12, caretY - 16) : caretY + 16,
+    placement: placeTop ? 'top' : 'bottom',
+    title: formatTopUserTooltipTitle(bucket),
+    seriesLabel: String(point?.dataset?.label || ''),
+    actualCost: record?.actual_cost ?? Number(point?.raw ?? 0),
+    color: String(point?.dataset?.borderColor || '#2563eb'),
+    models,
+    remainingModels,
+  }
+}
+
 const summaryTrendChartData = computed(() => {
   if (!summaryTrend.value.length) return null
   const dayWindow = granularity.value === 'day' ? currentDayWindow() : null
@@ -349,6 +436,20 @@ const topUserBucketKeys = computed(() => {
   return sortBuckets(Array.from(new Set(usageMonitorData.value.series.map(item => item.bucket))))
 })
 
+const formatSummaryTrendLabel = (bucket: string, granularityValue: Granularity) => {
+  if (granularityValue === 'day') return formatHourLabel(bucket, 1)
+  const parsed = parseBucketDate(bucket)
+  if (!parsed) return bucket
+  return `${String(parsed.getMonth() + 1).padStart(2, '0')}/${String(parsed.getDate()).padStart(2, '0')}`
+}
+
+const formatSummaryTooltipTitle = (bucket: string, granularityValue: Granularity) => {
+  if (granularityValue === 'day') return `时间 ${formatHourTooltipLabel(bucket, 1)}`
+  const parsed = parseBucketDate(bucket)
+  if (!parsed) return `时间 ${bucket}`
+  return `时间 ${formatDate(parsed)}`
+}
+
 const tooltipBase = {
   backgroundColor: 'rgba(17,24,39,0.96)',
   titleColor: '#ffffff',
@@ -356,11 +457,25 @@ const tooltipBase = {
   borderColor: 'rgba(148,163,184,0.28)',
   borderWidth: 1,
   padding: 14,
-  cornerRadius: 16,
   displayColors: true,
   usePointStyle: true,
   bodySpacing: 6,
-  titleSpacing: 6
+  titleSpacing: 6,
+  titleFont: {
+    size: 12,
+    weight: 600
+  },
+  bodyFont: {
+    size: 11
+  },
+  footerFont: {
+    size: 11,
+    style: 'normal' as const
+  },
+  boxWidth: 10,
+  boxHeight: 10,
+  caretPadding: 12,
+  cornerRadius: 12
 }
 
 const summaryTrendChartOptions = computed(() => ({
@@ -371,8 +486,16 @@ const summaryTrendChartOptions = computed(() => ({
     legend: { display: false },
     tooltip: {
       ...tooltipBase,
+      mode: 'index' as const,
+      intersect: false,
+      position: 'nearest' as const,
+      yAlign: 'bottom' as const,
+      xAlign: 'right' as const,
       callbacks: {
-        title: (items: any[]) => items[0]?.label || '',
+        title: (items: any[]) => {
+          const bucket = String(items[0]?.label || '')
+          return bucket ? formatSummaryTooltipTitle(bucket, granularity.value) : ''
+        },
         label: (ctx: any) => {
           if (trendMetric.value === 'requests') return `${ctx.dataset.label}: ${formatNumber(Number(ctx.raw ?? 0))}`
           if (trendMetric.value === 'tokens') return `${ctx.dataset.label}: ${formatTokens(Number(ctx.raw ?? 0))}`
@@ -385,10 +508,14 @@ const summaryTrendChartOptions = computed(() => ({
     x: {
       ticks: {
         autoSkip: true,
-        autoSkipPadding: 24,
+        autoSkipPadding: 32,
         maxRotation: 0,
         minRotation: 0,
-        maxTicksLimit: granularity.value === 'day' ? 6 : 10
+        maxTicksLimit: granularity.value === 'day' ? 5 : 8,
+        callback: (value: string | number) => {
+          const bucket = String(value)
+          return formatSummaryTrendLabel(bucket, granularity.value)
+        }
       }
     },
     y: {
@@ -410,40 +537,10 @@ const topUserChartOptions = computed(() => ({
   plugins: {
     legend: { position: 'top' as const, labels: { usePointStyle: true, pointStyle: 'circle' } },
     tooltip: {
-      ...tooltipBase,
-      callbacks: {
-        title: (items: any[]) => {
-          const bucket = topUserBucketKeys.value[items[0]?.dataIndex ?? -1]
-          if (granularity.value === 'day' && bucket) return `时间 ${formatHourTooltipLabel(bucket, 1)}`
-          return `时间 ${items[0]?.label || ''}`
-        },
-        label: (ctx: any) => {
-          const userId = Number(ctx.dataset.userId ?? 0)
-          const bucketLabel = topUserBucketKeys.value[ctx.dataIndex] || String(ctx.label || '')
-          const point = pointLookup.value.get(`${userId}:${bucketLabel}`)
-          const userLabel = String(ctx.dataset.label || '')
-          if (!point) return `${userLabel}: $${formatCost(Number(ctx.raw ?? 0))}`
-          return `${userLabel}: $${formatCost(point.actual_cost)}`
-        },
-        afterBody: (items: any[]) => {
-          if (!items.length) return []
-
-          const sections = items.flatMap((item: any, index: number) => {
-            const userId = Number(item.dataset.userId ?? 0)
-            const userLabel = String(item.dataset.label || `User #${userId}`)
-            const bucketLabel = topUserBucketKeys.value[item.dataIndex] || String(item.label || '')
-            const point = pointLookup.value.get(`${userId}:${bucketLabel}`)
-
-            const header = `用户 ${userLabel}`
-            const details = point?.models?.length
-              ? point.models.map(model => `- ${model.model}: $${formatCost(model.actual_cost)}`)
-              : [`- ${t('common.noData')}`]
-
-            return index === 0 ? [header, ...details] : ['', header, ...details]
-          })
-
-          return sections
-        }
+      enabled: false,
+      external: (context: any) => {
+        const chart = context.chart
+        updateTopUserTooltip(context.tooltip, chart.width, chart.height)
       }
     }
   },
@@ -451,10 +548,16 @@ const topUserChartOptions = computed(() => ({
     x: {
       ticks: {
         autoSkip: true,
-        autoSkipPadding: 24,
+        autoSkipPadding: 32,
         maxRotation: 0,
         minRotation: 0,
-        maxTicksLimit: granularity.value === 'day' ? 6 : 10
+        maxTicksLimit: granularity.value === 'day' ? 5 : 8,
+        callback: (value: string | number) => {
+          const bucket = String(value)
+          return granularity.value === 'day'
+            ? formatSummaryTrendLabel(bucket, granularity.value)
+            : bucket
+        }
       }
     },
     y: { ticks: { callback: (value: string | number) => `$${value}` } }
