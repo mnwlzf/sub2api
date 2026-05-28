@@ -4,7 +4,7 @@ vi.mock('@/api/admin/accounts', () => ({
   getAntigravityDefaultModelMapping: vi.fn()
 }))
 
-import { buildModelMappingObject, getModelsByPlatform, splitModelMappingObject } from '../useModelWhitelist'
+import { buildModelMappingObject, getModelsByPlatform, getPresetMappingsByPlatform, splitModelMappingObject } from '../useModelWhitelist'
 
 describe('useModelWhitelist', () => {
   it('openai 模型列表包含 GPT-5.4 官方快照', () => {
@@ -72,6 +72,18 @@ describe('useModelWhitelist', () => {
     expect(mapping).toEqual({
       'gpt-5.4-mini': 'gpt-5.4-mini'
     })
+  })
+
+  it('openai preset mappings include GPT-5.3 Codex routing to GPT-5.4 mini', () => {
+    const presets = getPresetMappingsByPlatform('openai')
+    expect(presets).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          from: 'gpt-5.3-codex',
+          to: 'gpt-5.4-mini'
+        })
+      ])
+    )
   })
 
   it('combined 模式会同时保留白名单身份映射和模型映射', () => {
