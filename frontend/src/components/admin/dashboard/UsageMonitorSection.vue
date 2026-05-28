@@ -92,7 +92,10 @@
             <div
               v-for="(user, index) in usageMonitorData?.top_users ?? []"
               :key="user.user_id"
-              class="rounded-lg border border-gray-200 p-3 dark:border-gray-700"
+              class="rounded-lg border p-3 transition-colors dark:border-gray-700"
+              :class="hoveredUserId === user.user_id
+                ? 'border-primary-400 bg-primary-50/70 dark:border-primary-500/60 dark:bg-primary-500/10'
+                : 'border-gray-200 dark:border-gray-700'"
             >
               <div class="flex items-center justify-between gap-3">
                 <div class="min-w-0">
@@ -176,7 +179,8 @@
               <tr
                 v-for="item in rankingItems"
                 :key="item.user_id"
-                class="border-t border-gray-100 dark:border-gray-700"
+                class="border-t border-gray-100 transition-colors dark:border-gray-700"
+                :class="hoveredUserId === item.user_id ? 'bg-primary-50/70 dark:bg-primary-500/10' : ''"
               >
                 <td class="py-3 text-gray-900 dark:text-white">{{ item.email || `User #${item.user_id}` }}</td>
                 <td class="py-3 text-right text-gray-600 dark:text-gray-300">{{ formatNumber(item.requests) }}</td>
@@ -231,6 +235,7 @@ const showUserDropdown = ref(false)
 const selectedUser = ref<SimpleUser | null>(null)
 const userDropdownRef = ref<HTMLElement | null>(null)
 let userSearchTimer: number | undefined
+const hoveredUserId = ref<number | null>(null)
 const topUserTooltip = ref({
   visible: false,
   x: 0,
@@ -331,12 +336,14 @@ const formatTopUserTooltipTitle = (bucket: string) => {
 
 const updateTopUserTooltip = (chartTooltip: any, chartWidth: number, chartHeight: number) => {
   if (!chartTooltip || chartTooltip.opacity === 0 || !chartTooltip.dataPoints?.length) {
+    hoveredUserId.value = null
     topUserTooltip.value.visible = false
     return
   }
 
   const point = chartTooltip.dataPoints[0]
   const userId = Number(point?.dataset?.userId ?? 0)
+  hoveredUserId.value = userId || null
   const bucket = topUserBucketKeys.value[point?.dataIndex ?? -1] || String(point?.label || '')
   const record = pointLookup.value.get(`${userId}:${bucket}`)
   const models = (record?.models || []).slice(0, 4)
@@ -533,7 +540,7 @@ const summaryTrendChartOptions = computed(() => ({
 const topUserChartOptions = computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
-  interaction: { intersect: false, mode: 'index' as const, axis: 'x' as const },
+  interaction: { intersect: false, mode: 'nearest' as const, axis: 'xy' as const },
   plugins: {
     legend: { position: 'top' as const, labels: { usePointStyle: true, pointStyle: 'circle' } },
     tooltip: {
