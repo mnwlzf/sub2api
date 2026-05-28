@@ -448,6 +448,7 @@ async function submitForm() {
         ? JSON.stringify(buildOpenAIModelMappingPayload())
         : form.payload_json
 
+    let savedJob: AdminScheduledJob
     if (editingId.value) {
       const payload: UpdateAdminScheduledJobRequest = {
         name: formatJobType(form.job_type),
@@ -456,15 +457,16 @@ async function submitForm() {
         payload_json: payloadJSON,
         retention_limit: form.retention_limit,
       }
-      await adminAPI.scheduledJobs.update(editingId.value, payload)
+      savedJob = await adminAPI.scheduledJobs.update(editingId.value, payload)
+      jobs.value = jobs.value.map((job) => job.id === savedJob.id ? savedJob : job)
     } else {
-      await adminAPI.scheduledJobs.create({
+      savedJob = await adminAPI.scheduledJobs.create({
         ...form,
         payload_json: payloadJSON,
       })
+      jobs.value = [savedJob, ...jobs.value]
     }
     closeEditor()
-    await loadJobs()
     appStore.showSuccess(t('common.saved'))
   } catch (error: any) {
     appStore.showError(error?.message || 'request failed')
