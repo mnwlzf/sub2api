@@ -209,20 +209,54 @@ const trendMetricOptions = computed(() => ([
   { value: 'requests', label: t('admin.dashboard.requests') }
 ]))
 
+const HOUR_MS = 60 * 60 * 1000
+const DAY_WINDOW_HOURS = 24
+
 const userTimezone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
 const formatDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-const formatHourLabel = (bucket: string) => bucket.includes(' ') ? bucket.slice(11, 16) : bucket
-const parseBucketTime = (bucket: string): number => {
+const parseBucketDate = (bucket: string): Date | null => {
   const normalized = bucket.includes(' ') ? bucket.replace(' ', 'T') : bucket
   const timestamp = Date.parse(normalized)
-  return Number.isNaN(timestamp) ? 0 : timestamp
+  return Number.isNaN(timestamp) ? null : new Date(timestamp)
 }
+const parseBucketTime = (bucket: string): number => parseBucketDate(bucket)?.getTime() ?? 0
 const sortBuckets = (buckets: string[]) => [...buckets].sort((a, b) => parseBucketTime(a) - parseBucketTime(b))
+const addHours = (date: Date, hours: number) => new Date(date.getTime() + hours * HOUR_MS)
+const nextHour = (date = new Date()) => {
+  const end = new Date(date)
+  end.setMinutes(0, 0, 0)
+  end.setHours(end.getHours() + 1)
+  return end
+}
+const formatHourLabel = (bucket: string, offsetHours = 0) => {
+  const parsed = parseBucketDate(bucket)
+  if (!parsed) return bucket.includes(' ') ? bucket.slice(11, 16) : bucket
+  const displayTime = offsetHours ? addHours(parsed, offsetHours) : parsed
+  return `${String(displayTime.getHours()).padStart(2, '0')}:00`
+}
+const formatHourTooltipLabel = (bucket: string, offsetHours = 0) => {
+  const parsed = parseBucketDate(bucket)
+  if (!parsed) return bucket
+  const displayTime = offsetHours ? addHours(parsed, offsetHours) : parsed
+  return `${formatDate(displayTime)} ${String(displayTime.getHours()).padStart(2, '0')}:00`
+}
+const currentDayWindow = () => {
+  const end = nextHour()
+  return {
+    start: new Date(end.getTime() - DAY_WINDOW_HOURS * HOUR_MS),
+    end
+  }
+}
 
 const initRange = () => {
   const end = new Date()
   const start = new Date()
   start.setDate(start.getDate() - 30)
+  startDate.value = formatDate(start)
+  endDate.value = formatDate(end)
+}
+const initDayRange = () => {
+  const { start, end } = currentDayWindow()
   startDate.value = formatDate(start)
   endDate.value = formatDate(end)
 }
@@ -243,8 +277,17 @@ const formatCost = (value: number) => {
 
 const summaryTrendChartData = computed(() => {
   if (!summaryTrend.value.length) return null
-  const labels = summaryTrend.value.map(item => granularity.value === 'day' ? formatHourLabel(item.date) : item.date)
-  const data = summaryTrend.value.map(item => {
+  const dayWindow = granularity.value === 'day' ? currentDayWindow() : null
+  const trendItems = dayWindow
+    ? summaryTrend.value.filter(item => {
+      const bucketTime = parseBucketDate(item.date)
+      return bucketTime && bucketTime >= dayWindow.start && bucketTime < dayWindow.end
+    })
+    : summaryTrend.value
+  if (!trendItems.length) return null
+
+  const labels = trendItems.map(item => granularity.value === 'day' ? formatHourLabel(item.date, 1) : item.date)
+  const data = trendItems.map(item => {
     if (trendMetric.value === 'requests') return item.requests
     if (trendMetric.value === 'tokens') return item.total_tokens
     return item.actual_cost
@@ -280,7 +323,7 @@ const topUserChartData = computed(() => {
   const buckets = sortBuckets(Array.from(new Set(usageMonitorData.value.series.map(item => item.bucket))))
   const palette = ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed']
   return {
-    labels: buckets.map(label => granularity.value === 'day' ? formatHourLabel(label) : label),
+    labels: buckets.map(label => granularity.value === 'day' ? formatHourLabel(label, 1) : label),
     datasets: usageMonitorData.value.top_users.map((user, index) => {
       const userMap = new Map(
         usageMonitorData.value!.series.filter(item => item.user_id === user.user_id).map(item => [item.bucket, item.actual_cost])
@@ -299,6 +342,11 @@ const topUserChartData = computed(() => {
       }
     })
   }
+})
+
+const topUserBucketKeys = computed(() => {
+  if (!usageMonitorData.value?.series.length) return []
+  return sortBuckets(Array.from(new Set(usageMonitorData.value.series.map(item => item.bucket))))
 })
 
 const tooltipBase = {
@@ -337,9 +385,10 @@ const summaryTrendChartOptions = computed(() => ({
     x: {
       ticks: {
         autoSkip: true,
+        autoSkipPadding: 24,
         maxRotation: 0,
         minRotation: 0,
-        maxTicksLimit: granularity.value === 'day' ? 8 : 10
+        maxTicksLimit: granularity.value === 'day' ? 6 : 10
       }
     },
     y: {
@@ -363,10 +412,14 @@ const topUserChartOptions = computed(() => ({
     tooltip: {
       ...tooltipBase,
       callbacks: {
-        title: (items: any[]) => `时间 ${items[0]?.label || ''}`,
+        title: (items: any[]) => {
+          const bucket = topUserBucketKeys.value[items[0]?.dataIndex ?? -1]
+          if (granularity.value === 'day' && bucket) return `时间 ${formatHourTooltipLabel(bucket, 1)}`
+          return `时间 ${items[0]?.label || ''}`
+        },
         label: (ctx: any) => {
           const userId = Number(ctx.dataset.userId ?? 0)
-          const bucketLabel = usageMonitorData.value?.series.find(item => item.user_id === userId && (granularity.value === 'day' ? formatHourLabel(item.bucket) : item.bucket) === String(ctx.label || ''))?.bucket || String(ctx.label || '')
+          const bucketLabel = topUserBucketKeys.value[ctx.dataIndex] || String(ctx.label || '')
           const point = pointLookup.value.get(`${userId}:${bucketLabel}`)
           const userLabel = String(ctx.dataset.label || '')
           if (!point) return `${userLabel}: $${formatCost(Number(ctx.raw ?? 0))}`
@@ -378,10 +431,7 @@ const topUserChartOptions = computed(() => ({
           const sections = items.flatMap((item: any, index: number) => {
             const userId = Number(item.dataset.userId ?? 0)
             const userLabel = String(item.dataset.label || `User #${userId}`)
-            const bucketLabel = usageMonitorData.value?.series.find(seriesItem =>
-              seriesItem.user_id === userId &&
-              (granularity.value === 'day' ? formatHourLabel(seriesItem.bucket) : seriesItem.bucket) === String(item.label || '')
-            )?.bucket || String(item.label || '')
+            const bucketLabel = topUserBucketKeys.value[item.dataIndex] || String(item.label || '')
             const point = pointLookup.value.get(`${userId}:${bucketLabel}`)
 
             const header = `用户 ${userLabel}`
@@ -401,9 +451,10 @@ const topUserChartOptions = computed(() => ({
     x: {
       ticks: {
         autoSkip: true,
+        autoSkipPadding: 24,
         maxRotation: 0,
         minRotation: 0,
-        maxTicksLimit: granularity.value === 'day' ? 8 : 10
+        maxTicksLimit: granularity.value === 'day' ? 6 : 10
       }
     },
     y: { ticks: { callback: (value: string | number) => `$${value}` } }
@@ -481,10 +532,7 @@ const clearUser = () => {
 
 const handleGranularityChange = async () => {
   if (granularity.value === 'day') {
-    const end = new Date()
-    const start = new Date(end.getTime() - 24 * 60 * 60 * 1000)
-    startDate.value = formatDate(start)
-    endDate.value = formatDate(end)
+    initDayRange()
   } else {
     initRange()
   }
@@ -505,7 +553,7 @@ const handleClickOutside = (event: MouseEvent) => {
 }
 
 onMounted(async () => {
-  initRange()
+  initDayRange()
   await loadData()
   document.addEventListener('click', handleClickOutside)
 })

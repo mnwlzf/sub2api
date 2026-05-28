@@ -79,8 +79,8 @@ func clampUsageMonitorRange(c *gin.Context) (time.Time, time.Time, string, strin
 
 	switch granularity {
 	case "day":
-		start = now.Add(-24 * time.Hour)
-		end = now
+		end = time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), 0, 0, 0, now.Location()).Add(time.Hour)
+		start = end.Add(-24 * time.Hour)
 	case "week", "month":
 		if raw := strings.TrimSpace(c.Query("start_date")); raw != "" {
 			if parsed, err := timezone.ParseInUserLocation("2006-01-02", raw, userTZ); err == nil {
