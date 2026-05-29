@@ -1,9 +1,15 @@
 <template>
   <div class="space-y-6">
     <div class="card p-4">
-      <div class="mb-4">
-        <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.usageMonitor.title') }}</h3>
-        <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.usageMonitor.description') }}</p>
+      <div class="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.usageMonitor.title') }}</h3>
+          <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.usageMonitor.description') }}</p>
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm shrink-0" :disabled="loading" @click="loadData">
+          <Icon name="refresh" size="sm" :class="loading ? 'animate-spin' : ''" />
+          {{ t('common.refresh') }}
+        </button>
       </div>
 
       <div class="flex flex-wrap items-start gap-3">
@@ -90,6 +96,10 @@
               <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.usageMonitor.title') }}</h3>
               <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.usageMonitor.hoverHint') }}</p>
             </div>
+            <button type="button" class="btn btn-secondary btn-xs shrink-0" :disabled="loading" @click="loadData">
+              <Icon name="refresh" size="xs" :class="loading ? 'animate-spin' : ''" />
+              {{ t('common.refresh') }}
+            </button>
           </div>
           <div class="relative h-[420px]">
             <Line v-if="summaryTrendChartData" :data="summaryTrendChartData" :options="summaryTrendChartOptions" />
@@ -135,7 +145,13 @@
         </div>
 
         <div class="card p-4">
-          <h3 class="mb-3 text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.usageMonitor.topUsers') }}</h3>
+          <div class="mb-3 flex items-center justify-between gap-3">
+            <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.usageMonitor.topUsers') }}</h3>
+            <button type="button" class="btn btn-secondary btn-xs shrink-0" :disabled="loading" @click="loadData">
+              <Icon name="refresh" size="xs" :class="loading ? 'animate-spin' : ''" />
+              {{ t('common.refresh') }}
+            </button>
+          </div>
           <div class="space-y-3">
             <div
               v-for="(user, index) in usageMonitorData?.top_users ?? []"
@@ -168,6 +184,10 @@
             <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.dashboard.recentUsage') }}</h3>
             <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.usageMonitor.models') }}</p>
           </div>
+          <button type="button" class="btn btn-secondary btn-xs shrink-0" :disabled="loading" @click="loadData">
+            <Icon name="refresh" size="xs" :class="loading ? 'animate-spin' : ''" />
+            {{ t('common.refresh') }}
+          </button>
         </div>
         <div class="relative h-[360px]">
           <Line v-if="topUserChartData" :data="topUserChartData" :options="topUserChartOptions" />
@@ -214,6 +234,10 @@
       <div class="card p-4">
         <div class="mb-4 flex items-center justify-between gap-3">
           <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.dashboard.spendingRankingTitle') }}</h3>
+          <button type="button" class="btn btn-secondary btn-xs shrink-0" :disabled="loading" @click="loadData">
+            <Icon name="refresh" size="xs" :class="loading ? 'animate-spin' : ''" />
+            {{ t('common.refresh') }}
+          </button>
         </div>
         <div class="overflow-x-auto">
           <table class="w-full text-sm">
