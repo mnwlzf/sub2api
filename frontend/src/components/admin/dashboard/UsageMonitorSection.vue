@@ -91,10 +91,45 @@
               <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.usageMonitor.hoverHint') }}</p>
             </div>
           </div>
-          <div class="h-[420px]">
+          <div class="relative h-[420px]">
             <Line v-if="summaryTrendChartData" :data="summaryTrendChartData" :options="summaryTrendChartOptions" />
             <div v-else class="flex h-full items-center justify-center text-sm text-gray-500 dark:text-gray-400">
               {{ t('admin.usageMonitor.noData') }}
+            </div>
+
+            <div
+              v-if="summaryTooltip.visible"
+              class="pointer-events-none absolute z-20 w-[340px] max-w-[calc(100vw-2rem)] rounded-2xl border border-gray-700/70 bg-gray-950/95 px-3 py-2.5 text-xs text-gray-100 shadow-[0_18px_48px_-18px_rgba(15,23,42,0.75)] backdrop-blur-sm"
+              :style="{
+                left: `${summaryTooltip.x}px`,
+                top: `${summaryTooltip.y}px`
+              }"
+            >
+              <div class="text-[11px] font-semibold text-white">
+                {{ summaryTooltip.title }}
+              </div>
+              <div class="mt-2 flex items-center gap-2">
+                <span class="h-2.5 w-2.5 rounded-full bg-primary-500"></span>
+                <span class="min-w-0 flex-1 truncate text-[11px] text-gray-200">{{ metricLabel }}</span>
+                <span class="shrink-0 text-[11px] font-medium text-white">{{ formatMetricValue(summaryTooltip.totalValue) }}</span>
+              </div>
+              <div class="mt-2 border-t border-white/10 pt-2">
+                <div class="mb-1 text-[10px] font-medium uppercase tracking-wide text-gray-400">{{ t('admin.usageMonitor.models') }}</div>
+                <div class="space-y-1">
+                  <div
+                    v-for="model in summaryTooltip.models"
+                    :key="model.model"
+                    class="flex items-center justify-between gap-3"
+                  >
+                    <span class="min-w-0 flex-1 truncate text-[11px] text-gray-200">{{ model.model }}</span>
+                    <span class="shrink-0 font-medium text-cyan-300">${{ formatCost(model.actual_cost) }}</span>
+                  </div>
+                  <div v-if="summaryTooltip.models.length === 0" class="text-[11px] text-gray-400">-</div>
+                  <div v-if="summaryTooltip.remainingModels > 0" class="text-[11px] text-gray-400">
+                    +{{ summaryTooltip.remainingModels }} more
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -250,6 +285,15 @@ const selectedUsers = ref<SimpleUser[]>([])
 const userDropdownRef = ref<HTMLElement | null>(null)
 let userSearchTimer: number | undefined
 const hoveredUserId = ref<number | null>(null)
+const summaryTooltip = ref({
+  visible: false,
+  x: 0,
+  y: 0,
+  title: '',
+  totalValue: 0,
+  models: [] as { model: string; actual_cost: number }[],
+  remainingModels: 0,
+})
 const topUserTooltip = ref({
   visible: false,
   x: 0,
@@ -384,6 +428,65 @@ const formatTopUserTooltipTitle = (bucket: string) => {
   return `时间 ${formatDate(parsed)}`
 }
 
+const placeTooltipInChart = (caretX: number, caretY: number, width: number, height: number, chartWidth: number, chartHeight: number) => {
+  const placeLeft = caretX + width + 24 > chartWidth
+  const placeTop = caretY + height + 24 > chartHeight
+  const x = placeLeft ? caretX - width - 16 : caretX + 16
+  const y = placeTop ? caretY - height - 16 : caretY + 16
+  return {
+    x: Math.min(Math.max(12, x), Math.max(12, chartWidth - width - 12)),
+    y: Math.min(Math.max(12, y), Math.max(12, chartHeight - height - 12)),
+  }
+}
+
+const getBucketModelBreakdown = (bucket: string, limit = 6) => {
+  const totals = new Map<string, number>()
+  for (const point of usageMonitorData.value?.series || []) {
+    if (point.bucket !== bucket) continue
+    for (const model of point.models || []) {
+      totals.set(model.model, (totals.get(model.model) || 0) + model.actual_cost)
+    }
+  }
+  const models = Array.from(totals.entries())
+    .map(([model, actual_cost]) => ({ model, actual_cost }))
+    .sort((a, b) => b.actual_cost - a.actual_cost)
+  return {
+    models: models.slice(0, limit),
+    remainingModels: Math.max(models.length - limit, 0),
+  }
+}
+
+const updateSummaryTooltip = (chartTooltip: any, chartWidth: number, chartHeight: number) => {
+  if (!chartTooltip || chartTooltip.opacity === 0 || !chartTooltip.dataPoints?.length) {
+    summaryTooltip.value.visible = false
+    return
+  }
+
+  const point = chartTooltip.dataPoints[0]
+  const bucket = topUserBucketKeys.value[point?.dataIndex ?? -1] || String(point?.label || '')
+  const { models, remainingModels } = getBucketModelBreakdown(bucket)
+  const width = 340
+  const height = 116 + models.length * 22 + (remainingModels > 0 ? 18 : 0)
+  const position = placeTooltipInChart(
+    Number(chartTooltip.caretX ?? 0),
+    Number(chartTooltip.caretY ?? 0),
+    width,
+    height,
+    chartWidth,
+    chartHeight
+  )
+
+  summaryTooltip.value = {
+    visible: true,
+    x: position.x,
+    y: position.y,
+    title: formatTopUserTooltipTitle(bucket),
+    totalValue: Number(point?.raw ?? 0),
+    models,
+    remainingModels,
+  }
+}
+
 const updateTopUserTooltip = (chartTooltip: any, chartWidth: number, chartHeight: number) => {
   if (!chartTooltip || chartTooltip.opacity === 0 || !chartTooltip.dataPoints?.length) {
     hoveredUserId.value = null
@@ -400,18 +503,20 @@ const updateTopUserTooltip = (chartTooltip: any, chartWidth: number, chartHeight
   const remainingModels = Math.max((record?.models?.length || 0) - models.length, 0)
   const width = 340
   const height = 116 + models.length * 22 + (remainingModels > 0 ? 18 : 0)
-  const caretX = Number(chartTooltip.caretX ?? 0)
-  const caretY = Number(chartTooltip.caretY ?? 0)
-  const placeLeft = caretX + width + 24 > chartWidth
-  const placeTop = caretY + height + 24 > chartHeight
-  const x = placeLeft ? caretX - width - 16 : caretX + 16
-  const y = placeTop ? caretY - height - 16 : caretY + 16
+  const position = placeTooltipInChart(
+    Number(chartTooltip.caretX ?? 0),
+    Number(chartTooltip.caretY ?? 0),
+    width,
+    height,
+    chartWidth,
+    chartHeight
+  )
 
   topUserTooltip.value = {
     visible: true,
-    x: Math.min(Math.max(12, x), Math.max(12, chartWidth - width - 12)),
-    y: Math.min(Math.max(12, y), Math.max(12, chartHeight - height - 12)),
-    placement: placeTop ? 'top' : 'bottom',
+    x: position.x,
+    y: position.y,
+    placement: 'bottom',
     title: formatTopUserTooltipTitle(bucket),
     seriesLabel: String(point?.dataset?.label || ''),
     actualCost: record?.metric_value ?? Number(point?.raw ?? 0),
@@ -580,42 +685,6 @@ const buildRankingFromMonitorData = (data: UsageCostMonitorData | null): UserSpe
   }))
 }
 
-const formatSummaryTooltipTitle = (bucket: string, granularityValue: Granularity) => {
-  if (granularityValue === 'hour') return `时间 ${formatMinuteTooltipLabel(bucket)}`
-  if (granularityValue === 'day') return `时间 ${formatHourTooltipLabel(bucket, 1)}`
-  const parsed = parseBucketDate(bucket)
-  if (!parsed) return `时间 ${bucket}`
-  return `时间 ${formatDate(parsed)}`
-}
-
-const tooltipBase = {
-  backgroundColor: 'rgba(17,24,39,0.96)',
-  titleColor: '#ffffff',
-  bodyColor: '#e5e7eb',
-  borderColor: 'rgba(148,163,184,0.28)',
-  borderWidth: 1,
-  padding: 14,
-  displayColors: true,
-  usePointStyle: true,
-  bodySpacing: 6,
-  titleSpacing: 6,
-  titleFont: {
-    size: 12,
-    weight: 600
-  },
-  bodyFont: {
-    size: 11
-  },
-  footerFont: {
-    size: 11,
-    style: 'normal' as const
-  },
-  boxWidth: 10,
-  boxHeight: 10,
-  caretPadding: 12,
-  cornerRadius: 12
-}
-
 const summaryTrendChartOptions = computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
@@ -623,20 +692,10 @@ const summaryTrendChartOptions = computed(() => ({
   plugins: {
     legend: { display: false },
     tooltip: {
-      ...tooltipBase,
-      mode: 'index' as const,
-      intersect: false,
-      position: 'nearest' as const,
-      yAlign: 'bottom' as const,
-      xAlign: 'right' as const,
-      callbacks: {
-        title: (items: any[]) => {
-          const bucket = topUserBucketKeys.value[items[0]?.dataIndex ?? -1] || String(items[0]?.label || '')
-          return bucket ? formatSummaryTooltipTitle(bucket, granularity.value) : ''
-        },
-        label: (ctx: any) => {
-          return `${ctx.dataset.label}: ${formatMetricValue(Number(ctx.raw ?? 0))}`
-        }
+      enabled: false,
+      external: (context: any) => {
+        const chart = context.chart
+        updateSummaryTooltip(context.tooltip, chart.width, chart.height)
       }
     }
   },
