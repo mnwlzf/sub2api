@@ -4239,6 +4239,7 @@ export default {
       noTargetGroups: '暂无可选目标分组',
       sourceGroupRequired: '请选择源分组',
       targetGroupsRequired: '请至少选择一个目标分组',
+      plusGroupTargetConfirm: 'PLUS 专属分组只应接收专属账号，确定要把它加入同步目标吗？',
       modelMapping: 'OpenAI OAuth 模型映射',
       modelMappingHint: '将用户请求模型映射为实际调用模型；普通任务更新 codex/Lite/尝鲜 分组账号，专属任务更新 PLUS 专属分组账号，执行后会刷新调度缓存。',
       addMapping: '添加映射',

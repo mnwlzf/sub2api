@@ -130,7 +130,7 @@
                   <input
                     :checked="syncCodexFreeForm.target_group_ids.includes(group.id)"
                     type="checkbox"
-                    @change="toggleTargetGroup(group.id)"
+                    @change="toggleTargetGroup(group, $event)"
                   />
                   <span>{{ group.name }}</span>
                 </label>
@@ -416,14 +416,31 @@ async function loadGroups() {
   groupsLoaded.value = true
 }
 
-function toggleTargetGroup(groupID: number) {
-  if (!availableGroupIDs.value.has(groupID)) return
-  const exists = syncCodexFreeForm.target_group_ids.includes(groupID)
-  if (exists) {
-    syncCodexFreeForm.target_group_ids = syncCodexFreeForm.target_group_ids.filter((id) => id !== groupID)
+function isPlusExclusiveGroup(group: AdminGroup) {
+  return group.id === 12 || group.name === 'PLUS专属'
+}
+
+function toggleTargetGroup(group: AdminGroup, event: Event) {
+  const input = event.target as HTMLInputElement | null
+  const checked = Boolean(input?.checked)
+  if (!availableGroupIDs.value.has(group.id)) return
+
+  if (!checked) {
+    syncCodexFreeForm.target_group_ids = syncCodexFreeForm.target_group_ids.filter((id) => id !== group.id)
     return
   }
-  syncCodexFreeForm.target_group_ids = [...syncCodexFreeForm.target_group_ids, groupID]
+
+  if (isPlusExclusiveGroup(group)) {
+    const confirmed = window.confirm(t('admin.scheduledJobs.plusGroupTargetConfirm'))
+    if (!confirmed) {
+      if (input) input.checked = false
+      return
+    }
+  }
+
+  if (!syncCodexFreeForm.target_group_ids.includes(group.id)) {
+    syncCodexFreeForm.target_group_ids = [...syncCodexFreeForm.target_group_ids, group.id]
+  }
 }
 
 function normalizeExistingGroupIDs(ids: number[]) {

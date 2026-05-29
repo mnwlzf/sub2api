@@ -4147,6 +4147,7 @@ export default {
       noTargetGroups: 'No target groups available',
       sourceGroupRequired: 'Please select a source group',
       targetGroupsRequired: 'Please select at least one target group',
+      plusGroupTargetConfirm: 'The PLUS exclusive group should only receive exclusive accounts. Add it as a sync target?',
       modelMapping: 'OpenAI OAuth Model Mapping',
       modelMappingHint: 'Map user requested models to upstream models. The shared job updates codex/Lite/trial groups; the exclusive job updates the PLUS exclusive group. Scheduler cache is refreshed after running.',
       addMapping: 'Add Mapping',
