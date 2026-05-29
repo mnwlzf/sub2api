@@ -96,6 +96,12 @@
           <div>
             <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">Cron</label>
             <input v-model="form.cron_expression" class="input w-full" placeholder="0 * * * *" />
+            <p
+              class="mt-1 text-xs"
+              :class="form.enabled && !cronPreviewNextRunAt ? 'text-red-500 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'"
+            >
+              {{ cronPreviewText }}
+            </p>
           </div>
           <div>
             <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.scheduledJobs.retentionLimit') }}</label>
@@ -260,6 +266,8 @@ const form = reactive<CreateAdminScheduledJobRequest>({
   retention_limit: 100,
 })
 
+type CronFieldMatcher = (value: number) => boolean
+
 const syncCodexFreeForm = reactive<AdminScheduledSyncCodexFreeGroupsPayload>({
   source_group_id: 0,
   target_group_ids: [],
@@ -279,6 +287,17 @@ const selectableJobTypeOptions = computed(() => {
       value: option.value,
       label: t(option.labelKey),
     }))
+})
+
+const cronPreviewNextRunAt = computed(() => {
+  if (!form.enabled) return null
+  return computeNextCronRun(form.cron_expression)
+})
+
+const cronPreviewText = computed(() => {
+  if (!form.enabled) return `${t('admin.scheduledJobs.columns.nextRun')}: -`
+  if (!cronPreviewNextRunAt.value) return t('admin.scheduledJobs.invalidCron')
+  return `${t('admin.scheduledJobs.columns.nextRun')}: ${formatDate(cronPreviewNextRunAt.value)}`
 })
 
 watch(
@@ -420,6 +439,73 @@ function buildOpenAIModelMappingPayload() {
   return { model_mapping: mapping }
 }
 
+function parseCronField(field: string, min: number, max: number): CronFieldMatcher | null {
+  const allowed = new Set<number>()
+  const parts = field.split(',').map((part) => part.trim()).filter(Boolean)
+  if (!parts.length) return null
+
+  for (const part of parts) {
+    const [rangePart, stepPart] = part.split('/')
+    const step = stepPart ? Number(stepPart) : 1
+    if (!Number.isInteger(step) || step <= 0) return null
+
+    let start = min
+    let end = max
+    if (rangePart !== '*') {
+      if (rangePart.includes('-')) {
+        const [rawStart, rawEnd] = rangePart.split('-').map(Number)
+        if (!Number.isInteger(rawStart) || !Number.isInteger(rawEnd)) return null
+        start = rawStart
+        end = rawEnd
+      } else {
+        const value = Number(rangePart)
+        if (!Number.isInteger(value)) return null
+        start = value
+        end = value
+      }
+    }
+
+    if (start < min || end > max || start > end) return null
+    for (let value = start; value <= end; value += step) {
+      allowed.add(value)
+    }
+  }
+
+  return (value: number) => allowed.has(value)
+}
+
+function computeNextCronRun(cronExpression: string): string | null {
+  const fields = cronExpression.trim().split(/\s+/)
+  if (fields.length !== 5) return null
+
+  const minute = parseCronField(fields[0], 0, 59)
+  const hour = parseCronField(fields[1], 0, 23)
+  const day = parseCronField(fields[2], 1, 31)
+  const month = parseCronField(fields[3], 1, 12)
+  const weekday = parseCronField(fields[4], 0, 6)
+  if (!minute || !hour || !day || !month || !weekday) return null
+
+  const cursor = new Date()
+  cursor.setSeconds(0, 0)
+  cursor.setMinutes(cursor.getMinutes() + 1)
+  const maxChecks = 366 * 24 * 60
+
+  for (let index = 0; index < maxChecks; index += 1) {
+    if (
+      minute(cursor.getMinutes()) &&
+      hour(cursor.getHours()) &&
+      day(cursor.getDate()) &&
+      month(cursor.getMonth() + 1) &&
+      weekday(cursor.getDay())
+    ) {
+      return cursor.toISOString()
+    }
+    cursor.setMinutes(cursor.getMinutes() + 1)
+  }
+
+  return null
+}
+
 async function submitForm() {
   saving.value = true
   try {
@@ -449,6 +535,7 @@ async function submitForm() {
         : form.payload_json
 
     let savedJob: AdminScheduledJob
+    const nextRunAt = cronPreviewNextRunAt.value
     if (editingId.value) {
       const payload: UpdateAdminScheduledJobRequest = {
         name: formatJobType(form.job_type),
@@ -458,12 +545,18 @@ async function submitForm() {
         retention_limit: form.retention_limit,
       }
       savedJob = await adminAPI.scheduledJobs.update(editingId.value, payload)
+      if (nextRunAt || !form.enabled) {
+        savedJob = { ...savedJob, next_run_at: form.enabled ? nextRunAt : null }
+      }
       jobs.value = jobs.value.map((job) => job.id === savedJob.id ? savedJob : job)
     } else {
       savedJob = await adminAPI.scheduledJobs.create({
         ...form,
         payload_json: payloadJSON,
       })
+      if (nextRunAt || !form.enabled) {
+        savedJob = { ...savedJob, next_run_at: form.enabled ? nextRunAt : null }
+      }
       jobs.value = [savedJob, ...jobs.value]
     }
     closeEditor()

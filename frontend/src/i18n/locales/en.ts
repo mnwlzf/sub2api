@@ -4107,6 +4107,7 @@ export default {
       typeAsName: 'Task type is used as the task name, and only one job is allowed per type.',
       syncResult: 'Synced {accounts} accounts from group {sourceGroup} to {targetGroups} groups',
       openAIModelMappingResult: 'Updated model mapping for {accounts} OpenAI OAuth accounts',
+      invalidCron: 'Invalid cron expression',
       columns: {
         name: 'Name',
         type: 'Type',

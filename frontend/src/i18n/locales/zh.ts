@@ -4201,6 +4201,7 @@ export default {
       typeAsName: '任务类型即任务名称，同一类型仅允许存在一个任务。',
       syncResult: '已同步 {accounts} 个账号，从分组 {sourceGroup} 到 {targetGroups} 个分组',
       openAIModelMappingResult: '已更新 {accounts} 个 OpenAI OAuth 账号的模型映射',
+      invalidCron: 'Cron 表达式无效',
       columns: {
         name: '任务名称',
         type: '任务类型',
