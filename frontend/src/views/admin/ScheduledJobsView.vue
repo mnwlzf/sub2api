@@ -64,7 +64,7 @@
                   <div class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     {{ t('admin.scheduledJobs.columns.nextRun') }}
                   </div>
-                  <div class="mt-1 text-sm text-gray-700 dark:text-gray-300">{{ formatDate(job.next_run_at) }}</div>
+                  <div class="mt-1 text-sm text-gray-700 dark:text-gray-300">{{ formatJobNextRun(job) }}</div>
                 </div>
                 <div class="rounded-2xl bg-gray-50 px-4 py-3 dark:bg-dark-700/70">
                   <div class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
@@ -210,7 +210,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -225,6 +225,7 @@ const appStore = useAppStore()
 const loading = ref(false)
 const saving = ref(false)
 const runningJobId = ref<number | null>(null)
+const nowTick = ref(Date.now())
 const jobs = ref<AdminScheduledJob[]>([])
 const runs = ref<AdminScheduledJobRun[]>([])
 const showEditor = ref(false)
@@ -274,6 +275,7 @@ const syncCodexFreeForm = reactive<AdminScheduledSyncCodexFreeGroupsPayload>({
 })
 const openAIModelMappingRows = ref<OpenAIModelMappingRow[]>([])
 let openAIModelMappingRowID = 1
+let nowTickTimer: number | undefined
 
 const targetGroupOptions = computed(() =>
   availableGroups.value.filter((group) => group.id !== syncCodexFreeForm.source_group_id)
@@ -298,6 +300,16 @@ const cronPreviewText = computed(() => {
   if (!form.enabled) return `${t('admin.scheduledJobs.columns.nextRun')}: -`
   if (!cronPreviewNextRunAt.value) return t('admin.scheduledJobs.invalidCron')
   return `${t('admin.scheduledJobs.columns.nextRun')}: ${formatDate(cronPreviewNextRunAt.value)}`
+})
+
+const jobNextRunCache = computed(() => {
+  void nowTick.value
+  const cache = new Map<number, string>()
+  for (const job of jobs.value) {
+    const computedNext = job.enabled ? computeNextCronRun(job.cron_expression) : null
+    cache.set(job.id, computedNext || job.next_run_at || '-')
+  }
+  return cache
 })
 
 watch(
@@ -631,6 +643,10 @@ function formatJobMessage(message: string) {
   return message
 }
 
+function formatJobNextRun(job: AdminScheduledJob) {
+  return formatDate(jobNextRunCache.value.get(job.id) || job.next_run_at)
+}
+
 function formatStatus(value: string) {
   if (!value) return '-'
   const normalized = value.toLowerCase()
@@ -650,5 +666,14 @@ function statusClass(status: string) {
 onMounted(() => {
   loadJobs()
   loadGroups()
+  nowTickTimer = window.setInterval(() => {
+    nowTick.value = Date.now()
+  }, 60_000)
+})
+
+onUnmounted(() => {
+  if (nowTickTimer) {
+    window.clearInterval(nowTickTimer)
+  }
 })
 </script>
