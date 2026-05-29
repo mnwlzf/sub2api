@@ -42,6 +42,14 @@ type openAIOAuthModelMappingUpdater interface {
 	UpdateOpenAIOAuthModelMapping(ctx context.Context, mapping map[string]string) (matched int64, updatedIDs []int64, err error)
 }
 
+type sharedOpenAIOAuthModelMappingUpdater interface {
+	UpdateSharedOpenAIOAuthModelMapping(ctx context.Context, mapping map[string]string) (matched int64, updatedIDs []int64, err error)
+}
+
+type exclusiveOpenAIOAuthModelMappingUpdater interface {
+	UpdateExclusiveOpenAIOAuthModelMapping(ctx context.Context, mapping map[string]string) (matched int64, updatedIDs []int64, err error)
+}
+
 func NewAdminScheduledJobExecutor(
 	backupService *BackupService,
 	dataManagementService *DataManagementService,
@@ -72,6 +80,10 @@ func (e *adminScheduledJobExecutor) Execute(ctx context.Context, job *AdminSched
 		return e.executeCleanupErrorAccounts(ctx)
 	case AdminScheduledJobTypeUpdateOpenAIOAuthModelMapping:
 		return e.executeUpdateOpenAIOAuthModelMapping(ctx, job)
+	case AdminScheduledJobTypeUpdateOpenAIOAuthSharedModelMapping:
+		return e.executeUpdateSharedOpenAIOAuthModelMapping(ctx, job)
+	case AdminScheduledJobTypeUpdateOpenAIOAuthExclusiveModelMapping:
+		return e.executeUpdateExclusiveOpenAIOAuthModelMapping(ctx, job)
 	default:
 		return "", "", fmt.Errorf("unsupported job type: %s", job.JobType)
 	}
@@ -305,6 +317,69 @@ func (e *adminScheduledJobExecutor) executeUpdateOpenAIOAuthModelMapping(ctx con
 		"finished_at":   time.Now().UTC().Format(time.RFC3339),
 	})
 	return fmt.Sprintf("updated %d openai oauth accounts", len(updatedIDs)), string(result), nil
+}
+
+func (e *adminScheduledJobExecutor) executeUpdateSharedOpenAIOAuthModelMapping(ctx context.Context, job *AdminScheduledJob) (string, string, error) {
+	updater, ok := e.accountRepo.(sharedOpenAIOAuthModelMappingUpdater)
+	if !ok || updater == nil {
+		return "", "", fmt.Errorf("account repository does not support shared openai oauth model mapping update")
+	}
+
+	modelMapping, err := parseScheduledOpenAIOAuthModelMapping(job.PayloadJSON)
+	if err != nil {
+		return "", "", err
+	}
+	matched, updatedIDs, err := updater.UpdateSharedOpenAIOAuthModelMapping(ctx, modelMapping)
+	if err != nil {
+		return "", "", err
+	}
+	result, _ := json.Marshal(map[string]any{
+		"matched":         matched,
+		"updated":         len(updatedIDs),
+		"updated_ids":     updatedIDs,
+		"group_ids":       []int64{2, 5, 11},
+		"excluded_groups": []int64{12},
+		"model_mapping":   modelMapping,
+		"finished_at":     time.Now().UTC().Format(time.RFC3339),
+	})
+	return fmt.Sprintf("updated %d shared openai oauth accounts", len(updatedIDs)), string(result), nil
+}
+
+func (e *adminScheduledJobExecutor) executeUpdateExclusiveOpenAIOAuthModelMapping(ctx context.Context, job *AdminScheduledJob) (string, string, error) {
+	updater, ok := e.accountRepo.(exclusiveOpenAIOAuthModelMappingUpdater)
+	if !ok || updater == nil {
+		return "", "", fmt.Errorf("account repository does not support exclusive openai oauth model mapping update")
+	}
+
+	modelMapping, err := parseScheduledOpenAIOAuthModelMapping(job.PayloadJSON)
+	if err != nil {
+		return "", "", err
+	}
+	matched, updatedIDs, err := updater.UpdateExclusiveOpenAIOAuthModelMapping(ctx, modelMapping)
+	if err != nil {
+		return "", "", err
+	}
+	result, _ := json.Marshal(map[string]any{
+		"matched":       matched,
+		"updated":       len(updatedIDs),
+		"updated_ids":   updatedIDs,
+		"group_ids":     []int64{12},
+		"model_mapping": modelMapping,
+		"finished_at":   time.Now().UTC().Format(time.RFC3339),
+	})
+	return fmt.Sprintf("updated %d exclusive openai oauth accounts", len(updatedIDs)), string(result), nil
+}
+
+func parseScheduledOpenAIOAuthModelMapping(payloadJSON string) (map[string]string, error) {
+	payload := adminScheduledOpenAIOAuthModelMappingPayload{}
+	if err := json.Unmarshal([]byte(payloadJSON), &payload); err != nil {
+		return nil, fmt.Errorf("invalid payload_json: %w", err)
+	}
+	modelMapping := normalizeModelMapping(payload.ModelMapping)
+	if len(modelMapping) == 0 {
+		return nil, fmt.Errorf("model_mapping is required")
+	}
+	return modelMapping, nil
 }
 
 func normalizeModelMapping(input map[string]string) map[string]string {

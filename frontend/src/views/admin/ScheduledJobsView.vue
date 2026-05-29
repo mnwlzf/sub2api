@@ -139,7 +139,7 @@
                 </div>
               </div>
             </template>
-            <template v-else-if="form.job_type === 'update_openai_oauth_model_mapping'">
+            <template v-else-if="isOpenAIModelMappingJobType(form.job_type)">
               <div class="space-y-3">
                 <div class="flex items-center justify-between gap-3">
                   <div>
@@ -241,6 +241,11 @@ const jobTypeOptions = [
   { value: 'channel_monitor_maintenance', labelKey: 'admin.scheduledJobs.types.channel_monitor_maintenance' },
   { value: 'sync_codex_free_group_accounts', labelKey: 'admin.scheduledJobs.types.sync_codex_free_group_accounts' },
   { value: 'cleanup_error_accounts', labelKey: 'admin.scheduledJobs.types.cleanup_error_accounts' },
+  { value: 'update_openai_oauth_shared_model_mapping', labelKey: 'admin.scheduledJobs.types.update_openai_oauth_shared_model_mapping' },
+  { value: 'update_openai_oauth_exclusive_model_mapping', labelKey: 'admin.scheduledJobs.types.update_openai_oauth_exclusive_model_mapping' },
+] as const
+
+const legacyJobTypeOptions = [
   { value: 'update_openai_oauth_model_mapping', labelKey: 'admin.scheduledJobs.types.update_openai_oauth_model_mapping' },
 ] as const
 
@@ -360,7 +365,7 @@ function openEdit(job: AdminScheduledJob) {
       syncCodexFreeForm.target_group_ids = []
     }
     openAIModelMappingRows.value = defaultOpenAIModelMappingRows()
-  } else if (job.job_type === 'update_openai_oauth_model_mapping') {
+  } else if (isOpenAIModelMappingJobType(job.job_type)) {
     syncCodexFreeForm.source_group_id = 0
     syncCodexFreeForm.target_group_ids = []
     openAIModelMappingRows.value = parseOpenAIModelMappingRows(job.payload_json)
@@ -465,6 +470,12 @@ function removeOpenAIModelMappingRow(index: number) {
   openAIModelMappingRows.value = openAIModelMappingRows.value.filter((_, i) => i !== index)
 }
 
+function isOpenAIModelMappingJobType(jobType: string) {
+  return jobType === 'update_openai_oauth_model_mapping'
+    || jobType === 'update_openai_oauth_shared_model_mapping'
+    || jobType === 'update_openai_oauth_exclusive_model_mapping'
+}
+
 function buildOpenAIModelMappingPayload() {
   const mapping: Record<string, string> = {}
   for (const row of openAIModelMappingRows.value) {
@@ -564,7 +575,7 @@ async function submitForm() {
         appStore.showError(t('admin.scheduledJobs.targetGroupsRequired'))
         return
       }
-    } else if (form.job_type === 'update_openai_oauth_model_mapping') {
+    } else if (isOpenAIModelMappingJobType(form.job_type)) {
       if (Object.keys(buildOpenAIModelMappingPayload().model_mapping).length === 0) {
         appStore.showError(t('admin.scheduledJobs.modelMappingRequired'))
         return
@@ -575,7 +586,7 @@ async function submitForm() {
           source_group_id: syncCodexFreeForm.source_group_id,
           target_group_ids: syncCodexFreeForm.target_group_ids,
         })
-      : form.job_type === 'update_openai_oauth_model_mapping'
+      : isOpenAIModelMappingJobType(form.job_type)
         ? JSON.stringify(buildOpenAIModelMappingPayload())
         : form.payload_json
 
@@ -648,7 +659,7 @@ function formatDate(value: string | null) {
 }
 
 function formatJobType(value: string) {
-  const option = jobTypeOptions.find((item) => item.value === value)
+  const option = [...jobTypeOptions, ...legacyJobTypeOptions].find((item) => item.value === value)
   return option ? t(option.labelKey) : value
 }
 
@@ -669,7 +680,7 @@ function formatJobMessage(message: string) {
       targetGroups: syncMatch[3],
     })
   }
-  const mappingMatch = message.match(/^updated\s+(\d+)\s+openai oauth accounts?$/i)
+  const mappingMatch = message.match(/^updated\s+(\d+)\s+openai oauth accounts?(?:\s+in\s+\d+\s+groups?)?$/i)
   if (mappingMatch) {
     return t('admin.scheduledJobs.openAIModelMappingResult', { accounts: mappingMatch[1] })
   }

@@ -420,6 +420,18 @@ func (r *accountRepository) UpdateCredentials(ctx context.Context, id int64, cre
 }
 
 func (r *accountRepository) UpdateOpenAIOAuthModelMapping(ctx context.Context, mapping map[string]string) (int64, []int64, error) {
+	return r.updateOpenAIOAuthModelMapping(ctx, mapping)
+}
+
+func (r *accountRepository) UpdateSharedOpenAIOAuthModelMapping(ctx context.Context, mapping map[string]string) (int64, []int64, error) {
+	return r.updateSharedOpenAIOAuthModelMapping(ctx, mapping)
+}
+
+func (r *accountRepository) UpdateExclusiveOpenAIOAuthModelMapping(ctx context.Context, mapping map[string]string) (int64, []int64, error) {
+	return r.updateExclusiveOpenAIOAuthModelMapping(ctx, mapping)
+}
+
+func (r *accountRepository) updateOpenAIOAuthModelMapping(ctx context.Context, mapping map[string]string) (int64, []int64, error) {
 	if len(mapping) == 0 {
 		return 0, nil, nil
 	}
@@ -447,18 +459,117 @@ func (r *accountRepository) UpdateOpenAIOAuthModelMapping(ctx context.Context, m
 	}
 	defer func() { _ = rows.Close() }()
 
+	ids, err := scanUpdatedAccountIDs(rows)
+	if err != nil {
+		return 0, nil, err
+	}
+	return r.finishOpenAIOAuthModelMappingUpdate(ctx, ids)
+}
+
+func (r *accountRepository) updateSharedOpenAIOAuthModelMapping(ctx context.Context, mapping map[string]string) (int64, []int64, error) {
+	if len(mapping) == 0 {
+		return 0, nil, nil
+	}
+	payload, err := json.Marshal(mapping)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	rows, err := r.sql.QueryContext(ctx, `
+		UPDATE accounts
+		SET credentials = jsonb_set(
+		      COALESCE(credentials, '{}'::jsonb) - 'model_whitelist',
+		      '{model_mapping}',
+		      $1::jsonb,
+		      true
+		    ),
+		    updated_at = NOW()
+		WHERE platform = $2
+		  AND type = $3
+		  AND deleted_at IS NULL
+		  AND EXISTS (
+		      SELECT 1
+		      FROM account_groups ag
+		      WHERE ag.account_id = accounts.id
+		        AND ag.group_id = ANY($4::bigint[])
+		  )
+		  AND NOT EXISTS (
+		      SELECT 1
+		      FROM account_groups plus_ag
+		      WHERE plus_ag.account_id = accounts.id
+		        AND plus_ag.group_id = $5
+		  )
+		RETURNING id
+	`, payload, service.PlatformOpenAI, service.AccountTypeOAuth, pq.Array([]int64{2, 5, 11}), int64(12))
+	if err != nil {
+		return 0, nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	ids, err := scanUpdatedAccountIDs(rows)
+	if err != nil {
+		return 0, nil, err
+	}
+	return r.finishOpenAIOAuthModelMappingUpdate(ctx, ids)
+}
+
+func (r *accountRepository) updateExclusiveOpenAIOAuthModelMapping(ctx context.Context, mapping map[string]string) (int64, []int64, error) {
+	if len(mapping) == 0 {
+		return 0, nil, nil
+	}
+	payload, err := json.Marshal(mapping)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	rows, err := r.sql.QueryContext(ctx, `
+		UPDATE accounts
+		SET credentials = jsonb_set(
+		      COALESCE(credentials, '{}'::jsonb) - 'model_whitelist',
+		      '{model_mapping}',
+		      $1::jsonb,
+		      true
+		    ),
+		    updated_at = NOW()
+		WHERE platform = $2
+		  AND type = $3
+		  AND deleted_at IS NULL
+		  AND EXISTS (
+		      SELECT 1
+		      FROM account_groups ag
+		      WHERE ag.account_id = accounts.id
+		        AND ag.group_id = $4
+		  )
+		RETURNING id
+	`, payload, service.PlatformOpenAI, service.AccountTypeOAuth, int64(12))
+	if err != nil {
+		return 0, nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	ids, err := scanUpdatedAccountIDs(rows)
+	if err != nil {
+		return 0, nil, err
+	}
+	return r.finishOpenAIOAuthModelMappingUpdate(ctx, ids)
+}
+
+func scanUpdatedAccountIDs(rows *sql.Rows) ([]int64, error) {
 	ids := make([]int64, 0)
 	for rows.Next() {
 		var id int64
 		if scanErr := rows.Scan(&id); scanErr != nil {
-			return 0, nil, scanErr
+			return nil, scanErr
 		}
 		ids = append(ids, id)
 	}
 	if err := rows.Err(); err != nil {
-		return 0, nil, err
+		return nil, err
 	}
+	return ids, nil
+}
 
+func (r *accountRepository) finishOpenAIOAuthModelMappingUpdate(ctx context.Context, ids []int64) (int64, []int64, error) {
 	matched := int64(len(ids))
 	if matched == 0 {
 		return 0, ids, nil

@@ -11,7 +11,9 @@ const (
 	AdminScheduledJobTypeChannelMonitorMaint = "channel_monitor_maintenance"
 	AdminScheduledJobTypeSyncCodexFreeGroups = "sync_codex_free_group_accounts"
 	AdminScheduledJobTypeCleanupErrorAccounts = "cleanup_error_accounts"
-	AdminScheduledJobTypeUpdateOpenAIOAuthModelMapping = "update_openai_oauth_model_mapping"
+	AdminScheduledJobTypeUpdateOpenAIOAuthModelMapping           = "update_openai_oauth_model_mapping"
+	AdminScheduledJobTypeUpdateOpenAIOAuthSharedModelMapping    = "update_openai_oauth_shared_model_mapping"
+	AdminScheduledJobTypeUpdateOpenAIOAuthExclusiveModelMapping = "update_openai_oauth_exclusive_model_mapping"
 
 	AdminScheduledJobTriggerManual    = "manual"
 	AdminScheduledJobTriggerScheduled = "scheduled"

@@ -4148,7 +4148,7 @@ export default {
       sourceGroupRequired: 'Please select a source group',
       targetGroupsRequired: 'Please select at least one target group',
       modelMapping: 'OpenAI OAuth Model Mapping',
-      modelMappingHint: 'Map user requested models to upstream models. After running, all OpenAI OAuth accounts are updated and scheduler cache is refreshed.',
+      modelMappingHint: 'Map user requested models to upstream models. The shared job updates codex/Lite/trial groups; the exclusive job updates the PLUS exclusive group. Scheduler cache is refreshed after running.',
       addMapping: 'Add Mapping',
       requestModel: 'Requested Model',
       upstreamModel: 'Upstream Model',
@@ -4171,7 +4171,9 @@ export default {
         channel_monitor_maintenance: 'Channel Monitor Maintenance',
         sync_codex_free_group_accounts: 'Sync Codex-Free Group Accounts',
         cleanup_error_accounts: 'Cleanup Error Accounts',
-        update_openai_oauth_model_mapping: 'Update OpenAI OAuth Model Mapping'
+        update_openai_oauth_model_mapping: 'Update OpenAI OAuth Model Mapping',
+        update_openai_oauth_shared_model_mapping: 'Update OpenAI OAuth Shared Account Mapping',
+        update_openai_oauth_exclusive_model_mapping: 'Update OpenAI OAuth Exclusive Account Mapping'
       }
     },
 

@@ -4240,7 +4240,7 @@ export default {
       sourceGroupRequired: '请选择源分组',
       targetGroupsRequired: '请至少选择一个目标分组',
       modelMapping: 'OpenAI OAuth 模型映射',
-      modelMappingHint: '将用户请求模型映射为实际调用模型；执行后会更新所有 OpenAI OAuth 账号并刷新调度缓存。',
+      modelMappingHint: '将用户请求模型映射为实际调用模型；普通任务更新 codex/Lite/尝鲜 分组账号，专属任务更新 PLUS 专属分组账号，执行后会刷新调度缓存。',
       addMapping: '添加映射',
       requestModel: '用户请求模型',
       upstreamModel: '实际调用模型',
@@ -4263,7 +4263,9 @@ export default {
         channel_monitor_maintenance: '渠道监控维护',
         sync_codex_free_group_accounts: '同步codex-free分组账号',
         cleanup_error_accounts: '清理错误状态账号',
-        update_openai_oauth_model_mapping: '更新 OpenAI OAuth 模型映射'
+        update_openai_oauth_model_mapping: '更新 OpenAI OAuth 模型映射',
+        update_openai_oauth_shared_model_mapping: '更新 OpenAI OAuth 普通账号映射',
+        update_openai_oauth_exclusive_model_mapping: '更新 OpenAI OAuth 专属账号映射'
       }
     },
 
