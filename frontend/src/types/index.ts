@@ -1520,9 +1520,30 @@ export interface UsageCostMonitorTopUser {
   tokens: number
 }
 
+export interface UsageCostMonitorTopGroup {
+  group_id: number
+  group_name: string
+  platform: string
+  total_actual_cost: number
+  requests: number
+  tokens: number
+}
+
 export interface UsageCostMonitorData {
   top_users: UsageCostMonitorTopUser[]
   series: UsageCostMonitorPoint[]
+  top_groups?: UsageCostMonitorTopGroup[]
+  group_series?: UsageCostMonitorGroupPoint[]
+}
+
+export interface UsageCostMonitorGroupPoint {
+  bucket: string
+  group_id: number
+  group_name: string
+  platform: string
+  actual_cost: number
+  requests: number
+  tokens: number
 }
 
 export interface UsageCostMonitorResponse {

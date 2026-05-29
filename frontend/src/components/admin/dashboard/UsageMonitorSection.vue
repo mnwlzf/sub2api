@@ -257,6 +257,65 @@
         </div>
       </div>
 
+      <div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        <div class="card p-4 xl:col-span-2">
+          <div class="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.usageMonitor.groupTrend') }}</h3>
+              <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.usageMonitor.groupTrendHint') }}</p>
+            </div>
+            <button type="button" class="btn btn-secondary btn-xs shrink-0" :disabled="refreshing" @click="loadData">
+              <Icon name="refresh" size="xs" :class="refreshing ? 'animate-spin' : ''" />
+              {{ t('common.refresh') }}
+            </button>
+          </div>
+          <div class="h-[380px]">
+            <Line v-if="groupTrendChartData" :data="groupTrendChartData" :options="groupTrendChartOptions" />
+            <div v-else class="flex h-full items-center justify-center text-sm text-gray-500 dark:text-gray-400">
+              {{ t('admin.usageMonitor.noData') }}
+            </div>
+          </div>
+        </div>
+
+        <div class="card p-4">
+          <div class="mb-3 flex items-center justify-between gap-3">
+            <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.usageMonitor.topGroups') }}</h3>
+            <button type="button" class="btn btn-secondary btn-xs shrink-0" :disabled="refreshing" @click="loadData">
+              <Icon name="refresh" size="xs" :class="refreshing ? 'animate-spin' : ''" />
+              {{ t('common.refresh') }}
+            </button>
+          </div>
+          <div class="space-y-3">
+            <div
+              v-for="(group, index) in usageMonitorData?.top_groups ?? []"
+              :key="group.group_id"
+              class="rounded-lg border p-3 transition-colors dark:border-gray-700"
+              :class="hoveredGroupId === group.group_id
+                ? 'border-cyan-400 bg-cyan-50/70 dark:border-cyan-500/60 dark:bg-cyan-500/10'
+                : 'border-gray-200 dark:border-gray-700'"
+            >
+              <div class="flex items-center justify-between gap-3">
+                <div class="min-w-0">
+                  <div class="truncate text-sm font-medium text-gray-900 dark:text-white">
+                    {{ group.group_name || `Group #${group.group_id}` }}
+                  </div>
+                  <div class="text-xs text-gray-500 dark:text-gray-400">
+                    #{{ index + 1 }} / {{ group.platform || '-' }}
+                  </div>
+                </div>
+                <div class="shrink-0 text-right">
+                  <div class="text-[11px] text-gray-500 dark:text-gray-400">{{ metricLabel }}</div>
+                  <div class="text-sm font-semibold text-gray-900 dark:text-white">{{ formatGroupMetricValue(group) }}</div>
+                </div>
+              </div>
+            </div>
+            <div v-if="!(usageMonitorData?.top_groups ?? []).length" class="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+              {{ t('admin.usageMonitor.noData') }}
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="card p-4">
         <div class="mb-4 flex items-center justify-between gap-3">
           <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.dashboard.spendingRankingTitle') }}</h3>
@@ -336,6 +395,7 @@ const selectedUsers = ref<SimpleUser[]>([])
 const userDropdownRef = ref<HTMLElement | null>(null)
 let userSearchTimer: number | undefined
 const hoveredUserId = ref<number | null>(null)
+const hoveredGroupId = ref<number | null>(null)
 const summaryTooltip = ref({
   visible: false,
   x: 0,
@@ -641,6 +701,12 @@ const formatMetricValue = (value: number) => {
   return `$${formatCost(value)}`
 }
 
+const formatGroupMetricValue = (group: { total_actual_cost: number; requests: number; tokens: number }) => {
+  if (trendMetric.value === 'requests') return formatNumber(group.requests)
+  if (trendMetric.value === 'tokens') return formatTokens(group.tokens)
+  return `$${formatCost(group.total_actual_cost)}`
+}
+
 const metricLabel = computed(() => (
   trendMetric.value === 'requests'
     ? t('admin.dashboard.requests')
@@ -660,6 +726,12 @@ const topUserMetricTotal = (userId: number) => {
   ), 0)
 }
 
+const groupMetricValueFromPoint = (point: NonNullable<UsageCostMonitorData['group_series']>[number]) => {
+  if (trendMetric.value === 'requests') return point.requests
+  if (trendMetric.value === 'tokens') return point.tokens
+  return point.actual_cost
+}
+
 const pointLookup = computed(() => {
   const map = new Map<string, { email: string; actual_cost: number; requests: number; tokens: number; metric_value: number; models: { model: string; actual_cost: number }[] }>()
   for (const item of usageMonitorData.value?.series ?? []) {
@@ -670,6 +742,21 @@ const pointLookup = computed(() => {
       tokens: item.tokens,
       metric_value: metricValueFromPoint(item),
       models: item.models
+    })
+  }
+  return map
+})
+
+const groupPointLookup = computed(() => {
+  const map = new Map<string, { group_name: string; platform: string; actual_cost: number; requests: number; tokens: number; metric_value: number }>()
+  for (const item of usageMonitorData.value?.group_series ?? []) {
+    map.set(`${item.group_id}:${item.bucket}`, {
+      group_name: item.group_name,
+      platform: item.platform,
+      actual_cost: item.actual_cost,
+      requests: item.requests,
+      tokens: item.tokens,
+      metric_value: groupMetricValueFromPoint(item),
     })
   }
   return map
@@ -703,6 +790,70 @@ const topUserChartData = computed(() => {
         pointHitRadius: 12
       }
     })
+  }
+})
+
+const groupBucketKeys = computed(() => {
+  if (!usageMonitorData.value?.group_series?.length) return []
+  return sortBuckets(Array.from(new Set(usageMonitorData.value.group_series.map(item => item.bucket))))
+})
+
+const groupTrendChartData = computed(() => {
+  if (!usageMonitorData.value?.group_series?.length) return null
+  const groupSeries = usageMonitorData.value.group_series
+  const buckets = groupBucketKeys.value
+  if (!buckets.length) return null
+
+  const groups = usageMonitorData.value.top_groups ?? []
+  if (!groups.length) return null
+
+  const totalByBucket = new Map<string, number>()
+  for (const point of groupSeries) {
+    totalByBucket.set(point.bucket, (totalByBucket.get(point.bucket) || 0) + groupMetricValueFromPoint(point))
+  }
+  if (!Array.from(totalByBucket.values()).some(value => value > 0)) return null
+
+  return {
+    labels: buckets.map(label => granularity.value === 'hour'
+      ? formatMinuteLabel(label)
+      : granularity.value === 'day'
+        ? formatHourLabel(label, 1)
+        : label),
+    datasets: [
+      {
+        label: `${t('common.total')} ${metricLabel.value}`,
+        groupId: 0,
+        data: buckets.map(bucket => totalByBucket.get(bucket) || 0),
+        borderColor: '#111827',
+        backgroundColor: '#11182718',
+        borderWidth: 2,
+        fill: false,
+        tension: 0.25,
+        pointRadius: 2,
+        pointHoverRadius: 6,
+        pointHitRadius: 12
+      },
+      ...groups.map((group, index) => {
+        const groupMap = new Map(
+          groupSeries
+            .filter(item => item.group_id === group.group_id)
+            .map(item => [item.bucket, groupMetricValueFromPoint(item)])
+        )
+        const color = chartPalette[(index + 2) % chartPalette.length]
+        return {
+          label: group.group_name || `Group #${group.group_id}`,
+          groupId: group.group_id,
+          data: buckets.map(label => groupMap.get(label) ?? 0),
+          borderColor: color,
+          backgroundColor: `${color}22`,
+          fill: false,
+          tension: 0.25,
+          pointRadius: 2,
+          pointHoverRadius: 6,
+          pointHitRadius: 12
+        }
+      })
+    ]
   }
 })
 
@@ -781,7 +932,9 @@ const topUserBucketKeys = computed(() => {
 
 const mergeUsageMonitorResponses = (responses: UsageCostMonitorData[]) => {
   const topUsers = new Map<number, { user_id: number; email: string; total_actual_cost: number; requests: number; tokens: number }>()
+  const topGroups = new Map<number, { group_id: number; group_name: string; platform: string; total_actual_cost: number; requests: number; tokens: number }>()
   const series: UsageCostMonitorData['series'] = []
+  const groupSeries: NonNullable<UsageCostMonitorData['group_series']> = []
 
   for (const data of responses) {
     for (const user of data.top_users || []) {
@@ -795,6 +948,17 @@ const mergeUsageMonitorResponses = (responses: UsageCostMonitorData[]) => {
       }
     }
     series.push(...(data.series || []))
+    for (const group of data.top_groups || []) {
+      const existing = topGroups.get(group.group_id)
+      if (!existing) {
+        topGroups.set(group.group_id, { ...group })
+      } else {
+        existing.total_actual_cost += group.total_actual_cost
+        existing.requests += group.requests
+        existing.tokens += group.tokens
+      }
+    }
+    groupSeries.push(...(data.group_series || []))
   }
 
   return {
@@ -804,6 +968,12 @@ const mergeUsageMonitorResponses = (responses: UsageCostMonitorData[]) => {
       return right - left
     }),
     series,
+    top_groups: Array.from(topGroups.values()).sort((a, b) => {
+      const left = trendMetric.value === 'requests' ? a.requests : trendMetric.value === 'tokens' ? a.tokens : a.total_actual_cost
+      const right = trendMetric.value === 'requests' ? b.requests : trendMetric.value === 'tokens' ? b.tokens : b.total_actual_cost
+      return right - left
+    }),
+    group_series: groupSeries,
   }
 }
 
@@ -886,6 +1056,60 @@ const topUserChartOptions = computed(() => ({
   }
 }))
 
+const groupTrendChartOptions = computed(() => ({
+  responsive: true,
+  maintainAspectRatio: false,
+  interaction: { intersect: false, mode: 'index' as const, axis: 'x' as const },
+  plugins: {
+    legend: { position: 'top' as const, labels: { usePointStyle: true, pointStyle: 'circle' } },
+    tooltip: {
+      mode: 'index' as const,
+      intersect: false,
+      position: 'nearest' as const,
+      padding: 12,
+      titleMarginBottom: 8,
+      bodySpacing: 6,
+      boxPadding: 4,
+      callbacks: {
+        title: (items: any[]) => {
+          const bucket = groupBucketKeys.value[items[0]?.dataIndex ?? -1] || String(items[0]?.label || '')
+          return bucket ? formatTopUserTooltipTitle(bucket) : ''
+        },
+        label: (ctx: any) => {
+          const groupId = Number(ctx.dataset.groupId ?? 0)
+          const bucket = groupBucketKeys.value[ctx.dataIndex] || ''
+          const record = groupId > 0 ? groupPointLookup.value.get(`${groupId}:${bucket}`) : null
+          const suffix = record?.platform ? ` · ${record.platform}` : ''
+          return `${ctx.dataset.label}${suffix}: ${formatMetricValue(Number(ctx.raw ?? 0))}`
+        }
+      }
+    }
+  },
+  scales: {
+    x: {
+      ticks: {
+        autoSkip: true,
+        autoSkipPadding: 32,
+        maxRotation: 0,
+        minRotation: 0,
+        maxTicksLimit: granularity.value === 'day' ? 5 : 8,
+        callback: function (this: any, value: string | number) {
+          return this.getLabelForValue(Number(value))
+        }
+      }
+    },
+    y: { ticks: { callback: (value: string | number) => formatMetricValue(Number(value)) } }
+  },
+  onHover: (_event: unknown, elements: Array<{ datasetIndex: number }>, chart: any) => {
+    if (!elements?.length) {
+      hoveredGroupId.value = null
+      return
+    }
+    const dataset = chart.data.datasets[elements[0].datasetIndex]
+    hoveredGroupId.value = Number(dataset?.groupId ?? 0) || null
+  }
+}))
+
 const modelTrendChartOptions = computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
@@ -896,6 +1120,10 @@ const modelTrendChartOptions = computed(() => ({
       mode: 'index' as const,
       intersect: false,
       position: 'nearest' as const,
+      padding: 12,
+      titleMarginBottom: 8,
+      bodySpacing: 6,
+      boxPadding: 4,
       callbacks: {
         title: (items: any[]) => {
           const bucket = topUserBucketKeys.value[items[0]?.dataIndex ?? -1] || String(items[0]?.label || '')

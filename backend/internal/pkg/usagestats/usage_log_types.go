@@ -171,6 +171,16 @@ type UsageCostMonitorTopUser struct {
 	Tokens          int64   `json:"tokens"`
 }
 
+// UsageCostMonitorTopGroup represents a ranked group in the cost monitor.
+type UsageCostMonitorTopGroup struct {
+	GroupID         int64   `json:"group_id"`
+	GroupName       string  `json:"group_name"`
+	Platform        string  `json:"platform"`
+	TotalActualCost float64 `json:"total_actual_cost"`
+	Requests        int64   `json:"requests"`
+	Tokens          int64   `json:"tokens"`
+}
+
 // UsageCostMonitorModelBreakdown represents one model's cost in a bucket.
 type UsageCostMonitorModelBreakdown struct {
 	Model      string  `json:"model"`
@@ -188,10 +198,23 @@ type UsageCostMonitorPoint struct {
 	Models     []UsageCostMonitorModelBreakdown `json:"models"`
 }
 
+// UsageCostMonitorGroupPoint represents one group bucket point.
+type UsageCostMonitorGroupPoint struct {
+	Bucket     string  `json:"bucket"`
+	GroupID    int64   `json:"group_id"`
+	GroupName  string  `json:"group_name"`
+	Platform   string  `json:"platform"`
+	ActualCost float64 `json:"actual_cost"`
+	Requests   int64   `json:"requests"`
+	Tokens     int64   `json:"tokens"`
+}
+
 // UsageCostMonitorData represents the core series payload for the admin monitor page.
 type UsageCostMonitorData struct {
-	TopUsers []UsageCostMonitorTopUser `json:"top_users"`
-	Series   []UsageCostMonitorPoint   `json:"series"`
+	TopUsers    []UsageCostMonitorTopUser   `json:"top_users"`
+	Series      []UsageCostMonitorPoint     `json:"series"`
+	TopGroups   []UsageCostMonitorTopGroup  `json:"top_groups"`
+	GroupSeries []UsageCostMonitorGroupPoint `json:"group_series"`
 }
 
 // UserBreakdownItem represents per-user usage breakdown within a dimension (group, model, endpoint).

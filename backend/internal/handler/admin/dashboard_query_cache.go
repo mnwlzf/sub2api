@@ -53,6 +53,7 @@ type dashboardEntityTrendCacheKey struct {
 }
 
 type dashboardUsageMonitorCacheKey struct {
+	Version     int    `json:"version"`
 	StartTime   string `json:"start_time"`
 	EndTime     string `json:"end_time"`
 	Granularity string `json:"granularity"`
@@ -214,6 +215,7 @@ func (h *DashboardHandler) getUserUsageTrendCached(ctx context.Context, startTim
 
 func (h *DashboardHandler) getUsageMonitorCached(ctx context.Context, startTime, endTime time.Time, granularity, timezone string, userID int64, limit int) (*usagestats.UsageCostMonitorData, bool, error) {
 	key := mustMarshalDashboardCacheKey(dashboardUsageMonitorCacheKey{
+		Version:     2,
 		StartTime:   startTime.UTC().Format(time.RFC3339),
 		EndTime:     endTime.UTC().Format(time.RFC3339),
 		Granularity: granularity,
