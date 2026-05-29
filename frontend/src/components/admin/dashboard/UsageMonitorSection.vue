@@ -197,7 +197,7 @@
 
           <div
             v-if="topUserTooltip.visible"
-            class="pointer-events-none absolute z-20 w-[340px] max-w-[calc(100vw-2rem)] rounded-2xl border border-gray-700/70 bg-gray-950/95 px-3 py-2.5 text-xs text-gray-100 shadow-[0_18px_48px_-18px_rgba(15,23,42,0.75)] backdrop-blur-sm"
+            class="pointer-events-none absolute z-20 max-h-[300px] w-[380px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-gray-700/70 bg-gray-950/95 px-3 py-2.5 text-xs text-gray-100 shadow-[0_18px_48px_-18px_rgba(15,23,42,0.75)] backdrop-blur-sm"
             :style="{
               left: `${topUserTooltip.x}px`,
               top: `${topUserTooltip.y}px`
@@ -206,26 +206,33 @@
             <div class="text-[11px] font-semibold text-white">
               {{ topUserTooltip.title }}
             </div>
-            <div class="mt-2 flex items-center gap-2">
-              <span class="h-2.5 w-2.5 rounded-full" :style="{ backgroundColor: topUserTooltip.color }"></span>
-              <span class="min-w-0 flex-1 truncate text-[11px] text-gray-200">{{ topUserTooltip.seriesLabel }}</span>
-              <span class="shrink-0 text-[11px] font-medium text-white">{{ formatMetricValue(topUserTooltip.actualCost) }}</span>
-            </div>
-            <div class="mt-2 border-t border-white/10 pt-2">
-              <div class="mb-1 text-[10px] font-medium uppercase tracking-wide text-gray-400">{{ t('admin.usageMonitor.models') }}</div>
-              <div class="space-y-1">
-                <div
-                  v-for="model in topUserTooltip.models"
-                  :key="model.model"
-                  class="flex items-center justify-between gap-3"
-                >
-                  <span class="min-w-0 flex-1 truncate text-[11px] text-gray-200">{{ model.model }}</span>
-                  <span class="shrink-0 font-medium text-cyan-300">${{ formatCost(model.actual_cost) }}</span>
+            <div class="mt-2 max-h-[252px] space-y-2 overflow-y-auto pr-1">
+              <div
+                v-for="user in topUserTooltip.users"
+                :key="user.user_id"
+                class="border-t border-white/10 pt-2 first:border-t-0 first:pt-0"
+              >
+                <div class="flex items-center gap-2">
+                  <span class="h-2.5 w-2.5 rounded-full" :style="{ backgroundColor: user.color }"></span>
+                  <span class="min-w-0 flex-1 truncate text-[11px] text-gray-200">{{ user.email }}</span>
+                  <span class="shrink-0 text-[11px] font-medium text-white">{{ formatMetricValue(user.total) }}</span>
                 </div>
-                <div v-if="topUserTooltip.remainingModels > 0" class="text-[11px] text-gray-400">
-                  +{{ topUserTooltip.remainingModels }} more
+                <div class="mt-1 space-y-1 pl-4">
+                  <div
+                    v-for="model in user.models"
+                    :key="`${user.user_id}:${model.model}`"
+                    class="flex items-center justify-between gap-3"
+                  >
+                    <span class="min-w-0 flex-1 truncate text-[11px] text-gray-300">{{ model.model }}</span>
+                    <span class="shrink-0 font-medium text-cyan-300">${{ formatCost(model.actual_cost) }}</span>
+                  </div>
+                  <div v-if="user.models.length === 0" class="text-[11px] text-gray-400">-</div>
+                  <div v-if="user.remainingModels > 0" class="text-[11px] text-gray-400">
+                    +{{ user.remainingModels }} more
+                  </div>
                 </div>
               </div>
+              <div v-if="topUserTooltip.users.length === 0" class="text-[11px] text-gray-400">-</div>
             </div>
           </div>
         </div>
@@ -342,13 +349,15 @@ const topUserTooltip = ref({
   visible: false,
   x: 0,
   y: 0,
-  placement: 'bottom' as 'bottom' | 'top',
   title: '',
-  seriesLabel: '',
-  actualCost: 0,
-  color: '#2563eb',
-  models: [] as { model: string; actual_cost: number }[],
-  remainingModels: 0,
+  users: [] as {
+    user_id: number
+    email: string
+    color: string
+    total: number
+    models: { model: string; actual_cost: number }[]
+    remainingModels: number
+  }[],
 })
 
 const granularityOptions = computed(() => ([
@@ -538,15 +547,30 @@ const updateTopUserTooltip = (chartTooltip: any, chartWidth: number, chartHeight
     return
   }
 
-  const point = chartTooltip.dataPoints[0]
-  const userId = Number(point?.dataset?.userId ?? 0)
-  hoveredUserId.value = userId || null
-  const bucket = topUserBucketKeys.value[point?.dataIndex ?? -1] || String(point?.label || '')
-  const record = pointLookup.value.get(`${userId}:${bucket}`)
-  const models = (record?.models || []).slice(0, 4)
-  const remainingModels = Math.max((record?.models?.length || 0) - models.length, 0)
-  const width = 340
-  const height = 116 + models.length * 22 + (remainingModels > 0 ? 18 : 0)
+  const points = chartTooltip.dataPoints || []
+  const primaryPoint = points[0]
+  const bucket = topUserBucketKeys.value[primaryPoint?.dataIndex ?? -1] || String(primaryPoint?.label || '')
+  const users = points
+    .map((point: any) => {
+      const userId = Number(point?.dataset?.userId ?? 0)
+      const record = pointLookup.value.get(`${userId}:${bucket}`)
+      const allModels = (record?.models || []).slice().sort((a, b) => b.actual_cost - a.actual_cost)
+      return {
+        user_id: userId,
+        email: String(point?.dataset?.label || record?.email || `User #${userId}`),
+        color: String(point?.dataset?.borderColor || '#2563eb'),
+        total: record?.metric_value ?? Number(point?.raw ?? 0),
+        models: allModels.slice(0, 4),
+        remainingModels: Math.max(allModels.length - 4, 0),
+      }
+    })
+    .filter((user: { user_id: number; total: number }) => user.user_id > 0 && user.total > 0)
+
+  const activePoint = points.find((point: any) => Number(point?.raw ?? 0) > 0) || primaryPoint
+  hoveredUserId.value = Number(activePoint?.dataset?.userId ?? 0) || null
+  const width = 380
+  const visibleModelRows = users.reduce((sum: number, user: { models: unknown[]; remainingModels: number }) => sum + user.models.length + (user.remainingModels > 0 ? 1 : 0), 0)
+  const height = Math.min(300, 54 + users.length * 34 + visibleModelRows * 20)
   const position = placeTooltipInChart(
     Number(chartTooltip.caretX ?? 0),
     Number(chartTooltip.caretY ?? 0),
@@ -560,13 +584,8 @@ const updateTopUserTooltip = (chartTooltip: any, chartWidth: number, chartHeight
     visible: true,
     x: position.x,
     y: position.y,
-    placement: 'bottom',
     title: formatTopUserTooltipTitle(bucket),
-    seriesLabel: String(point?.dataset?.label || ''),
-    actualCost: record?.metric_value ?? Number(point?.raw ?? 0),
-    color: String(point?.dataset?.borderColor || '#2563eb'),
-    models,
-    remainingModels,
+    users,
   }
 }
 
@@ -642,9 +661,10 @@ const topUserMetricTotal = (userId: number) => {
 }
 
 const pointLookup = computed(() => {
-  const map = new Map<string, { actual_cost: number; requests: number; tokens: number; metric_value: number; models: { model: string; actual_cost: number }[] }>()
+  const map = new Map<string, { email: string; actual_cost: number; requests: number; tokens: number; metric_value: number; models: { model: string; actual_cost: number }[] }>()
   for (const item of usageMonitorData.value?.series ?? []) {
     map.set(`${item.user_id}:${item.bucket}`, {
+      email: item.email,
       actual_cost: item.actual_cost,
       requests: item.requests,
       tokens: item.tokens,
@@ -838,7 +858,7 @@ const summaryTrendChartOptions = computed(() => ({
 const topUserChartOptions = computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
-  interaction: { intersect: false, mode: 'nearest' as const, axis: 'xy' as const },
+  interaction: { intersect: false, mode: 'index' as const, axis: 'x' as const },
   plugins: {
     legend: { position: 'top' as const, labels: { usePointStyle: true, pointStyle: 'circle' } },
     tooltip: {
