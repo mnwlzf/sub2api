@@ -233,6 +233,25 @@
 
       <div class="card p-4">
         <div class="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.usageMonitor.modelTrend') }}</h3>
+            <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.usageMonitor.modelTrendHint') }}</p>
+          </div>
+          <button type="button" class="btn btn-secondary btn-xs shrink-0" :disabled="loading" @click="loadData">
+            <Icon name="refresh" size="xs" :class="loading ? 'animate-spin' : ''" />
+            {{ t('common.refresh') }}
+          </button>
+        </div>
+        <div class="h-[380px]">
+          <Line v-if="modelTrendChartData" :data="modelTrendChartData" :options="modelTrendChartOptions" />
+          <div v-else class="flex h-full items-center justify-center text-sm text-gray-500 dark:text-gray-400">
+            {{ t('admin.usageMonitor.noData') }}
+          </div>
+        </div>
+      </div>
+
+      <div class="card p-4">
+        <div class="mb-4 flex items-center justify-between gap-3">
           <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.dashboard.spendingRankingTitle') }}</h3>
           <button type="button" class="btn btn-secondary btn-xs shrink-0" :disabled="loading" @click="loadData">
             <Icon name="refresh" size="xs" :class="loading ? 'animate-spin' : ''" />
@@ -610,6 +629,8 @@ const metricLabel = computed(() => (
       : t('admin.usageMonitor.actualCost')
 ))
 
+const chartPalette = ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#be123c', '#4d7c0f', '#9333ea', '#0f766e']
+
 const topUserMetricTotal = (userId: number) => {
   if (trendMetric.value === 'actual_cost') {
     return usageMonitorData.value?.top_users.find(user => user.user_id === userId)?.total_actual_cost || 0
@@ -636,7 +657,6 @@ const pointLookup = computed(() => {
 const topUserChartData = computed(() => {
   if (!usageMonitorData.value?.series.length) return null
   const buckets = topUserBucketKeys.value
-  const palette = ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#be123c', '#4d7c0f', '#9333ea', '#0f766e']
   return {
     labels: buckets.map(label => granularity.value === 'hour'
       ? formatMinuteLabel(label)
@@ -653,8 +673,8 @@ const topUserChartData = computed(() => {
         label: user.email || `User #${user.user_id}`,
         userId: user.user_id,
         data: buckets.map(label => userMap.get(label) ?? 0),
-        borderColor: palette[index % palette.length],
-        backgroundColor: `${palette[index % palette.length]}22`,
+        borderColor: chartPalette[index % chartPalette.length],
+        backgroundColor: `${chartPalette[index % chartPalette.length]}22`,
         fill: false,
         tension: 0.25,
         pointRadius: 2,
@@ -662,6 +682,74 @@ const topUserChartData = computed(() => {
         pointHitRadius: 12
       }
     })
+  }
+})
+
+const modelTrendChartData = computed(() => {
+  if (!usageMonitorData.value?.series.length) return null
+  const buckets = topUserBucketKeys.value
+  if (!buckets.length) return null
+
+  const modelBucketTotals = new Map<string, Map<string, number>>()
+  const totalByBucket = new Map<string, number>()
+  for (const point of usageMonitorData.value.series) {
+    for (const model of point.models || []) {
+      if (!modelBucketTotals.has(model.model)) {
+        modelBucketTotals.set(model.model, new Map<string, number>())
+      }
+      const bucketTotals = modelBucketTotals.get(model.model)!
+      bucketTotals.set(point.bucket, (bucketTotals.get(point.bucket) || 0) + model.actual_cost)
+      totalByBucket.set(point.bucket, (totalByBucket.get(point.bucket) || 0) + model.actual_cost)
+    }
+  }
+  if (!totalByBucket.size) return null
+
+  const labels = buckets.map(label => granularity.value === 'hour'
+    ? formatMinuteLabel(label)
+    : granularity.value === 'day'
+      ? formatHourLabel(label, 1)
+      : label)
+  const sortedModels = Array.from(modelBucketTotals.entries())
+    .map(([model, bucketTotals]) => ({
+      model,
+      bucketTotals,
+      total: Array.from(bucketTotals.values()).reduce((sum, value) => sum + value, 0)
+    }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 10)
+  const totalColor = '#111827'
+
+  return {
+    labels,
+    datasets: [
+      {
+        label: t('admin.usageMonitor.totalCost'),
+        data: buckets.map(bucket => totalByBucket.get(bucket) || 0),
+        borderColor: totalColor,
+        backgroundColor: `${totalColor}18`,
+        borderWidth: 2,
+        fill: false,
+        tension: 0.25,
+        pointRadius: 2,
+        pointHoverRadius: 6,
+        pointHitRadius: 12
+      },
+      ...sortedModels.map((item, index) => {
+        const color = chartPalette[index % chartPalette.length]
+        return {
+          label: item.model,
+          data: buckets.map(bucket => item.bucketTotals.get(bucket) || 0),
+          borderColor: color,
+          backgroundColor: `${color}22`,
+          borderWidth: 1.8,
+          fill: false,
+          tension: 0.25,
+          pointRadius: 2,
+          pointHoverRadius: 6,
+          pointHitRadius: 12
+        }
+      })
+    ]
   }
 })
 
@@ -774,6 +862,42 @@ const topUserChartOptions = computed(() => ({
       }
     },
     y: { ticks: { callback: (value: string | number) => formatMetricValue(Number(value)) } }
+  }
+}))
+
+const modelTrendChartOptions = computed(() => ({
+  responsive: true,
+  maintainAspectRatio: false,
+  interaction: { intersect: false, mode: 'index' as const, axis: 'x' as const },
+  plugins: {
+    legend: { position: 'top' as const, labels: { usePointStyle: true, pointStyle: 'circle' } },
+    tooltip: {
+      mode: 'index' as const,
+      intersect: false,
+      position: 'nearest' as const,
+      callbacks: {
+        title: (items: any[]) => {
+          const bucket = topUserBucketKeys.value[items[0]?.dataIndex ?? -1] || String(items[0]?.label || '')
+          return bucket ? formatTopUserTooltipTitle(bucket) : ''
+        },
+        label: (ctx: any) => `${ctx.dataset.label}: $${formatCost(Number(ctx.raw ?? 0))}`
+      }
+    }
+  },
+  scales: {
+    x: {
+      ticks: {
+        autoSkip: true,
+        autoSkipPadding: 32,
+        maxRotation: 0,
+        minRotation: 0,
+        maxTicksLimit: granularity.value === 'day' ? 5 : 8,
+        callback: function (this: any, value: string | number) {
+          return this.getLabelForValue(Number(value))
+        }
+      }
+    },
+    y: { ticks: { callback: (value: string | number) => `$${formatCost(Number(value))}` } }
   }
 }))
 
