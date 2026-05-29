@@ -6,8 +6,8 @@
           <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.usageMonitor.title') }}</h3>
           <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.usageMonitor.description') }}</p>
         </div>
-        <button type="button" class="btn btn-secondary btn-sm shrink-0" :disabled="loading" @click="loadData">
-          <Icon name="refresh" size="sm" :class="loading ? 'animate-spin' : ''" />
+        <button type="button" class="btn btn-secondary btn-sm shrink-0" :disabled="refreshing" @click="loadData">
+          <Icon name="refresh" size="sm" :class="refreshing ? 'animate-spin' : ''" />
           {{ t('common.refresh') }}
         </button>
       </div>
@@ -84,7 +84,7 @@
       </div>
     </div>
 
-    <div v-if="loading" class="card flex items-center justify-center py-16">
+    <div v-if="initialLoading" class="card flex items-center justify-center py-16">
       <LoadingSpinner />
     </div>
 
@@ -96,8 +96,8 @@
               <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.usageMonitor.title') }}</h3>
               <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.usageMonitor.hoverHint') }}</p>
             </div>
-            <button type="button" class="btn btn-secondary btn-xs shrink-0" :disabled="loading" @click="loadData">
-              <Icon name="refresh" size="xs" :class="loading ? 'animate-spin' : ''" />
+            <button type="button" class="btn btn-secondary btn-xs shrink-0" :disabled="refreshing" @click="loadData">
+              <Icon name="refresh" size="xs" :class="refreshing ? 'animate-spin' : ''" />
               {{ t('common.refresh') }}
             </button>
           </div>
@@ -147,8 +147,8 @@
         <div class="card p-4">
           <div class="mb-3 flex items-center justify-between gap-3">
             <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.usageMonitor.topUsers') }}</h3>
-            <button type="button" class="btn btn-secondary btn-xs shrink-0" :disabled="loading" @click="loadData">
-              <Icon name="refresh" size="xs" :class="loading ? 'animate-spin' : ''" />
+            <button type="button" class="btn btn-secondary btn-xs shrink-0" :disabled="refreshing" @click="loadData">
+              <Icon name="refresh" size="xs" :class="refreshing ? 'animate-spin' : ''" />
               {{ t('common.refresh') }}
             </button>
           </div>
@@ -184,8 +184,8 @@
             <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.dashboard.recentUsage') }}</h3>
             <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.usageMonitor.models') }}</p>
           </div>
-          <button type="button" class="btn btn-secondary btn-xs shrink-0" :disabled="loading" @click="loadData">
-            <Icon name="refresh" size="xs" :class="loading ? 'animate-spin' : ''" />
+          <button type="button" class="btn btn-secondary btn-xs shrink-0" :disabled="refreshing" @click="loadData">
+            <Icon name="refresh" size="xs" :class="refreshing ? 'animate-spin' : ''" />
             {{ t('common.refresh') }}
           </button>
         </div>
@@ -237,8 +237,8 @@
             <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.usageMonitor.modelTrend') }}</h3>
             <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.usageMonitor.modelTrendHint') }}</p>
           </div>
-          <button type="button" class="btn btn-secondary btn-xs shrink-0" :disabled="loading" @click="loadData">
-            <Icon name="refresh" size="xs" :class="loading ? 'animate-spin' : ''" />
+          <button type="button" class="btn btn-secondary btn-xs shrink-0" :disabled="refreshing" @click="loadData">
+            <Icon name="refresh" size="xs" :class="refreshing ? 'animate-spin' : ''" />
             {{ t('common.refresh') }}
           </button>
         </div>
@@ -253,8 +253,8 @@
       <div class="card p-4">
         <div class="mb-4 flex items-center justify-between gap-3">
           <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.dashboard.spendingRankingTitle') }}</h3>
-          <button type="button" class="btn btn-secondary btn-xs shrink-0" :disabled="loading" @click="loadData">
-            <Icon name="refresh" size="xs" :class="loading ? 'animate-spin' : ''" />
+          <button type="button" class="btn btn-secondary btn-xs shrink-0" :disabled="refreshing" @click="loadData">
+            <Icon name="refresh" size="xs" :class="refreshing ? 'animate-spin' : ''" />
             {{ t('common.refresh') }}
           </button>
         </div>
@@ -311,7 +311,8 @@ const { t } = useI18n()
 type Granularity = 'hour' | 'day' | 'week' | 'month'
 type TrendMetric = 'requests' | 'tokens' | 'actual_cost'
 
-const loading = ref(false)
+const initialLoading = ref(false)
+const refreshing = ref(false)
 const usageMonitorData = ref<UsageCostMonitorData | null>(null)
 const rankingItems = ref<UserSpendingRankingItem[]>([])
 
@@ -902,7 +903,10 @@ const modelTrendChartOptions = computed(() => ({
 }))
 
 const loadData = async () => {
-  loading.value = true
+  if (refreshing.value || initialLoading.value) return
+  const isInitialLoad = !usageMonitorData.value
+  initialLoading.value = isInitialLoad
+  refreshing.value = true
   try {
     const monitorParams = {
       granularity: granularity.value,
@@ -935,7 +939,8 @@ const loadData = async () => {
       rankingItems.value = rankingRes.ranking
     }
   } finally {
-    loading.value = false
+    initialLoading.value = false
+    refreshing.value = false
   }
 }
 
