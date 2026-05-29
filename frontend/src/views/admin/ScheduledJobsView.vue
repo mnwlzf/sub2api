@@ -233,6 +233,7 @@ const showLogs = ref(false)
 const editingId = ref<number | null>(null)
 const currentLogsJobId = ref<number | null>(null)
 const availableGroups = ref<AdminGroup[]>([])
+const groupsLoaded = ref(false)
 
 const jobTypeOptions = [
   { value: 'backup_postgres', labelKey: 'admin.scheduledJobs.types.backup_postgres' },
@@ -280,6 +281,8 @@ let nowTickTimer: number | undefined
 const targetGroupOptions = computed(() =>
   availableGroups.value.filter((group) => group.id !== syncCodexFreeForm.source_group_id)
 )
+
+const availableGroupIDs = computed(() => new Set(availableGroups.value.map((group) => group.id)))
 
 const selectableJobTypeOptions = computed(() => {
   const usedTypes = new Set(jobs.value.map((job) => job.job_type))
@@ -350,7 +353,7 @@ function openEdit(job: AdminScheduledJob) {
       const payload = JSON.parse(job.payload_json || '{}') as Partial<AdminScheduledSyncCodexFreeGroupsPayload>
       syncCodexFreeForm.source_group_id = Number(payload.source_group_id || 0)
       syncCodexFreeForm.target_group_ids = Array.isArray(payload.target_group_ids)
-        ? payload.target_group_ids.map((id) => Number(id)).filter((id) => id > 0)
+        ? normalizeExistingGroupIDs(payload.target_group_ids.map((id) => Number(id)))
         : []
     } catch {
       syncCodexFreeForm.source_group_id = 0
@@ -395,17 +398,39 @@ async function loadJobs() {
 }
 
 async function loadGroups() {
-  const response = await adminAPI.groups.list(1, 500)
-  availableGroups.value = response.items ?? []
+  const pageSize = 500
+  const groups: AdminGroup[] = []
+  let page = 1
+  for (;;) {
+    const response = await adminAPI.groups.list(page, pageSize)
+    groups.push(...(response.items ?? []))
+    if (groups.length >= response.total || (response.items ?? []).length === 0) break
+    page += 1
+  }
+  availableGroups.value = groups
+  groupsLoaded.value = true
 }
 
 function toggleTargetGroup(groupID: number) {
+  if (!availableGroupIDs.value.has(groupID)) return
   const exists = syncCodexFreeForm.target_group_ids.includes(groupID)
   if (exists) {
     syncCodexFreeForm.target_group_ids = syncCodexFreeForm.target_group_ids.filter((id) => id !== groupID)
     return
   }
   syncCodexFreeForm.target_group_ids = [...syncCodexFreeForm.target_group_ids, groupID]
+}
+
+function normalizeExistingGroupIDs(ids: number[]) {
+  const seen = new Set<number>()
+  const normalized: number[] = []
+  for (const id of ids) {
+    if (!Number.isFinite(id) || id <= 0 || seen.has(id)) continue
+    if (groupsLoaded.value && !availableGroupIDs.value.has(id)) continue
+    seen.add(id)
+    normalized.push(id)
+  }
+  return normalized
 }
 
 function createOpenAIModelMappingRow(source = '', target = ''): OpenAIModelMappingRow {
@@ -523,7 +548,15 @@ async function submitForm() {
   try {
     form.name = formatJobType(form.job_type)
     if (form.job_type === 'sync_codex_free_group_accounts') {
+      if (!groupsLoaded.value) {
+        await loadGroups()
+      }
+      syncCodexFreeForm.target_group_ids = normalizeExistingGroupIDs(syncCodexFreeForm.target_group_ids)
       if (syncCodexFreeForm.source_group_id <= 0) {
+        appStore.showError(t('admin.scheduledJobs.sourceGroupRequired'))
+        return
+      }
+      if (!availableGroupIDs.value.has(syncCodexFreeForm.source_group_id)) {
         appStore.showError(t('admin.scheduledJobs.sourceGroupRequired'))
         return
       }

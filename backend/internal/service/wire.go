@@ -367,8 +367,9 @@ func ProvideAdminScheduledJobService(
 	jobRepo AdminScheduledJobRepository,
 	runRepo AdminScheduledJobRunRepository,
 	executor AdminScheduledJobExecutor,
+	groupRepo GroupRepository,
 ) *AdminScheduledJobService {
-	return NewAdminScheduledJobService(jobRepo, runRepo, executor)
+	return NewAdminScheduledJobService(jobRepo, runRepo, executor, groupRepo)
 }
 
 func ProvideAdminScheduledJobRunnerService(

@@ -16,17 +16,20 @@ type AdminScheduledJobService struct {
 	jobRepo  AdminScheduledJobRepository
 	runRepo  AdminScheduledJobRunRepository
 	executor AdminScheduledJobExecutor
+	groupRepo GroupRepository
 }
 
 func NewAdminScheduledJobService(
 	jobRepo AdminScheduledJobRepository,
 	runRepo AdminScheduledJobRunRepository,
 	executor AdminScheduledJobExecutor,
+	groupRepo GroupRepository,
 ) *AdminScheduledJobService {
 	return &AdminScheduledJobService{
 		jobRepo:  jobRepo,
 		runRepo:  runRepo,
 		executor: executor,
+		groupRepo: groupRepo,
 	}
 }
 
@@ -40,6 +43,9 @@ func (s *AdminScheduledJobService) Get(ctx context.Context, id int64) (*AdminSch
 
 func (s *AdminScheduledJobService) Create(ctx context.Context, p AdminScheduledJobCreateParams) (*AdminScheduledJob, error) {
 	if err := validateAdminScheduledJob(p.JobType, p.CronExpression, p.PayloadJSON, p.RetentionLimit); err != nil {
+		return nil, err
+	}
+	if err := s.validateGroupReferences(ctx, p.JobType, p.PayloadJSON); err != nil {
 		return nil, err
 	}
 	nextRun, err := computeAdminScheduledJobNextRun(p.CronExpression, time.Now())
@@ -84,6 +90,9 @@ func (s *AdminScheduledJobService) Update(ctx context.Context, id int64, p Admin
 	if err := validateAdminScheduledJob(job.JobType, job.CronExpression, job.PayloadJSON, job.RetentionLimit); err != nil {
 		return nil, err
 	}
+	if err := s.validateGroupReferences(ctx, job.JobType, job.PayloadJSON); err != nil {
+		return nil, err
+	}
 	if job.Enabled {
 		nextRun, err := computeAdminScheduledJobNextRun(job.CronExpression, time.Now())
 		if err != nil {
@@ -94,6 +103,25 @@ func (s *AdminScheduledJobService) Update(ctx context.Context, id int64, p Admin
 		job.NextRunAt = nil
 	}
 	return s.jobRepo.Update(ctx, job)
+}
+
+func (s *AdminScheduledJobService) validateGroupReferences(ctx context.Context, jobType, payloadJSON string) error {
+	if strings.TrimSpace(jobType) != AdminScheduledJobTypeSyncCodexFreeGroups || s.groupRepo == nil {
+		return nil
+	}
+	var payload adminScheduledSyncCodexFreeGroupsPayload
+	if err := json.Unmarshal([]byte(normalizeAdminScheduledJobPayload(payloadJSON)), &payload); err != nil {
+		return fmt.Errorf("invalid payload_json: %w", err)
+	}
+	if _, err := s.groupRepo.GetByIDLite(ctx, payload.SourceGroupID); err != nil {
+		return fmt.Errorf("source group %d not found: %w", payload.SourceGroupID, err)
+	}
+	for _, groupID := range payload.TargetGroupIDs {
+		if _, err := s.groupRepo.GetByIDLite(ctx, groupID); err != nil {
+			return fmt.Errorf("target group %d not found: %w", groupID, err)
+		}
+	}
+	return nil
 }
 
 func (s *AdminScheduledJobService) Delete(ctx context.Context, id int64) error {
