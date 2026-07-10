@@ -2477,6 +2477,10 @@ func (r *stubUsageLogRepo) GetUserBreakdownStats(ctx context.Context, startTime,
 	return nil, errors.New("not implemented")
 }
 
+func (r *stubUsageLogRepo) GetUsageCostMonitor(ctx context.Context, startTime, endTime time.Time, granularity, userTZ string, userID int64, limit int) (*usagestats.UsageCostMonitorData, error) {
+	return nil, errors.New("not implemented")
+}
+
 func (r *stubUsageLogRepo) GetAPIKeyUsageTrend(ctx context.Context, startTime, endTime time.Time, granularity string, limit int) ([]usagestats.APIKeyUsageTrendPoint, error) {
 	return nil, errors.New("not implemented")
 }
