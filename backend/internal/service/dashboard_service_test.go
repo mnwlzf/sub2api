@@ -54,6 +54,10 @@ func (s *usageRepoStub) GetDashboardStatsWithRange(ctx context.Context, start, e
 	return s.stats, nil
 }
 
+func (s *usageRepoStub) GetUsageCostMonitor(ctx context.Context, startTime, endTime time.Time, granularity, userTZ string, userID int64, limit int) (*usagestats.UsageCostMonitorData, error) {
+	return &usagestats.UsageCostMonitorData{}, nil
+}
+
 type dashboardCacheStub struct {
 	get       func(ctx context.Context) (string, error)
 	set       func(ctx context.Context, data string, ttl time.Duration) error
