@@ -162,6 +162,61 @@ type UserSpendingRankingResponse struct {
 	TotalTokens     int64                     `json:"total_tokens"`
 }
 
+// UsageCostMonitorTopUser represents a ranked user in the cost monitor.
+type UsageCostMonitorTopUser struct {
+	UserID          int64   `json:"user_id"`
+	Email           string  `json:"email"`
+	TotalActualCost float64 `json:"total_actual_cost"`
+	Requests        int64   `json:"requests"`
+	Tokens          int64   `json:"tokens"`
+}
+
+// UsageCostMonitorTopGroup represents a ranked group in the cost monitor.
+type UsageCostMonitorTopGroup struct {
+	GroupID         int64   `json:"group_id"`
+	GroupName       string  `json:"group_name"`
+	Platform        string  `json:"platform"`
+	TotalActualCost float64 `json:"total_actual_cost"`
+	Requests        int64   `json:"requests"`
+	Tokens          int64   `json:"tokens"`
+}
+
+// UsageCostMonitorModelBreakdown represents one model's cost in a bucket.
+type UsageCostMonitorModelBreakdown struct {
+	Model      string  `json:"model"`
+	ActualCost float64 `json:"actual_cost"`
+}
+
+// UsageCostMonitorPoint represents one user bucket point with model breakdowns.
+type UsageCostMonitorPoint struct {
+	Bucket     string                           `json:"bucket"`
+	UserID     int64                            `json:"user_id"`
+	Email      string                           `json:"email"`
+	ActualCost float64                          `json:"actual_cost"`
+	Requests   int64                            `json:"requests"`
+	Tokens     int64                            `json:"tokens"`
+	Models     []UsageCostMonitorModelBreakdown `json:"models"`
+}
+
+// UsageCostMonitorGroupPoint represents one group bucket point.
+type UsageCostMonitorGroupPoint struct {
+	Bucket     string  `json:"bucket"`
+	GroupID    int64   `json:"group_id"`
+	GroupName  string  `json:"group_name"`
+	Platform   string  `json:"platform"`
+	ActualCost float64 `json:"actual_cost"`
+	Requests   int64   `json:"requests"`
+	Tokens     int64   `json:"tokens"`
+}
+
+// UsageCostMonitorData represents the core series payload for the admin monitor page.
+type UsageCostMonitorData struct {
+	TopUsers    []UsageCostMonitorTopUser    `json:"top_users"`
+	Series      []UsageCostMonitorPoint      `json:"series"`
+	TopGroups   []UsageCostMonitorTopGroup   `json:"top_groups"`
+	GroupSeries []UsageCostMonitorGroupPoint `json:"group_series"`
+}
+
 // UserBreakdownItem represents per-user usage breakdown within a dimension (group, model, endpoint).
 type UserBreakdownItem struct {
 	UserID       int64   `json:"user_id"`

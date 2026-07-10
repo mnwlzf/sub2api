@@ -416,6 +416,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/ops/usage-monitor',
+    name: 'AdminUsageMonitor',
+    component: () => import('@/views/admin/UsageMonitorView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Usage Monitor',
+      titleKey: 'admin.usageMonitor.title',
+      descriptionKey: 'admin.usageMonitor.description'
+    }
+  },
+  {
     path: '/admin/users',
     name: 'AdminUsers',
     component: () => import('@/views/admin/UsersView.vue'),
@@ -548,6 +560,18 @@ const routes: RouteRecordRaw[] = [
       title: 'Promo Code Management',
       titleKey: 'admin.promo.title',
       descriptionKey: 'admin.promo.description'
+    }
+  },
+  {
+    path: '/admin/scheduled-jobs',
+    name: 'AdminScheduledJobs',
+    component: () => import('@/views/admin/ScheduledJobsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Scheduled Jobs',
+      titleKey: 'admin.scheduledJobs.title',
+      descriptionKey: 'admin.scheduledJobs.description'
     }
   },
   {

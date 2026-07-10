@@ -1,0 +1,1395 @@
+<template>
+  <div class="space-y-6">
+    <div class="card p-4">
+      <div class="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.usageMonitor.title') }}</h3>
+          <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.usageMonitor.description') }}</p>
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm shrink-0" :disabled="refreshing" @click="loadData">
+          <Icon name="refresh" size="sm" :class="refreshing ? 'animate-spin' : ''" />
+          {{ refreshButtonText }}
+        </button>
+      </div>
+
+      <div class="flex flex-wrap items-start gap-3">
+        <div class="w-full sm:w-40">
+          <Select v-model="granularity" :options="granularityOptions" @change="handleGranularityChange" />
+        </div>
+
+        <div ref="userDropdownRef" class="relative w-full sm:w-72">
+          <Icon name="search" size="md" class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            v-model="userKeyword"
+            type="text"
+            class="input pl-10 pr-8"
+            :placeholder="t('admin.usageMonitor.userFilter')"
+            @input="debounceSearchUsers"
+            @focus="showUserDropdown = true"
+          />
+          <button
+            v-if="selectedUsers.length"
+            type="button"
+            class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+            @click="clearUser"
+          >
+            <Icon name="x" size="sm" />
+          </button>
+
+          <div
+            v-if="showUserDropdown && (userResults.length > 0 || userKeyword)"
+            class="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800"
+          >
+            <div v-if="userLoading" class="px-4 py-3 text-sm text-gray-500">{{ t('common.loading') }}</div>
+            <div v-else-if="userResults.length === 0 && userKeyword" class="px-4 py-3 text-sm text-gray-500">
+              {{ t('common.noOptionsFound') }}
+            </div>
+            <button
+              v-for="user in userResults"
+              :key="user.id"
+              type="button"
+              class="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700"
+              @click="selectUser(user)"
+            >
+              <span class="font-medium text-gray-900 dark:text-white">{{ user.email }}</span>
+              <span class="ml-2 text-gray-500 dark:text-gray-400">#{{ user.id }}</span>
+            </button>
+          </div>
+        </div>
+
+        <div v-if="selectedUsers.length" class="flex w-full flex-wrap gap-2">
+          <button
+            v-for="user in selectedUsers"
+            :key="user.id"
+            type="button"
+            class="inline-flex max-w-full items-center gap-1.5 rounded-full border border-primary-200 bg-primary-50 px-3 py-1 text-xs font-medium text-primary-700 hover:bg-primary-100 dark:border-primary-700/60 dark:bg-primary-500/10 dark:text-primary-300"
+            @click="removeSelectedUser(user.id)"
+          >
+            <span class="max-w-[220px] truncate">{{ user.email }}</span>
+            <Icon name="x" size="xs" />
+          </button>
+        </div>
+
+        <div v-if="granularity !== 'hour' && granularity !== 'day'" class="w-full sm:w-auto">
+          <DateRangePicker :start-date="startDate" :end-date="endDate" @change="handleRangeChange" />
+        </div>
+
+        <div class="w-full sm:w-40">
+          <Select v-model="trendMetric" :options="trendMetricOptions" @change="loadData" />
+        </div>
+
+        <div class="ml-auto text-right text-sm text-gray-500 dark:text-gray-400">
+          <div>{{ rangeHint }}</div>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="initialLoading" class="card flex items-center justify-center py-16">
+      <LoadingSpinner />
+    </div>
+
+    <template v-else>
+      <div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        <div class="card p-4 xl:col-span-2">
+          <div class="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.usageMonitor.title') }}</h3>
+              <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.usageMonitor.hoverHint') }}</p>
+            </div>
+            <button type="button" class="btn btn-secondary btn-xs shrink-0" :disabled="refreshing" @click="loadData">
+              <Icon name="refresh" size="xs" :class="refreshing ? 'animate-spin' : ''" />
+              {{ refreshButtonText }}
+            </button>
+          </div>
+          <div class="overflow-x-auto">
+            <div class="relative h-[420px] min-w-full" :style="{ width: summaryTrendChartWidth }">
+              <Line v-if="summaryTrendChartData" :data="summaryTrendChartData" :options="summaryTrendChartOptions" />
+              <div v-else class="flex h-full items-center justify-center text-sm text-gray-500 dark:text-gray-400">
+                {{ t('admin.usageMonitor.noData') }}
+              </div>
+
+              <div
+                v-if="summaryTooltip.visible"
+                :class="[
+                  'rounded-2xl border border-gray-700/70 bg-gray-950/95 px-3 py-2.5 text-xs text-gray-100 shadow-[0_18px_48px_-18px_rgba(15,23,42,0.75)] backdrop-blur-sm',
+                  summaryTooltip.compact
+                    ? 'pointer-events-auto fixed inset-x-3 bottom-3 z-50 max-h-[65vh] overflow-hidden'
+                    : 'pointer-events-none absolute z-20 w-[340px] max-w-[calc(100vw-2rem)]'
+                ]"
+                :style="summaryTooltip.compact ? undefined : { left: `${summaryTooltip.x}px`, top: `${summaryTooltip.y}px` }"
+              >
+                <div class="flex items-start justify-between gap-3">
+                  <div class="text-[11px] font-semibold text-white">{{ summaryTooltip.title }}</div>
+                  <button
+                    v-if="summaryTooltip.compact"
+                    type="button"
+                    class="-mr-1 -mt-1 rounded-md p-1 text-gray-400 hover:bg-white/10 hover:text-white"
+                    @click="summaryTooltip.visible = false"
+                  >
+                    <Icon name="x" size="xs" />
+                  </button>
+                </div>
+                <div class="mt-2 flex items-center gap-2">
+                  <span class="h-2.5 w-2.5 rounded-full bg-primary-500"></span>
+                  <span class="min-w-0 flex-1 truncate text-[11px] text-gray-200">{{ metricLabel }}</span>
+                  <span class="shrink-0 text-[11px] font-medium text-white">{{ formatMetricValue(summaryTooltip.totalValue) }}</span>
+                </div>
+                <div class="mt-2 border-t border-white/10 pt-2">
+                  <div class="mb-1 text-[10px] font-medium uppercase tracking-wide text-gray-400">{{ t('admin.usageMonitor.models') }}</div>
+                  <div
+                    class="space-y-1 overflow-y-auto pr-1"
+                    :class="summaryTooltip.compact ? 'max-h-[calc(65vh-92px)]' : 'max-h-[220px]'"
+                  >
+                    <div v-for="model in summaryTooltip.models" :key="model.model" class="flex items-center justify-between gap-3">
+                      <span
+                        class="min-w-0 flex-1 text-[11px] text-gray-200"
+                        :class="summaryTooltip.compact ? 'break-all' : 'truncate'"
+                      >{{ model.model }}</span>
+                      <span class="shrink-0 font-medium text-cyan-300">${{ formatCost(model.actual_cost) }}</span>
+                    </div>
+                    <div v-if="summaryTooltip.models.length === 0" class="text-[11px] text-gray-400">-</div>
+                    <div v-if="summaryTooltip.remainingModels > 0" class="text-[11px] text-gray-400">
+                      +{{ summaryTooltip.remainingModels }} more
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card p-4">
+          <div class="mb-3 flex items-center justify-between gap-3">
+            <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.usageMonitor.topUsers') }}</h3>
+            <button type="button" class="btn btn-secondary btn-xs shrink-0" :disabled="refreshing" @click="loadData">
+              <Icon name="refresh" size="xs" :class="refreshing ? 'animate-spin' : ''" />
+              {{ refreshButtonText }}
+            </button>
+          </div>
+          <div class="space-y-3">
+            <div
+              v-for="(user, index) in usageMonitorData?.top_users ?? []"
+              :key="user.user_id"
+              class="rounded-lg border p-3 transition-colors dark:border-gray-700"
+              :class="hoveredUserId === user.user_id
+                ? 'border-primary-400 bg-primary-50/70 dark:border-primary-500/60 dark:bg-primary-500/10'
+                : 'border-gray-200 dark:border-gray-700'"
+            >
+              <div class="flex items-center justify-between gap-3">
+                <div class="min-w-0">
+                  <div class="truncate text-sm font-medium text-gray-900 dark:text-white">
+                    {{ user.email || `User #${user.user_id}` }}
+                  </div>
+                  <div class="text-xs text-gray-500 dark:text-gray-400">#{{ index + 1 }} / {{ user.user_id }}</div>
+                </div>
+                <div class="shrink-0 text-right">
+                  <div class="text-[11px] text-gray-500 dark:text-gray-400">{{ metricLabel }}</div>
+                  <div class="text-sm font-semibold text-gray-900 dark:text-white">{{ formatMetricValue(topUserMetricTotal(user.user_id)) }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card p-4">
+        <div class="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.dashboard.recentUsage') }}</h3>
+            <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.usageMonitor.models') }}</p>
+          </div>
+          <button type="button" class="btn btn-secondary btn-xs shrink-0" :disabled="refreshing" @click="loadData">
+            <Icon name="refresh" size="xs" :class="refreshing ? 'animate-spin' : ''" />
+            {{ refreshButtonText }}
+          </button>
+        </div>
+        <div v-if="topUserLegendItems.length" class="mb-3 overflow-x-auto pb-2 sm:overflow-visible sm:pb-0">
+          <div class="flex w-max min-w-full gap-2 sm:w-auto sm:min-w-0 sm:flex-wrap">
+            <div
+              v-for="item in topUserLegendItems"
+              :key="item.user_id"
+              class="inline-flex shrink-0 items-center gap-2 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 sm:max-w-[240px]"
+            >
+              <span class="h-2.5 w-2.5 shrink-0 rounded-full" :style="{ backgroundColor: item.color }"></span>
+              <span class="whitespace-nowrap sm:truncate">{{ item.label }}</span>
+            </div>
+          </div>
+        </div>
+        <div class="overflow-x-auto">
+          <div class="relative h-[360px] min-w-full" :style="{ width: topUserChartWidth }">
+            <Line v-if="topUserChartData" :data="topUserChartData" :options="topUserChartOptions" />
+            <div v-else class="flex h-full items-center justify-center text-sm text-gray-500 dark:text-gray-400">
+              {{ t('admin.usageMonitor.noData') }}
+            </div>
+
+            <div
+              v-if="topUserTooltip.visible"
+              :class="[
+                'overflow-hidden rounded-2xl border border-gray-700/70 bg-gray-950/95 px-3 py-2.5 text-xs text-gray-100 shadow-[0_18px_48px_-18px_rgba(15,23,42,0.75)] backdrop-blur-sm',
+                topUserTooltip.compact
+                  ? 'pointer-events-auto fixed inset-x-3 bottom-3 z-50 max-h-[65vh] w-auto'
+                  : 'pointer-events-none absolute z-20 max-h-[300px] w-[380px] max-w-[calc(100vw-2rem)]'
+              ]"
+              :style="topUserTooltip.compact ? undefined : { left: `${topUserTooltip.x}px`, top: `${topUserTooltip.y}px` }"
+            >
+              <div class="flex items-start justify-between gap-3">
+                <div class="text-[11px] font-semibold text-white">{{ topUserTooltip.title }}</div>
+                <button
+                  v-if="topUserTooltip.compact"
+                  type="button"
+                  class="-mr-1 -mt-1 rounded-md p-1 text-gray-400 hover:bg-white/10 hover:text-white"
+                  @click="topUserTooltip.visible = false"
+                >
+                  <Icon name="x" size="xs" />
+                </button>
+              </div>
+              <div
+                class="mt-2 space-y-2 overflow-y-auto pr-1"
+                :class="topUserTooltip.compact ? 'max-h-[calc(65vh-48px)]' : 'max-h-[252px]'"
+              >
+                <div v-for="user in topUserTooltip.users" :key="user.user_id" class="border-t border-white/10 pt-2 first:border-t-0 first:pt-0">
+                  <div class="flex items-start gap-2">
+                    <span class="h-2.5 w-2.5 rounded-full" :style="{ backgroundColor: user.color }"></span>
+                    <span
+                      class="min-w-0 flex-1 text-[11px] text-gray-200"
+                      :class="topUserTooltip.compact ? 'break-all' : 'truncate'"
+                    >{{ user.email }}</span>
+                    <span class="shrink-0 text-[11px] font-medium text-white">{{ formatMetricValue(user.total) }}</span>
+                  </div>
+                  <div class="mt-1 space-y-1 pl-4">
+                    <div v-for="model in user.models" :key="`${user.user_id}:${model.model}`" class="flex items-center justify-between gap-3">
+                      <span
+                        class="min-w-0 flex-1 text-[11px] text-gray-300"
+                        :class="topUserTooltip.compact ? 'break-all' : 'truncate'"
+                      >{{ model.model }}</span>
+                      <span class="shrink-0 font-medium text-cyan-300">${{ formatCost(model.actual_cost) }}</span>
+                    </div>
+                    <div v-if="user.models.length === 0" class="text-[11px] text-gray-400">-</div>
+                    <div v-if="user.remainingModels > 0" class="text-[11px] text-gray-400">
+                      +{{ user.remainingModels }} more
+                    </div>
+                  </div>
+                </div>
+                <div v-if="topUserTooltip.users.length === 0" class="text-[11px] text-gray-400">-</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card p-4">
+        <div class="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.usageMonitor.modelTrend') }}</h3>
+            <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.usageMonitor.modelTrendHint') }}</p>
+          </div>
+          <button type="button" class="btn btn-secondary btn-xs shrink-0" :disabled="refreshing" @click="loadData">
+            <Icon name="refresh" size="xs" :class="refreshing ? 'animate-spin' : ''" />
+            {{ refreshButtonText }}
+          </button>
+        </div>
+        <div class="overflow-x-auto">
+          <div class="h-[380px] min-w-full" :style="{ width: modelTrendChartWidth }">
+            <Line v-if="modelTrendChartData" :data="modelTrendChartData" :options="modelTrendChartOptions" />
+            <div v-else class="flex h-full items-center justify-center text-sm text-gray-500 dark:text-gray-400">
+              {{ t('admin.usageMonitor.noData') }}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        <div class="card p-4 xl:col-span-2">
+          <div class="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.usageMonitor.groupTrend') }}</h3>
+              <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.usageMonitor.groupTrendHint') }}</p>
+            </div>
+            <button type="button" class="btn btn-secondary btn-xs shrink-0" :disabled="refreshing" @click="loadData">
+              <Icon name="refresh" size="xs" :class="refreshing ? 'animate-spin' : ''" />
+              {{ refreshButtonText }}
+            </button>
+          </div>
+          <div class="overflow-x-auto">
+            <div class="h-[380px] min-w-full" :style="{ width: groupTrendChartWidth }">
+              <Line v-if="groupTrendChartData" :data="groupTrendChartData" :options="groupTrendChartOptions" />
+              <div v-else class="flex h-full items-center justify-center text-sm text-gray-500 dark:text-gray-400">
+                {{ t('admin.usageMonitor.noData') }}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card p-4">
+          <div class="mb-3 flex items-center justify-between gap-3">
+            <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.usageMonitor.topGroups') }}</h3>
+            <button type="button" class="btn btn-secondary btn-xs shrink-0" :disabled="refreshing" @click="loadData">
+              <Icon name="refresh" size="xs" :class="refreshing ? 'animate-spin' : ''" />
+              {{ refreshButtonText }}
+            </button>
+          </div>
+          <div class="space-y-3">
+            <div
+              v-for="(group, index) in usageMonitorData?.top_groups ?? []"
+              :key="group.group_id"
+              class="rounded-lg border p-3 transition-colors dark:border-gray-700"
+              :class="hoveredGroupId === group.group_id
+                ? 'border-cyan-400 bg-cyan-50/70 dark:border-cyan-500/60 dark:bg-cyan-500/10'
+                : 'border-gray-200 dark:border-gray-700'"
+            >
+              <div class="flex items-center justify-between gap-3">
+                <div class="min-w-0">
+                  <div class="truncate text-sm font-medium text-gray-900 dark:text-white">
+                    {{ group.group_name || `Group #${group.group_id}` }}
+                  </div>
+                  <div class="text-xs text-gray-500 dark:text-gray-400">
+                    #{{ index + 1 }} / {{ group.platform || '-' }}
+                  </div>
+                </div>
+                <div class="shrink-0 text-right">
+                  <div class="text-[11px] text-gray-500 dark:text-gray-400">{{ metricLabel }}</div>
+                  <div class="text-sm font-semibold text-gray-900 dark:text-white">{{ formatGroupMetricValue(group) }}</div>
+                </div>
+              </div>
+            </div>
+            <div v-if="!(usageMonitorData?.top_groups ?? []).length" class="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+              {{ t('admin.usageMonitor.noData') }}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card p-4">
+        <div class="mb-4 flex items-center justify-between gap-3">
+          <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.dashboard.spendingRankingTitle') }}</h3>
+          <button type="button" class="btn btn-secondary btn-xs shrink-0" :disabled="refreshing" @click="loadData">
+            <Icon name="refresh" size="xs" :class="refreshing ? 'animate-spin' : ''" />
+            {{ refreshButtonText }}
+          </button>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-left text-gray-500 dark:text-gray-400">
+                <th class="pb-3">{{ t('admin.dashboard.spendingRankingUser') }}</th>
+                <th class="pb-3 text-right">{{ t('admin.dashboard.spendingRankingRequests') }}</th>
+                <th class="pb-3 text-right">{{ t('admin.dashboard.spendingRankingTokens') }}</th>
+                <th class="pb-3 text-right">{{ t('admin.dashboard.spendingRankingSpend') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="item in rankingItems"
+                :key="item.user_id"
+                class="border-t border-gray-100 transition-colors dark:border-gray-700"
+                :class="hoveredUserId === item.user_id ? 'bg-primary-50/70 dark:bg-primary-500/10' : ''"
+              >
+                <td class="py-3 text-gray-900 dark:text-white">{{ item.email || `User #${item.user_id}` }}</td>
+                <td class="py-3 text-right text-gray-600 dark:text-gray-300">{{ formatNumber(item.requests) }}</td>
+                <td class="py-3 text-right text-gray-600 dark:text-gray-300">{{ formatTokens(item.tokens) }}</td>
+                <td class="py-3 text-right text-green-600 dark:text-green-400">${{ formatCost(item.actual_cost) }}</td>
+              </tr>
+              <tr v-if="rankingItems.length === 0">
+                <td colspan="4" class="py-8 text-center text-sm text-gray-500 dark:text-gray-400">{{ t('admin.usageMonitor.noData') }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </template>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { Chart as ChartJS, CategoryScale, LinearScale, LineElement, PointElement, Tooltip, Legend, Filler } from 'chart.js'
+import { Line } from 'vue-chartjs'
+import DateRangePicker from '@/components/common/DateRangePicker.vue'
+import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
+import Select from '@/components/common/Select.vue'
+import Icon from '@/components/icons/Icon.vue'
+import { adminAPI } from '@/api/admin'
+import type { SimpleUser } from '@/api/admin/usage'
+import type { UserSpendingRankingItem, UsageCostMonitorData } from '@/types'
+
+ChartJS.register(CategoryScale, LinearScale, LineElement, PointElement, Tooltip, Legend, Filler)
+
+const { t } = useI18n()
+
+type Granularity = 'hour' | 'day' | 'week' | 'month'
+type TrendMetric = 'requests' | 'tokens' | 'actual_cost'
+
+const initialLoading = ref(false)
+const refreshing = ref(false)
+const usageMonitorData = ref<UsageCostMonitorData | null>(null)
+const rankingItems = ref<UserSpendingRankingItem[]>([])
+
+const granularity = ref<Granularity>('hour')
+const trendMetric = ref<TrendMetric>('actual_cost')
+const startDate = ref('')
+const endDate = ref('')
+
+const userKeyword = ref('')
+const userResults = ref<SimpleUser[]>([])
+const userLoading = ref(false)
+const showUserDropdown = ref(false)
+const selectedUsers = ref<SimpleUser[]>([])
+const userDropdownRef = ref<HTMLElement | null>(null)
+let userSearchTimer: number | undefined
+const hoveredUserId = ref<number | null>(null)
+const hoveredGroupId = ref<number | null>(null)
+let autoRefreshTimer: number | undefined
+const autoRefreshDueAt = ref<number | null>(null)
+const autoRefreshNow = ref(Date.now())
+let autoRefreshClockTimer: number | undefined
+const summaryTooltip = ref({
+  visible: false,
+  x: 0,
+  y: 0,
+  compact: false,
+  title: '',
+  totalValue: 0,
+  models: [] as { model: string; actual_cost: number }[],
+  remainingModels: 0,
+})
+const topUserTooltip = ref({
+  visible: false,
+  x: 0,
+  y: 0,
+  compact: false,
+  title: '',
+  users: [] as {
+    user_id: number
+    email: string
+    color: string
+    total: number
+    models: { model: string; actual_cost: number }[]
+    remainingModels: number
+  }[],
+})
+
+const granularityOptions = computed(() => ([
+  { value: 'hour', label: t('admin.usageMonitor.hour') },
+  { value: 'day', label: t('admin.usageMonitor.day') },
+  { value: 'week', label: t('admin.usageMonitor.week') },
+  { value: 'month', label: t('admin.usageMonitor.month') }
+]))
+
+const trendMetricOptions = computed(() => ([
+  { value: 'actual_cost', label: t('admin.usageMonitor.actualCost') },
+  { value: 'tokens', label: t('admin.dashboard.tokens') },
+  { value: 'requests', label: t('admin.dashboard.requests') }
+]))
+
+const rangeHint = computed(() => {
+  if (granularity.value === 'hour') return t('admin.usageMonitor.lastHour')
+  if (granularity.value === 'day') return t('admin.usageMonitor.last24h')
+  return t('admin.usageMonitor.limitedRange')
+})
+const autoRefreshRemainingSeconds = computed(() => {
+  if (granularity.value !== 'hour' || autoRefreshDueAt.value == null) return 0
+  const remainingMs = Math.max(autoRefreshDueAt.value - autoRefreshNow.value, 0)
+  return Math.ceil(remainingMs / 1000)
+})
+const refreshButtonText = computed(() => {
+  if (autoRefreshRemainingSeconds.value <= 0) return t('common.refresh')
+  return `${t('common.refresh')} ${autoRefreshRemainingSeconds.value}s`
+})
+
+const HOUR_MS = 60 * 60 * 1000
+const DAY_WINDOW_HOURS = 24
+
+const userTimezone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+const formatDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+const parseBucketDate = (bucket: string): Date | null => {
+  const normalized = bucket.includes(' ') ? bucket.replace(' ', 'T') : bucket
+  const timestamp = Date.parse(normalized)
+  return Number.isNaN(timestamp) ? null : new Date(timestamp)
+}
+const parseBucketTime = (bucket: string): number => parseBucketDate(bucket)?.getTime() ?? 0
+const sortBuckets = (buckets: string[]) => [...buckets].sort((a, b) => parseBucketTime(a) - parseBucketTime(b))
+const addHours = (date: Date, hours: number) => new Date(date.getTime() + hours * HOUR_MS)
+const nextHour = (date = new Date()) => {
+  const end = new Date(date)
+  end.setMinutes(0, 0, 0)
+  end.setHours(end.getHours() + 1)
+  return end
+}
+const nextMinute = (date = new Date()) => {
+  const end = new Date(date)
+  end.setSeconds(0, 0)
+  end.setMinutes(end.getMinutes() + 1)
+  return end
+}
+const formatHourLabel = (bucket: string, offsetHours = 0) => {
+  const parsed = parseBucketDate(bucket)
+  if (!parsed) return bucket.includes(' ') ? bucket.slice(11, 16) : bucket
+  const displayTime = offsetHours ? addHours(parsed, offsetHours) : parsed
+  return `${String(displayTime.getHours()).padStart(2, '0')}:00`
+}
+const formatMinuteLabel = (bucket: string) => {
+  const parsed = parseBucketDate(bucket)
+  if (!parsed) return bucket.includes(' ') ? bucket.slice(11, 16) : bucket
+  return `${String(parsed.getHours()).padStart(2, '0')}:${String(parsed.getMinutes()).padStart(2, '0')}`
+}
+const formatHourTooltipLabel = (bucket: string, offsetHours = 0) => {
+  const parsed = parseBucketDate(bucket)
+  if (!parsed) return bucket
+  const displayTime = offsetHours ? addHours(parsed, offsetHours) : parsed
+  return `${formatDate(displayTime)} ${String(displayTime.getHours()).padStart(2, '0')}:00`
+}
+const formatMinuteTooltipLabel = (bucket: string) => {
+  const parsed = parseBucketDate(bucket)
+  if (!parsed) return bucket
+  return `${formatDate(parsed)} ${String(parsed.getHours()).padStart(2, '0')}:${String(parsed.getMinutes()).padStart(2, '0')}`
+}
+const currentHourWindow = () => {
+  const end = nextMinute()
+  return {
+    start: new Date(end.getTime() - HOUR_MS),
+    end
+  }
+}
+const currentDayWindow = () => {
+  const end = nextHour()
+  return {
+    start: new Date(end.getTime() - DAY_WINDOW_HOURS * HOUR_MS),
+    end
+  }
+}
+const initHourRange = () => {
+  const { start, end } = currentHourWindow()
+  startDate.value = formatDate(start)
+  endDate.value = formatDate(end)
+}
+
+const initRange = () => {
+  const end = new Date()
+  const start = new Date()
+  start.setDate(start.getDate() - 30)
+  startDate.value = formatDate(start)
+  endDate.value = formatDate(end)
+}
+const initDayRange = () => {
+  const { start, end } = currentDayWindow()
+  startDate.value = formatDate(start)
+  endDate.value = formatDate(end)
+}
+
+const formatNumber = (value: number) => value.toLocaleString()
+const formatTokens = (value: number) => {
+  if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(2)}B`
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`
+  if (value >= 1_000) return `${(value / 1_000).toFixed(2)}K`
+  return value.toLocaleString()
+}
+const formatCost = (value: number) => {
+  if (value >= 1000) return (value / 1000).toFixed(2) + 'K'
+  if (value >= 1) return value.toFixed(2)
+  if (value >= 0.01) return value.toFixed(3)
+  return value.toFixed(4)
+}
+
+const formatTopUserTooltipTitle = (bucket: string) => {
+  const parsed = parseBucketDate(bucket)
+  if (!parsed) return `时间 ${bucket}`
+  if (granularity.value === 'hour') return `时间 ${formatMinuteTooltipLabel(bucket)}`
+  if (granularity.value === 'day') return `时间 ${formatHourTooltipLabel(bucket, 1)}`
+  return `时间 ${formatDate(parsed)}`
+}
+
+const placeTooltipInChart = (caretX: number, caretY: number, width: number, height: number, chartWidth: number, chartHeight: number) => {
+  const placeLeft = caretX + width + 24 > chartWidth
+  const placeTop = caretY + height + 24 > chartHeight
+  const x = placeLeft ? caretX - width - 16 : caretX + 16
+  const y = placeTop ? caretY - height - 16 : caretY + 16
+  return {
+    x: Math.min(Math.max(12, x), Math.max(12, chartWidth - width - 12)),
+    y: Math.min(Math.max(12, y), Math.max(12, chartHeight - height - 12)),
+  }
+}
+const shouldUseCompactTooltip = () => window.matchMedia('(max-width: 640px)').matches
+
+const getBucketModelBreakdown = (bucket: string, limit = 6) => {
+  const totals = new Map<string, number>()
+  for (const point of usageMonitorData.value?.series || []) {
+    if (point.bucket !== bucket) continue
+    for (const model of point.models || []) {
+      totals.set(model.model, (totals.get(model.model) || 0) + model.actual_cost)
+    }
+  }
+  const models = Array.from(totals.entries())
+    .map(([model, actual_cost]) => ({ model, actual_cost }))
+    .sort((a, b) => b.actual_cost - a.actual_cost)
+  return {
+    models: models.slice(0, limit),
+    remainingModels: Math.max(models.length - limit, 0),
+  }
+}
+
+const updateSummaryTooltip = (chartTooltip: any, chartWidth: number, chartHeight: number) => {
+  if (!chartTooltip || chartTooltip.opacity === 0 || !chartTooltip.dataPoints?.length) {
+    summaryTooltip.value.visible = false
+    return
+  }
+
+  const point = chartTooltip.dataPoints[0]
+  const bucket = topUserBucketKeys.value[point?.dataIndex ?? -1] || String(point?.label || '')
+  const { models, remainingModels } = getBucketModelBreakdown(bucket)
+  const width = 340
+  const height = 116 + models.length * 22 + (remainingModels > 0 ? 18 : 0)
+  const compact = shouldUseCompactTooltip()
+  const position = placeTooltipInChart(
+    Number(chartTooltip.caretX ?? 0),
+    Number(chartTooltip.caretY ?? 0),
+    width,
+    height,
+    chartWidth,
+    chartHeight
+  )
+
+  summaryTooltip.value = {
+    visible: true,
+    x: position.x,
+    y: position.y,
+    compact,
+    title: formatTopUserTooltipTitle(bucket),
+    totalValue: Number(point?.raw ?? 0),
+    models,
+    remainingModels,
+  }
+}
+
+const updateTopUserTooltip = (chartTooltip: any, chartWidth: number, chartHeight: number) => {
+  if (!chartTooltip || chartTooltip.opacity === 0 || !chartTooltip.dataPoints?.length) {
+    hoveredUserId.value = null
+    topUserTooltip.value.visible = false
+    return
+  }
+
+  const points = chartTooltip.dataPoints || []
+  const primaryPoint = points[0]
+  const bucket = topUserBucketKeys.value[primaryPoint?.dataIndex ?? -1] || String(primaryPoint?.label || '')
+  const users = points
+    .map((point: any) => {
+      const userId = Number(point?.dataset?.userId ?? 0)
+      const record = pointLookup.value.get(`${userId}:${bucket}`)
+      const allModels = (record?.models || []).slice().sort((a, b) => b.actual_cost - a.actual_cost)
+      return {
+        user_id: userId,
+        email: String(point?.dataset?.label || record?.email || `User #${userId}`),
+        color: String(point?.dataset?.borderColor || '#2563eb'),
+        total: record?.metric_value ?? Number(point?.raw ?? 0),
+        models: allModels.slice(0, 4),
+        remainingModels: Math.max(allModels.length - 4, 0),
+      }
+    })
+    .filter((user: { user_id: number; total: number }) => user.user_id > 0 && user.total > 0)
+
+  const activePoint = points.find((point: any) => Number(point?.raw ?? 0) > 0) || primaryPoint
+  hoveredUserId.value = Number(activePoint?.dataset?.userId ?? 0) || null
+  const width = 380
+  const visibleModelRows = users.reduce((sum: number, user: { models: unknown[]; remainingModels: number }) => sum + user.models.length + (user.remainingModels > 0 ? 1 : 0), 0)
+  const height = Math.min(300, 54 + users.length * 34 + visibleModelRows * 20)
+  const compact = shouldUseCompactTooltip()
+  const position = placeTooltipInChart(
+    Number(chartTooltip.caretX ?? 0),
+    Number(chartTooltip.caretY ?? 0),
+    width,
+    height,
+    chartWidth,
+    chartHeight
+  )
+
+  topUserTooltip.value = {
+    visible: true,
+    x: position.x,
+    y: position.y,
+    compact,
+    title: formatTopUserTooltipTitle(bucket),
+    users,
+  }
+}
+
+const summaryTrendChartData = computed(() => {
+  if (!usageMonitorData.value?.series.length) return null
+  const buckets = topUserBucketKeys.value
+  if (!buckets.length) return null
+
+  const totalsByBucket = new Map<string, number>()
+  for (const item of usageMonitorData.value.series) {
+    const value = trendMetric.value === 'requests'
+      ? item.requests
+      : trendMetric.value === 'tokens'
+        ? item.tokens
+        : item.actual_cost
+    totalsByBucket.set(item.bucket, (totalsByBucket.get(item.bucket) || 0) + value)
+  }
+  const data = buckets.map(bucket => totalsByBucket.get(bucket) || 0)
+  if (!data.some(value => value > 0)) return null
+
+  const labels = buckets.map(bucket => granularity.value === 'hour'
+    ? formatMinuteLabel(bucket)
+    : granularity.value === 'day'
+      ? formatHourLabel(bucket, 1)
+      : bucket)
+  return {
+    labels,
+    datasets: [
+      {
+        label: trendMetric.value === 'requests' ? t('admin.dashboard.requests') : trendMetric.value === 'tokens' ? t('admin.dashboard.tokens') : t('admin.usageMonitor.actualCost'),
+        data,
+        borderColor: '#2563eb',
+        backgroundColor: 'rgba(37,99,235,0.15)',
+        fill: true,
+        tension: 0.25,
+        pointRadius: 2,
+        pointHoverRadius: 6,
+        pointHitRadius: 12
+      }
+    ]
+  }
+})
+
+const metricValueFromPoint = (point: UsageCostMonitorData['series'][number]) => {
+  if (trendMetric.value === 'requests') return point.requests
+  if (trendMetric.value === 'tokens') return point.tokens
+  return point.actual_cost
+}
+
+const formatMetricValue = (value: number) => {
+  if (trendMetric.value === 'requests') return formatNumber(value)
+  if (trendMetric.value === 'tokens') return formatTokens(value)
+  return `$${formatCost(value)}`
+}
+
+const formatGroupMetricValue = (group: { total_actual_cost: number; requests: number; tokens: number }) => {
+  if (trendMetric.value === 'requests') return formatNumber(group.requests)
+  if (trendMetric.value === 'tokens') return formatTokens(group.tokens)
+  return `$${formatCost(group.total_actual_cost)}`
+}
+
+const metricLabel = computed(() => (
+  trendMetric.value === 'requests'
+    ? t('admin.dashboard.requests')
+    : trendMetric.value === 'tokens'
+      ? t('admin.dashboard.tokens')
+      : t('admin.usageMonitor.actualCost')
+))
+
+const chartPalette = ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#be123c', '#4d7c0f', '#9333ea', '#0f766e']
+const isMobileTrend = () => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches
+const chartScrollStyle = (labelCount: number, datasetCount: number, minWidth = 720) => ({
+  width: isMobileTrend() ? `${Math.max(minWidth, Math.max(labelCount, 8) * 72 + Math.max(datasetCount - 1, 0) * 16)}px` : '100%',
+})
+const shouldShowTrendTick = (index: number, tickCount: number) => {
+  if (isMobileTrend()) return true
+  if (tickCount <= 18) return true
+  const step = Math.max(1, Math.ceil(tickCount / 12))
+  return index % step === 0 || index === tickCount - 1
+}
+const clearAutoRefreshTimer = () => {
+  if (autoRefreshTimer !== undefined) {
+    window.clearTimeout(autoRefreshTimer)
+    autoRefreshTimer = undefined
+  }
+}
+const startAutoRefreshClock = () => {
+  if (autoRefreshClockTimer !== undefined) return
+  autoRefreshClockTimer = window.setInterval(() => {
+    autoRefreshNow.value = Date.now()
+  }, 1000)
+}
+const scheduleAutoRefresh = () => {
+  clearAutoRefreshTimer()
+  if (granularity.value !== 'hour') {
+    autoRefreshDueAt.value = null
+    return
+  }
+  autoRefreshDueAt.value = Date.now() + 60_000
+  autoRefreshNow.value = Date.now()
+  startAutoRefreshClock()
+  autoRefreshTimer = window.setTimeout(() => {
+    autoRefreshTimer = undefined
+    void loadData().catch(() => {})
+  }, 60_000)
+}
+
+const topUserMetricTotal = (userId: number) => {
+  if (trendMetric.value === 'actual_cost') {
+    return usageMonitorData.value?.top_users.find(user => user.user_id === userId)?.total_actual_cost || 0
+  }
+  return (usageMonitorData.value?.series || []).reduce((total, point) => (
+    point.user_id === userId ? total + metricValueFromPoint(point) : total
+  ), 0)
+}
+
+const groupMetricValueFromPoint = (point: NonNullable<UsageCostMonitorData['group_series']>[number]) => {
+  if (trendMetric.value === 'requests') return point.requests
+  if (trendMetric.value === 'tokens') return point.tokens
+  return point.actual_cost
+}
+
+const pointLookup = computed(() => {
+  const map = new Map<string, { email: string; actual_cost: number; requests: number; tokens: number; metric_value: number; models: { model: string; actual_cost: number }[] }>()
+  for (const item of usageMonitorData.value?.series ?? []) {
+    map.set(`${item.user_id}:${item.bucket}`, {
+      email: item.email,
+      actual_cost: item.actual_cost,
+      requests: item.requests,
+      tokens: item.tokens,
+      metric_value: metricValueFromPoint(item),
+      models: item.models
+    })
+  }
+  return map
+})
+
+const groupPointLookup = computed(() => {
+  const map = new Map<string, { group_name: string; platform: string; actual_cost: number; requests: number; tokens: number; metric_value: number }>()
+  for (const item of usageMonitorData.value?.group_series ?? []) {
+    map.set(`${item.group_id}:${item.bucket}`, {
+      group_name: item.group_name,
+      platform: item.platform,
+      actual_cost: item.actual_cost,
+      requests: item.requests,
+      tokens: item.tokens,
+      metric_value: groupMetricValueFromPoint(item),
+    })
+  }
+  return map
+})
+
+const topUserChartData = computed(() => {
+  if (!usageMonitorData.value?.series.length) return null
+  const buckets = topUserBucketKeys.value
+  return {
+    labels: buckets.map(label => granularity.value === 'hour'
+      ? formatMinuteLabel(label)
+      : granularity.value === 'day'
+        ? formatHourLabel(label, 1)
+        : label),
+    datasets: usageMonitorData.value.top_users.map((user, index) => {
+      const userMap = new Map(
+        usageMonitorData.value!.series
+          .filter(item => item.user_id === user.user_id)
+          .map(item => [item.bucket, metricValueFromPoint(item)])
+      )
+      return {
+        label: user.email || `User #${user.user_id}`,
+        userId: user.user_id,
+        data: buckets.map(label => userMap.get(label) ?? 0),
+        borderColor: chartPalette[index % chartPalette.length],
+        backgroundColor: `${chartPalette[index % chartPalette.length]}22`,
+        fill: false,
+        tension: 0.25,
+        pointRadius: 2,
+        pointHoverRadius: 6,
+        pointHitRadius: 12
+      }
+    })
+  }
+})
+
+const topUserLegendItems = computed(() => {
+  return usageMonitorData.value?.top_users.map((user, index) => ({
+    user_id: user.user_id,
+    label: user.email || `User #${user.user_id}`,
+    color: chartPalette[index % chartPalette.length],
+  })) ?? []
+})
+
+const groupBucketKeys = computed(() => {
+  if (!usageMonitorData.value?.group_series?.length) return []
+  return sortBuckets(Array.from(new Set(usageMonitorData.value.group_series.map(item => item.bucket))))
+})
+
+const groupTrendChartData = computed(() => {
+  if (!usageMonitorData.value?.group_series?.length) return null
+  const groupSeries = usageMonitorData.value.group_series
+  const buckets = groupBucketKeys.value
+  if (!buckets.length) return null
+
+  const groups = usageMonitorData.value.top_groups ?? []
+  if (!groups.length) return null
+
+  const totalByBucket = new Map<string, number>()
+  for (const point of groupSeries) {
+    totalByBucket.set(point.bucket, (totalByBucket.get(point.bucket) || 0) + groupMetricValueFromPoint(point))
+  }
+  if (!Array.from(totalByBucket.values()).some(value => value > 0)) return null
+
+  return {
+    labels: buckets.map(label => granularity.value === 'hour'
+      ? formatMinuteLabel(label)
+      : granularity.value === 'day'
+        ? formatHourLabel(label, 1)
+        : label),
+    datasets: [
+      {
+        label: `${t('common.total')} ${metricLabel.value}`,
+        groupId: 0,
+        data: buckets.map(bucket => totalByBucket.get(bucket) || 0),
+        borderColor: '#111827',
+        backgroundColor: '#11182718',
+        borderWidth: 2,
+        fill: false,
+        tension: 0.25,
+        pointRadius: 2,
+        pointHoverRadius: 6,
+        pointHitRadius: 12
+      },
+      ...groups.map((group, index) => {
+        const groupMap = new Map(
+          groupSeries
+            .filter(item => item.group_id === group.group_id)
+            .map(item => [item.bucket, groupMetricValueFromPoint(item)])
+        )
+        const color = chartPalette[(index + 2) % chartPalette.length]
+        return {
+          label: group.group_name || `Group #${group.group_id}`,
+          groupId: group.group_id,
+          data: buckets.map(label => groupMap.get(label) ?? 0),
+          borderColor: color,
+          backgroundColor: `${color}22`,
+          fill: false,
+          tension: 0.25,
+          pointRadius: 2,
+          pointHoverRadius: 6,
+          pointHitRadius: 12
+        }
+      })
+    ]
+  }
+})
+
+const modelTrendSeriesCount = computed(() => {
+  if (!usageMonitorData.value?.series.length) return 0
+  const models = new Set<string>()
+  for (const point of usageMonitorData.value.series) {
+    for (const model of point.models || []) models.add(model.model)
+  }
+  return Math.min(models.size, 10)
+})
+
+const modelTrendChartData = computed(() => {
+  if (!usageMonitorData.value?.series.length) return null
+  const buckets = topUserBucketKeys.value
+  if (!buckets.length) return null
+
+  const modelBucketTotals = new Map<string, Map<string, number>>()
+  const totalByBucket = new Map<string, number>()
+  for (const point of usageMonitorData.value.series) {
+    for (const model of point.models || []) {
+      if (!modelBucketTotals.has(model.model)) {
+        modelBucketTotals.set(model.model, new Map<string, number>())
+      }
+      const bucketTotals = modelBucketTotals.get(model.model)!
+      bucketTotals.set(point.bucket, (bucketTotals.get(point.bucket) || 0) + model.actual_cost)
+      totalByBucket.set(point.bucket, (totalByBucket.get(point.bucket) || 0) + model.actual_cost)
+    }
+  }
+  if (!totalByBucket.size) return null
+
+  const labels = buckets.map(label => granularity.value === 'hour'
+    ? formatMinuteLabel(label)
+    : granularity.value === 'day'
+      ? formatHourLabel(label, 1)
+      : label)
+  const sortedModels = Array.from(modelBucketTotals.entries())
+    .map(([model, bucketTotals]) => ({
+      model,
+      bucketTotals,
+      total: Array.from(bucketTotals.values()).reduce((sum, value) => sum + value, 0)
+    }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 10)
+  const totalColor = '#111827'
+
+  return {
+    labels,
+    datasets: [
+      {
+        label: t('admin.usageMonitor.totalCost'),
+        data: buckets.map(bucket => totalByBucket.get(bucket) || 0),
+        borderColor: totalColor,
+        backgroundColor: `${totalColor}18`,
+        borderWidth: 2,
+        fill: false,
+        tension: 0.25,
+        pointRadius: 2,
+        pointHoverRadius: 6,
+        pointHitRadius: 12
+      },
+      ...sortedModels.map((item, index) => {
+        const color = chartPalette[index % chartPalette.length]
+        return {
+          label: item.model,
+          data: buckets.map(bucket => item.bucketTotals.get(bucket) || 0),
+          borderColor: color,
+          backgroundColor: `${color}22`,
+          borderWidth: 1.8,
+          fill: false,
+          tension: 0.25,
+          pointRadius: 2,
+          pointHoverRadius: 6,
+          pointHitRadius: 12
+        }
+      })
+    ]
+  }
+})
+
+const topUserBucketKeys = computed(() => {
+  if (!usageMonitorData.value?.series.length) return []
+  return sortBuckets(Array.from(new Set(usageMonitorData.value.series.map(item => item.bucket))))
+})
+
+const summaryTrendChartWidth = computed(() => chartScrollStyle(topUserBucketKeys.value.length, 1, 680).width)
+const topUserChartWidth = computed(() => chartScrollStyle(topUserBucketKeys.value.length, usageMonitorData.value?.top_users?.length || 1, 900).width)
+const groupTrendChartWidth = computed(() => chartScrollStyle(groupBucketKeys.value.length, (usageMonitorData.value?.top_groups?.length || 0) + 1, 900).width)
+const modelTrendChartWidth = computed(() => chartScrollStyle(topUserBucketKeys.value.length, Math.min(10, modelTrendSeriesCount.value || 1), 980).width)
+
+const mergeUsageMonitorResponses = (responses: UsageCostMonitorData[]) => {
+  const topUsers = new Map<number, { user_id: number; email: string; total_actual_cost: number; requests: number; tokens: number }>()
+  const topGroups = new Map<number, { group_id: number; group_name: string; platform: string; total_actual_cost: number; requests: number; tokens: number }>()
+  const series: UsageCostMonitorData['series'] = []
+  const groupSeries: NonNullable<UsageCostMonitorData['group_series']> = []
+
+  for (const data of responses) {
+    for (const user of data.top_users || []) {
+      const existing = topUsers.get(user.user_id)
+      if (!existing) {
+        topUsers.set(user.user_id, { ...user })
+      } else {
+        existing.total_actual_cost += user.total_actual_cost
+        existing.requests += user.requests
+        existing.tokens += user.tokens
+      }
+    }
+    series.push(...(data.series || []))
+    for (const group of data.top_groups || []) {
+      const existing = topGroups.get(group.group_id)
+      if (!existing) {
+        topGroups.set(group.group_id, { ...group })
+      } else {
+        existing.total_actual_cost += group.total_actual_cost
+        existing.requests += group.requests
+        existing.tokens += group.tokens
+      }
+    }
+    groupSeries.push(...(data.group_series || []))
+  }
+
+  return {
+    top_users: Array.from(topUsers.values()).sort((a, b) => {
+      const left = trendMetric.value === 'requests' ? a.requests : trendMetric.value === 'tokens' ? a.tokens : a.total_actual_cost
+      const right = trendMetric.value === 'requests' ? b.requests : trendMetric.value === 'tokens' ? b.tokens : b.total_actual_cost
+      return right - left
+    }),
+    series,
+    top_groups: Array.from(topGroups.values()).sort((a, b) => {
+      const left = trendMetric.value === 'requests' ? a.requests : trendMetric.value === 'tokens' ? a.tokens : a.total_actual_cost
+      const right = trendMetric.value === 'requests' ? b.requests : trendMetric.value === 'tokens' ? b.tokens : b.total_actual_cost
+      return right - left
+    }),
+    group_series: groupSeries,
+  }
+}
+
+const buildRankingFromMonitorData = (data: UsageCostMonitorData | null): UserSpendingRankingItem[] => {
+  if (!data?.top_users?.length) return []
+  return data.top_users.map(user => ({
+    user_id: user.user_id,
+    email: user.email,
+    actual_cost: user.total_actual_cost,
+    requests: user.requests,
+    tokens: user.tokens,
+  }))
+}
+
+const summaryTrendChartOptions = computed(() => ({
+  responsive: true,
+  maintainAspectRatio: false,
+  interaction: { intersect: false, mode: 'index' as const, axis: 'x' as const },
+  plugins: {
+    legend: { display: false },
+    tooltip: {
+      enabled: false,
+      external: (context: any) => {
+        const chart = context.chart
+        updateSummaryTooltip(context.tooltip, chart.width, chart.height)
+      }
+    }
+  },
+  scales: {
+    x: {
+      ticks: {
+        autoSkip: false,
+        maxRotation: 0,
+        minRotation: 0,
+        callback: function (this: any, value: string | number, index: number, ticks: any[]) {
+          if (!shouldShowTrendTick(index, ticks.length)) return ''
+          return this.getLabelForValue(Number(value))
+        }
+      }
+    },
+    y: {
+      ticks: {
+        callback: (value: string | number) => {
+          return formatMetricValue(Number(value))
+        }
+      }
+    }
+  }
+}))
+
+const topUserChartOptions = computed(() => ({
+  responsive: true,
+  maintainAspectRatio: false,
+  interaction: { intersect: false, mode: 'index' as const, axis: 'x' as const },
+  plugins: {
+    legend: { display: false },
+    tooltip: {
+      enabled: false,
+      external: (context: any) => {
+        const chart = context.chart
+        updateTopUserTooltip(context.tooltip, chart.width, chart.height)
+      }
+    }
+  },
+  scales: {
+    x: {
+      ticks: {
+        autoSkip: false,
+        maxRotation: 0,
+        minRotation: 0,
+        callback: function (this: any, value: string | number, index: number, ticks: any[]) {
+          if (!shouldShowTrendTick(index, ticks.length)) return ''
+          return this.getLabelForValue(Number(value))
+        }
+      }
+    },
+    y: { ticks: { callback: (value: string | number) => formatMetricValue(Number(value)) } }
+  }
+}))
+
+const groupTrendChartOptions = computed(() => ({
+  responsive: true,
+  maintainAspectRatio: false,
+  interaction: { intersect: false, mode: 'index' as const, axis: 'x' as const },
+  plugins: {
+    legend: { position: 'top' as const, labels: { usePointStyle: true, pointStyle: 'circle' } },
+    tooltip: {
+      mode: 'index' as const,
+      intersect: false,
+      position: 'nearest' as const,
+      padding: 12,
+      titleMarginBottom: 8,
+      bodySpacing: 6,
+      boxPadding: 4,
+      callbacks: {
+        title: (items: any[]) => {
+          const bucket = groupBucketKeys.value[items[0]?.dataIndex ?? -1] || String(items[0]?.label || '')
+          return bucket ? formatTopUserTooltipTitle(bucket) : ''
+        },
+        label: (ctx: any) => {
+          const groupId = Number(ctx.dataset.groupId ?? 0)
+          const bucket = groupBucketKeys.value[ctx.dataIndex] || ''
+          const record = groupId > 0 ? groupPointLookup.value.get(`${groupId}:${bucket}`) : null
+          const suffix = record?.platform ? ` · ${record.platform}` : ''
+          return `${ctx.dataset.label}${suffix}: ${formatMetricValue(Number(ctx.raw ?? 0))}`
+        }
+      }
+    }
+  },
+  scales: {
+    x: {
+      ticks: {
+        autoSkip: false,
+        maxRotation: 0,
+        minRotation: 0,
+        callback: function (this: any, value: string | number, index: number, ticks: any[]) {
+          if (!shouldShowTrendTick(index, ticks.length)) return ''
+          return this.getLabelForValue(Number(value))
+        }
+      }
+    },
+    y: { ticks: { callback: (value: string | number) => formatMetricValue(Number(value)) } }
+  },
+  onHover: (_event: unknown, elements: Array<{ datasetIndex: number }>, chart: any) => {
+    if (!elements?.length) {
+      hoveredGroupId.value = null
+      return
+    }
+    const dataset = chart.data.datasets[elements[0].datasetIndex]
+    hoveredGroupId.value = Number(dataset?.groupId ?? 0) || null
+  }
+}))
+
+const modelTrendChartOptions = computed(() => ({
+  responsive: true,
+  maintainAspectRatio: false,
+  interaction: { intersect: false, mode: 'index' as const, axis: 'x' as const },
+  plugins: {
+    legend: { position: 'top' as const, labels: { usePointStyle: true, pointStyle: 'circle' } },
+    tooltip: {
+      mode: 'index' as const,
+      intersect: false,
+      position: 'nearest' as const,
+      padding: 12,
+      titleMarginBottom: 8,
+      bodySpacing: 6,
+      boxPadding: 4,
+      callbacks: {
+        title: (items: any[]) => {
+          const bucket = topUserBucketKeys.value[items[0]?.dataIndex ?? -1] || String(items[0]?.label || '')
+          return bucket ? formatTopUserTooltipTitle(bucket) : ''
+        },
+        label: (ctx: any) => `${ctx.dataset.label}: $${formatCost(Number(ctx.raw ?? 0))}`
+      }
+    }
+  },
+  scales: {
+    x: {
+      ticks: {
+        autoSkip: false,
+        maxRotation: 0,
+        minRotation: 0,
+        callback: function (this: any, value: string | number, index: number, ticks: any[]) {
+          if (!shouldShowTrendTick(index, ticks.length)) return ''
+          return this.getLabelForValue(Number(value))
+        }
+      }
+    },
+    y: { ticks: { callback: (value: string | number) => `$${formatCost(Number(value))}` } }
+  }
+}))
+
+const loadData = async () => {
+  if (refreshing.value || initialLoading.value) return
+  clearAutoRefreshTimer()
+  const isInitialLoad = !usageMonitorData.value
+  initialLoading.value = isInitialLoad
+  refreshing.value = true
+  try {
+    const monitorParams = {
+      granularity: granularity.value,
+      start_date: startDate.value,
+      end_date: endDate.value,
+      timezone: userTimezone(),
+      limit: selectedUsers.value.length ? Math.max(selectedUsers.value.length, 1) : 8,
+    }
+    const monitorPromise = selectedUsers.value.length
+      ? Promise.all(selectedUsers.value.map(user =>
+          adminAPI.dashboard.getUsageCostMonitor({
+            ...monitorParams,
+            user_id: user.id,
+            limit: 1,
+          })
+        )).then(responses => ({ data: mergeUsageMonitorResponses(responses.map(response => response.data)) }))
+      : adminAPI.dashboard.getUsageCostMonitor(monitorParams)
+
+    const [rankingRes, monitorRes] = await Promise.all([
+      adminAPI.dashboard.getUserSpendingRanking({
+        start_date: startDate.value,
+        end_date: endDate.value,
+        limit: 10
+      }),
+      monitorPromise
+    ])
+    usageMonitorData.value = monitorRes.data
+    rankingItems.value = buildRankingFromMonitorData(monitorRes.data)
+    if (!rankingItems.value.length) {
+      rankingItems.value = rankingRes.ranking
+    }
+  } finally {
+    initialLoading.value = false
+    refreshing.value = false
+    scheduleAutoRefresh()
+  }
+}
+
+const debounceSearchUsers = () => {
+  if (userSearchTimer) window.clearTimeout(userSearchTimer)
+  userSearchTimer = window.setTimeout(searchUsers, 300)
+}
+
+const searchUsers = async () => {
+  const keyword = userKeyword.value.trim()
+  if (!keyword) {
+    userResults.value = []
+    return
+  }
+  userLoading.value = true
+  try {
+    userResults.value = await adminAPI.usage.searchUsers(keyword)
+  } finally {
+    userLoading.value = false
+  }
+}
+
+const selectUser = (user: SimpleUser) => {
+  if (!selectedUsers.value.some(item => item.id === user.id)) {
+    selectedUsers.value = [...selectedUsers.value, user].slice(0, 10)
+  }
+  userKeyword.value = ''
+  userResults.value = []
+  showUserDropdown.value = false
+  loadData()
+}
+
+const removeSelectedUser = (userID: number) => {
+  selectedUsers.value = selectedUsers.value.filter(user => user.id !== userID)
+  loadData()
+}
+
+const clearUser = () => {
+  selectedUsers.value = []
+  userKeyword.value = ''
+  userResults.value = []
+  showUserDropdown.value = false
+  loadData()
+}
+
+const handleGranularityChange = async () => {
+  if (granularity.value === 'hour') {
+    initHourRange()
+  } else if (granularity.value === 'day') {
+    initDayRange()
+  } else {
+    initRange()
+  }
+  await loadData()
+}
+
+const handleRangeChange = (range: { startDate: string; endDate: string }) => {
+  startDate.value = range.startDate
+  endDate.value = range.endDate
+  loadData()
+}
+
+const handleClickOutside = (event: MouseEvent) => {
+  const target = event.target as Node | null
+  if (userDropdownRef.value && target && !userDropdownRef.value.contains(target)) {
+    showUserDropdown.value = false
+  }
+}
+
+onMounted(async () => {
+  initHourRange()
+  await loadData()
+  document.addEventListener('click', handleClickOutside)
+})
+
+onUnmounted(() => {
+  clearAutoRefreshTimer()
+  if (autoRefreshClockTimer !== undefined) {
+    window.clearInterval(autoRefreshClockTimer)
+    autoRefreshClockTimer = undefined
+  }
+  document.removeEventListener('click', handleClickOutside)
+})
+</script>
+

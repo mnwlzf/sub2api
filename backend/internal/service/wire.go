@@ -432,6 +432,24 @@ func ProvideScheduledTestRunnerService(
 	return svc
 }
 
+func ProvideAdminScheduledJobService(
+	jobRepo AdminScheduledJobRepository,
+	runRepo AdminScheduledJobRunRepository,
+	executor AdminScheduledJobExecutor,
+	groupRepo GroupRepository,
+) *AdminScheduledJobService {
+	return NewAdminScheduledJobService(jobRepo, runRepo, executor, groupRepo)
+}
+
+func ProvideAdminScheduledJobRunnerService(
+	svc *AdminScheduledJobService,
+	cfg *config.Config,
+) *AdminScheduledJobRunnerService {
+	runner := NewAdminScheduledJobRunnerService(svc, cfg)
+	runner.Start()
+	return runner
+}
+
 // ProvideOpsScheduledReportService creates and starts OpsScheduledReportService.
 func ProvideOpsScheduledReportService(
 	opsService *OpsService,
@@ -647,6 +665,9 @@ var ProviderSet = wire.NewSet(
 	ProvideIdempotencyCleanupService,
 	ProvideScheduledTestService,
 	ProvideScheduledTestRunnerService,
+	NewAdminScheduledJobExecutor,
+	ProvideAdminScheduledJobService,
+	ProvideAdminScheduledJobRunnerService,
 	NewGroupCapacityService,
 	NewChannelService,
 	NewModelPricingResolver,

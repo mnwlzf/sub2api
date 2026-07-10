@@ -15,6 +15,7 @@ var (
 	dashboardGroupStatsCache   = newSnapshotCache(30 * time.Second)
 	dashboardUsersTrendCache   = newSnapshotCache(30 * time.Second)
 	dashboardAPIKeysTrendCache = newSnapshotCache(30 * time.Second)
+	dashboardUsageMonitorCache = newSnapshotCache(30 * time.Second)
 )
 
 type dashboardTrendCacheKey struct {
@@ -48,6 +49,16 @@ type dashboardEntityTrendCacheKey struct {
 	StartTime   string `json:"start_time"`
 	EndTime     string `json:"end_time"`
 	Granularity string `json:"granularity"`
+	Limit       int    `json:"limit"`
+}
+
+type dashboardUsageMonitorCacheKey struct {
+	Version     int    `json:"version"`
+	StartTime   string `json:"start_time"`
+	EndTime     string `json:"end_time"`
+	Granularity string `json:"granularity"`
+	TimeZone    string `json:"timezone"`
+	UserID      int64  `json:"user_id"`
 	Limit       int    `json:"limit"`
 }
 
@@ -200,4 +211,24 @@ func (h *DashboardHandler) getUserUsageTrendCached(ctx context.Context, startTim
 	}
 	trend, err := snapshotPayloadAs[[]usagestats.UserUsageTrendPoint](entry.Payload)
 	return trend, hit, err
+}
+
+func (h *DashboardHandler) getUsageMonitorCached(ctx context.Context, startTime, endTime time.Time, granularity, timezone string, userID int64, limit int) (*usagestats.UsageCostMonitorData, bool, error) {
+	key := mustMarshalDashboardCacheKey(dashboardUsageMonitorCacheKey{
+		Version:     2,
+		StartTime:   startTime.UTC().Format(time.RFC3339),
+		EndTime:     endTime.UTC().Format(time.RFC3339),
+		Granularity: granularity,
+		TimeZone:    timezone,
+		UserID:      userID,
+		Limit:       limit,
+	})
+	entry, hit, err := dashboardUsageMonitorCache.GetOrLoad(key, func() (any, error) {
+		return h.dashboardService.GetUsageCostMonitor(ctx, startTime, endTime, granularity, timezone, userID, limit)
+	})
+	if err != nil {
+		return nil, hit, err
+	}
+	data, err := snapshotPayloadAs[*usagestats.UsageCostMonitorData](entry.Payload)
+	return data, hit, err
 }

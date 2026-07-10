@@ -15,6 +15,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+const usageMonitorMaxLookbackDays = 31
+
 // DashboardHandler handles admin dashboard statistics
 type DashboardHandler struct {
 	dashboardService   *service.DashboardService
@@ -62,6 +64,54 @@ func parseTimeRange(c *gin.Context) (time.Time, time.Time) {
 	}
 
 	return startTime, endTime
+}
+
+func clampUsageMonitorRange(c *gin.Context) (time.Time, time.Time, string, string, error) {
+	userTZ := c.Query("timezone")
+	now := timezone.NowInUserLocation(userTZ)
+	granularity := strings.TrimSpace(c.DefaultQuery("granularity", "week"))
+	if granularity != "hour" && granularity != "day" && granularity != "week" && granularity != "month" {
+		granularity = "week"
+	}
+
+	end := timezone.StartOfDayInUserLocation(now.AddDate(0, 0, 1), userTZ)
+	start := timezone.StartOfDayInUserLocation(now.AddDate(0, 0, -30), userTZ)
+
+	switch granularity {
+	case "hour":
+		end = now.Truncate(time.Minute).Add(time.Minute)
+		start = end.Add(-time.Hour)
+	case "day":
+		end = time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), 0, 0, 0, now.Location()).Add(time.Hour)
+		start = end.Add(-24 * time.Hour)
+	case "week", "month":
+		if raw := strings.TrimSpace(c.Query("start_date")); raw != "" {
+			if parsed, err := timezone.ParseInUserLocation("2006-01-02", raw, userTZ); err == nil {
+				start = timezone.StartOfDayInUserLocation(parsed, userTZ)
+			} else {
+				return time.Time{}, time.Time{}, "", "", err
+			}
+		}
+		if raw := strings.TrimSpace(c.Query("end_date")); raw != "" {
+			if parsed, err := timezone.ParseInUserLocation("2006-01-02", raw, userTZ); err == nil {
+				end = timezone.StartOfDayInUserLocation(parsed.AddDate(0, 0, 1), userTZ)
+			} else {
+				return time.Time{}, time.Time{}, "", "", err
+			}
+		}
+		if end.After(timezone.StartOfDayInUserLocation(now.AddDate(0, 0, 1), userTZ)) {
+			end = timezone.StartOfDayInUserLocation(now.AddDate(0, 0, 1), userTZ)
+		}
+		if end.Sub(start) > usageMonitorMaxLookbackDays*24*time.Hour {
+			start = end.Add(-usageMonitorMaxLookbackDays * 24 * time.Hour)
+		}
+	}
+
+	if start.After(end) {
+		return time.Time{}, time.Time{}, "", "", errors.New("invalid range")
+	}
+
+	return start, end, granularity, userTZ, nil
 }
 
 // GetStats handles getting dashboard statistics
@@ -697,5 +747,62 @@ func (h *DashboardHandler) GetUserBreakdown(c *gin.Context) {
 		"users":      stats,
 		"start_date": startTime.Format("2006-01-02"),
 		"end_date":   endTime.Add(-24 * time.Hour).Format("2006-01-02"),
+	})
+}
+
+// GetUsageCostMonitor handles the admin usage monitor page.
+// GET /api/v1/admin/dashboard/usage-cost-monitor
+func (h *DashboardHandler) GetUsageCostMonitor(c *gin.Context) {
+	startTime, endTime, granularity, userTZ, err := clampUsageMonitorRange(c)
+	if err != nil {
+		response.BadRequest(c, "Invalid date range")
+		return
+	}
+
+	userID := int64(0)
+	if raw := strings.TrimSpace(c.Query("user_id")); raw != "" {
+		id, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || id <= 0 {
+			response.BadRequest(c, "Invalid user_id")
+			return
+		}
+		userID = id
+	}
+
+	limit := 5
+	if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed <= 0 {
+			response.BadRequest(c, "Invalid limit")
+			return
+		}
+		limit = parsed
+	}
+	if limit > 10 {
+		limit = 10
+	}
+
+	repoGranularity := "day"
+	switch granularity {
+	case "hour":
+		repoGranularity = "minute"
+	case "day":
+		repoGranularity = "hour"
+	}
+
+	data, hit, err := h.getUsageMonitorCached(c.Request.Context(), startTime, endTime, repoGranularity, userTZ, userID, limit)
+	if err != nil {
+		response.Error(c, 500, "Failed to get usage monitor data")
+		return
+	}
+	c.Header("X-Snapshot-Cache", cacheStatusValue(hit))
+
+	response.Success(c, gin.H{
+		"start_date":  startTime.Format("2006-01-02"),
+		"end_date":    endTime.Add(-24 * time.Hour).Format("2006-01-02"),
+		"start_time":  startTime.UTC().Format(time.RFC3339),
+		"end_time":    endTime.UTC().Format(time.RFC3339),
+		"granularity": granularity,
+		"data":        data,
 	})
 }

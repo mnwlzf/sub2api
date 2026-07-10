@@ -1631,6 +1631,64 @@ export interface UserSpendingRankingResponse {
   end_date: string
 }
 
+export interface UsageCostMonitorModelBreakdown {
+  model: string
+  actual_cost: number
+}
+
+export interface UsageCostMonitorPoint {
+  bucket: string
+  user_id: number
+  email: string
+  actual_cost: number
+  requests: number
+  tokens: number
+  models: UsageCostMonitorModelBreakdown[]
+}
+
+export interface UsageCostMonitorTopUser {
+  user_id: number
+  email: string
+  total_actual_cost: number
+  requests: number
+  tokens: number
+}
+
+export interface UsageCostMonitorTopGroup {
+  group_id: number
+  group_name: string
+  platform: string
+  total_actual_cost: number
+  requests: number
+  tokens: number
+}
+
+export interface UsageCostMonitorGroupPoint {
+  bucket: string
+  group_id: number
+  group_name: string
+  platform: string
+  actual_cost: number
+  requests: number
+  tokens: number
+}
+
+export interface UsageCostMonitorData {
+  top_users: UsageCostMonitorTopUser[]
+  series: UsageCostMonitorPoint[]
+  top_groups?: UsageCostMonitorTopGroup[]
+  group_series?: UsageCostMonitorGroupPoint[]
+}
+
+export interface UsageCostMonitorResponse {
+  start_date: string
+  end_date: string
+  start_time?: string
+  end_time?: string
+  granularity: 'hour' | 'day' | 'week' | 'month'
+  data: UsageCostMonitorData
+}
+
 export interface ApiKeyUsageTrendPoint {
   date: string
   api_key_id: number
@@ -2045,6 +2103,73 @@ export interface UpdateScheduledTestPlanRequest {
   enabled?: boolean
   max_results?: number
   auto_recover?: boolean
+}
+
+export interface AdminScheduledJob {
+  id: number
+  name: string
+  job_type: string
+  cron_expression: string
+  enabled: boolean
+  payload_json: string
+  retention_limit: number
+  last_run_at: string | null
+  next_run_at: string | null
+  last_status: string
+  last_message: string
+  created_by: number
+  created_at: string
+  updated_at: string
+}
+
+export interface AdminScheduledJobRun {
+  id: number
+  job_id: number
+  trigger_type: string
+  status: string
+  message: string
+  result_json: string
+  started_at: string
+  finished_at: string | null
+  created_at: string
+  triggered_by_user: number | null
+}
+
+export interface CreateAdminScheduledJobRequest {
+  name: string
+  job_type: string
+  cron_expression: string
+  enabled?: boolean
+  payload_json?: string
+  retention_limit?: number
+}
+
+export interface UpdateAdminScheduledJobRequest {
+  name?: string
+  cron_expression?: string
+  enabled?: boolean
+  payload_json?: string
+  retention_limit?: number
+}
+
+export interface AdminScheduledSyncCodexFreeGroupsPayload {
+  source_group_id: number
+  target_group_ids: number[]
+}
+
+export interface AdminScheduledOpenAIOAuthModelMappingPayload {
+  model_mapping: Record<string, string>
+}
+
+export interface AdminScheduledRelayCodexGroupRatioRule {
+  ratio: number
+  target_model?: string
+  model_mapping?: Record<string, string>
+}
+
+export interface AdminScheduledRelayCodexGroupRatioPayload {
+  account_name_contains: string
+  ratio_mapping_rules: AdminScheduledRelayCodexGroupRatioRule[]
 }
 
 // Payment types

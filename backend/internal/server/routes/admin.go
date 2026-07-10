@@ -95,6 +95,9 @@ func RegisterAdminRoutes(
 		// 定时测试计划
 		registerScheduledTestRoutes(admin, h)
 
+		// 管理端计划任务
+		registerAdminScheduledJobRoutes(admin, h)
+
 		// 渠道管理
 		registerChannelRoutes(admin, h)
 
@@ -239,6 +242,7 @@ func registerDashboardRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		dashboard.POST("/api-keys-usage", h.Admin.Dashboard.GetBatchAPIKeysUsage)
 		dashboard.GET("/user-breakdown", h.Admin.Dashboard.GetUserBreakdown)
 		dashboard.POST("/aggregation/backfill", h.Admin.Dashboard.BackfillAggregation)
+		dashboard.GET("/usage-cost-monitor", h.Admin.Dashboard.GetUsageCostMonitor)
 	}
 }
 
@@ -609,6 +613,19 @@ func registerScheduledTestRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	}
 	// Nested under accounts
 	admin.GET("/accounts/:id/scheduled-test-plans", h.Admin.ScheduledTest.ListByAccount)
+}
+
+func registerAdminScheduledJobRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	jobs := admin.Group("/scheduled-jobs")
+	{
+		jobs.GET("", h.Admin.AdminScheduledJob.List)
+		jobs.POST("", h.Admin.AdminScheduledJob.Create)
+		jobs.GET("/:id", h.Admin.AdminScheduledJob.Get)
+		jobs.PUT("/:id", h.Admin.AdminScheduledJob.Update)
+		jobs.DELETE("/:id", h.Admin.AdminScheduledJob.Delete)
+		jobs.POST("/:id/run", h.Admin.AdminScheduledJob.RunNow)
+		jobs.GET("/:id/runs", h.Admin.AdminScheduledJob.ListRuns)
+	}
 }
 
 func registerErrorPassthroughRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
