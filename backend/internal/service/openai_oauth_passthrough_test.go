@@ -1049,20 +1049,23 @@ func TestOpenAIGatewayService_APIKeyPassthrough_RebuildsUpstreamErrors(t *testin
 			wantStatus:   http.StatusBadGateway,
 			wantMessage:  "Upstream authentication failed",
 		},
+		// 瞬时 5xx（500/502/503/504/520-524）对 API-key 账号已改走多账号
+		// failover（见 APIKeyPassthrough_Transient5xxTriggersFailover），此处
+		// 改用非瞬时 5xx 状态码，继续覆盖净化重建路径。
 		{
 			name:         "html 5xx",
-			statusCode:   http.StatusBadGateway,
+			statusCode:   530,
 			contentType:  "text/html; charset=UTF-8",
-			responseBody: `<!DOCTYPE html><title>secret-upstream.example | 502: Bad gateway</title>`,
-			wantStatus:   http.StatusBadGateway,
+			responseBody: `<!DOCTYPE html><title>secret-upstream.example | 530: Origin DNS error</title>`,
+			wantStatus:   530,
 			wantMessage:  "Upstream service temporarily unavailable",
 		},
 		{
 			name:         "structured 5xx",
-			statusCode:   http.StatusInternalServerError,
+			statusCode:   http.StatusNotImplemented,
 			contentType:  "application/json",
 			responseBody: `{"error":{"message":"secret-upstream.example internal failure"}}`,
-			wantStatus:   http.StatusInternalServerError,
+			wantStatus:   http.StatusNotImplemented,
 			wantMessage:  "Upstream service temporarily unavailable",
 		},
 		{
@@ -1957,6 +1960,8 @@ func TestOpenAIGatewayService_APIKeyPassthrough_PreservesBodyAndUsesResponsesEnd
 	c.Request.Header.Set("User-Agent", "curl/8.0")
 	c.Request.Header.Set("X-Test", "keep")
 	c.Request.Header.Set("x-codex-beta-features", "remote_compaction_v2")
+	c.Request.Header.Set("X-Codex-Window-ID", "window-passthrough")
+	c.Request.Header.Set("X-Codex-Installation-ID", "installation-passthrough")
 
 	originalBody := []byte(`{"model":"gpt-5.2","stream":false,"service_tier":"flex","max_output_tokens":128,"input":[{"type":"text","text":"hi"}]}`)
 	resp := &http.Response{
@@ -1995,6 +2000,8 @@ func TestOpenAIGatewayService_APIKeyPassthrough_PreservesBodyAndUsesResponsesEnd
 	require.Equal(t, "Bearer sk-api-key", upstream.lastReq.Header.Get("Authorization"))
 	require.Equal(t, "curl/8.0", upstream.lastReq.Header.Get("User-Agent"))
 	require.Equal(t, "remote_compaction_v2", upstream.lastReq.Header.Get("x-codex-beta-features"))
+	require.Equal(t, "window-passthrough", upstream.lastReq.Header.Get("X-Codex-Window-ID"))
+	require.Equal(t, "installation-passthrough", upstream.lastReq.Header.Get("X-Codex-Installation-ID"))
 	require.Empty(t, upstream.lastReq.Header.Get("X-Test"))
 }
 
