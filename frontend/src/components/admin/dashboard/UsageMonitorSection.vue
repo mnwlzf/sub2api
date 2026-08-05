@@ -423,7 +423,9 @@ type TrendMetric = 'requests' | 'tokens' | 'actual_cost'
 const initialLoading = ref(false)
 const refreshing = ref(false)
 const usageMonitorData = ref<UsageCostMonitorData | null>(null)
-const rankingItems = ref<UserSpendingRankingItem[]>([])
+type UsageMonitorRankingItem = Omit<UserSpendingRankingItem, 'username'>
+
+const rankingItems = ref<UsageMonitorRankingItem[]>([])
 
 const granularity = ref<Granularity>('hour')
 const trendMetric = ref<TrendMetric>('actual_cost')
@@ -1098,7 +1100,7 @@ const mergeUsageMonitorResponses = (responses: UsageCostMonitorData[]) => {
   }
 }
 
-const buildRankingFromMonitorData = (data: UsageCostMonitorData | null): UserSpendingRankingItem[] => {
+const buildRankingFromMonitorData = (data: UsageCostMonitorData | null): UsageMonitorRankingItem[] => {
   if (!data?.top_users?.length) return []
   return data.top_users.map(user => ({
     user_id: user.user_id,
@@ -1392,4 +1394,3 @@ onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
 })
 </script>
-
