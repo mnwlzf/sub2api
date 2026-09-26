@@ -90,7 +90,7 @@ func TestGetUpstreamBillingRatesIncludesPoolUpstreamInfoAndETag(t *testing.T) {
 	var body struct {
 		Data struct {
 			Items []struct {
-				AccountID        int64                          `json:"account_id"`
+				AccountID        int64                             `json:"account_id"`
 				PoolUpstreamInfo *service.PoolUpstreamInfoSnapshot `json:"pool_upstream_info"`
 			} `json:"items"`
 		} `json:"data"`

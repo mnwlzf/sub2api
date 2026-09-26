@@ -669,7 +669,10 @@ func TestRunDuePoolUpstreamInfoRunsWhenBillingDisabled(t *testing.T) {
 
 	require.NoError(t, svc.RunDue(context.Background()))
 	require.Len(t, upstream.requests, 1)
-	require.Equal(t, "quota", repo.accounts[1].Extra[PoolUpstreamInfoExtraKey].(*PoolUpstreamInfoSnapshot).Data["kind"])
+	snapshot, ok := repo.accounts[1].Extra[PoolUpstreamInfoExtraKey].(*PoolUpstreamInfoSnapshot)
+	require.True(t, ok)
+	require.NotNil(t, snapshot)
+	require.Equal(t, "quota", snapshot.Data["kind"])
 }
 
 func TestRunDuePoolUpstreamInfoSkipsFreshSnapshots(t *testing.T) {
