@@ -1093,9 +1093,47 @@ export interface UpstreamBillingProbeResult {
   error?: string
 }
 
+export type PoolUpstreamPlatform = 'default' | 'sub2api' | 'chatgpt2api'
+
+export type PoolUpstreamFeature = 'balance' | 'account_count' | 'image_quota'
+
+export type PoolUpstreamInfoStatus = 'ok' | 'unsupported' | 'failed'
+
+export interface PoolUpstreamInfoData {
+  // sub2api GET /v1/usage: wallet balance or remaining quota/subscription, USD.
+  kind?: 'wallet' | 'quota' | 'subscription'
+  amount_usd?: number
+  // chatgpt2api GET /api/dashboard sanitized counters.
+  accounts_active?: number
+  total_quota?: number
+  unlimited_quota_count?: number
+  unknown_quota_count?: number
+}
+
+export interface PoolUpstreamInfoSnapshot {
+  status: PoolUpstreamInfoStatus
+  platform?: string
+  features?: string[]
+  data?: PoolUpstreamInfoData
+  received_at?: string
+  fresh_until?: string
+  last_attempt_at: string
+  next_probe_at: string
+  failure_count?: number
+  http_status?: number
+  last_error?: string
+}
+
+export interface PoolUpstreamInfoResult {
+  account_id: number
+  snapshot?: PoolUpstreamInfoSnapshot
+  error?: string
+}
+
 export interface UpstreamBillingRateSnapshotItem {
   account_id: number
   snapshot?: UpstreamBillingProbeSnapshot | null
+  pool_upstream_info?: PoolUpstreamInfoSnapshot | null
 }
 
 export interface UpstreamBillingRatesResponse {
@@ -1216,6 +1254,9 @@ export interface Account {
     upstream_billing_probe_enabled?: boolean
     upstream_billing_rate_sync_enabled?: boolean
     upstream_billing_probe?: UpstreamBillingProbeSnapshot
+    pool_upstream_platform?: string
+    pool_upstream_features?: string[]
+    pool_upstream_info?: PoolUpstreamInfoSnapshot
     codex_reset_credit_snapshot?: {
       available_count?: number
       credits?: { expires_at?: string }[]

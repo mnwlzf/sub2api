@@ -1712,3 +1712,83 @@ describe('EditAccountModal OpenAI 自动使用重置卡', () => {
     wrapper.unmount()
   })
 })
+
+describe('EditAccountModal pool upstream info', () => {
+  const buildPoolAccount = () => {
+    const account = buildAccount()
+    account.credentials.pool_mode = true
+    account.extra = {
+      pool_upstream_platform: 'chatgpt2api',
+      pool_upstream_features: ['account_count'],
+      pool_upstream_info: {
+        status: 'ok',
+        platform: 'chatgpt2api',
+        features: ['account_count'],
+        data: { accounts_active: 2 }
+      }
+    }
+    return account
+  }
+
+  beforeEach(() => {
+    updateAccountMock.mockReset().mockResolvedValue(buildPoolAccount())
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+  })
+
+  it('loads the stored selection and writes it back without the managed snapshot', async () => {
+    const wrapper = mountModal(buildPoolAccount())
+
+    expect(
+      (wrapper.get<HTMLSelectElement>('[data-testid="pool-upstream-platform"]').element).value
+    ).toBe('chatgpt2api')
+    expect(
+      (wrapper.get<HTMLInputElement>('[data-testid="pool-upstream-feature-account_count"]').element).checked
+    ).toBe(true)
+    expect(
+      (wrapper.get<HTMLInputElement>('[data-testid="pool-upstream-feature-image_quota"]').element).checked
+    ).toBe(false)
+
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    const input = updateAccountMock.mock.calls[0]?.[1]
+    expect(input?.credentials?.pool_mode).toBe(true)
+    expect(input?.extra?.pool_upstream_platform).toBe('chatgpt2api')
+    expect(input?.extra?.pool_upstream_features).toEqual(['account_count'])
+    expect(input?.extra).not.toHaveProperty('pool_upstream_info')
+    wrapper.unmount()
+  })
+
+  it('saves default with empty features when pool mode is disabled', async () => {
+    const wrapper = mountModal(buildPoolAccount())
+    await wrapper.get('[data-testid="pool-mode-toggle"]').trigger('click')
+
+    expect(wrapper.find('[data-testid="pool-upstream-info-selector"]').exists()).toBe(false)
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    const input = updateAccountMock.mock.calls[0]?.[1]
+    expect(input?.credentials?.pool_mode).toBeUndefined()
+    expect(input?.extra?.pool_upstream_platform).toBe('default')
+    expect(input?.extra?.pool_upstream_features).toEqual([])
+    wrapper.unmount()
+  })
+
+  it('clears incompatible features when switching the declared platform', async () => {
+    const wrapper = mountModal(buildPoolAccount())
+    await wrapper.get('[data-testid="pool-upstream-platform"]').setValue('sub2api')
+
+    // account_count is chatgpt2api-only; the switch filters it out.
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    const extra = updateAccountMock.mock.calls[0]?.[1]?.extra
+    expect(extra?.pool_upstream_platform).toBe('sub2api')
+    expect(extra?.pool_upstream_features).toEqual([])
+    wrapper.unmount()
+  })
+
+  it('does not render the selector for accounts without pool mode', () => {
+    const wrapper = mountModal(buildAccount())
+    expect(wrapper.find('[data-testid="pool-upstream-info-selector"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+})

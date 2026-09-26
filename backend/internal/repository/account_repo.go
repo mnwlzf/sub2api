@@ -15,6 +15,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -61,6 +62,7 @@ var schedulerNeutralExtraKeyPrefixes = []string{
 	"upstream_billing_probe",
 	"upstream_billing_rate_sync",
 	"ollama_cloud_usage",
+	"pool_upstream_",
 }
 
 var schedulerNeutralExtraKeys = map[string]struct{}{
@@ -670,7 +672,10 @@ func lockAndMergeAccountProbeExtra(
 				false
 			),
 			extra -> 'opencode_go_usage_auto_refresh',
-			extra -> 'opencode_go_usage_snapshot'
+			extra -> 'opencode_go_usage_snapshot',
+			extra -> 'pool_upstream_platform',
+			extra -> 'pool_upstream_features',
+			extra -> 'pool_upstream_info'
 		FROM accounts
 		WHERE id = $1 AND deleted_at IS NULL
 		FOR NO KEY UPDATE
@@ -699,6 +704,9 @@ func lockAndMergeAccountProbeExtra(
 		currentOllamaSnapshot          []byte
 		currentOpenCodeAutoRefresh     []byte
 		currentOpenCodeSnapshot        []byte
+		currentPoolPlatform            []byte
+		currentPoolFeatures            []byte
+		currentPoolSnapshot            []byte
 	)
 	if err := rows.Scan(
 		&identityUnchanged,
@@ -713,6 +721,9 @@ func lockAndMergeAccountProbeExtra(
 		&opencodeGroupIdentityUnchanged,
 		&currentOpenCodeAutoRefresh,
 		&currentOpenCodeSnapshot,
+		&currentPoolPlatform,
+		&currentPoolFeatures,
+		&currentPoolSnapshot,
 	); err != nil {
 		return nil, err
 	}
@@ -730,6 +741,7 @@ func lockAndMergeAccountProbeExtra(
 		service.OllamaCloudUsageSnapshotExtraKey,
 		service.OpenCodeGoUsageAutoRefreshExtraKey,
 		service.OpenCodeGoUsageSnapshotExtraKey,
+		service.PoolUpstreamInfoExtraKey,
 	} {
 		delete(extra, key)
 	}
@@ -826,6 +838,33 @@ func lockAndMergeAccountProbeExtra(
 			}
 		}
 	}
+	// Pool upstream info snapshot: 与上游倍率快照同一套保留契约——仅当探测身份
+	// （platform/type/完整 credentials/proxy，即 identityUnchanged）与声明的
+	// platform/features 选择均未变化时才从锁定的 DB 行回填。选择键本身由服务层
+	// 归一化后写入 extra，这里按归一化结果比较：选择变化、pool_mode 关闭或任何
+	// 凭证变化都会令旧快照失效，陈旧快照不会随新身份复活。
+	if identityUnchanged {
+		if snapshot, ok, err := decodeAccountExtraJSON(currentPoolSnapshot); err != nil {
+			return nil, err
+		} else if ok {
+			storedSelection := make(map[string]any, 2)
+			if platform, ok, err := decodeAccountExtraJSON(currentPoolPlatform); err != nil {
+				return nil, err
+			} else if ok {
+				storedSelection[service.PoolUpstreamPlatformExtraKey] = platform
+			}
+			if features, ok, err := decodeAccountExtraJSON(currentPoolFeatures); err != nil {
+				return nil, err
+			} else if ok {
+				storedSelection[service.PoolUpstreamFeaturesExtraKey] = features
+			}
+			storedPlatform, storedFeatures := service.PoolUpstreamSelection(storedSelection)
+			desiredPlatform, desiredFeatures := service.PoolUpstreamSelection(extra)
+			if storedPlatform == desiredPlatform && slices.Equal(storedFeatures, desiredFeatures) {
+				extra[service.PoolUpstreamInfoExtraKey] = snapshot
+			}
+		}
+	}
 	return extra, nil
 }
 
@@ -863,6 +902,28 @@ func (r *accountRepository) UpdateCredentials(ctx context.Context, id int64, cre
 			client = tx.Client()
 		}
 	}
+	// 池上游信息快照的凭证身份（api_key/base_url/header_override*/pool_mode）
+	// 变化或 pool_mode 关闭时必须在同一事务内清理/归一化 extra；由于上面的
+	// CASE 表达式引用的是更新前的旧 credentials，先读出旧值在 Go 侧判定。
+	var oldCredentialsRaw []byte
+	oldCredRows, oldCredErr := client.QueryContext(ctx, `
+		SELECT credentials FROM accounts WHERE id = $1 AND deleted_at IS NULL FOR UPDATE
+	`, id)
+	if oldCredErr != nil {
+		return oldCredErr
+	}
+	if oldCredRows.Next() {
+		if err := oldCredRows.Scan(&oldCredentialsRaw); err != nil {
+			_ = oldCredRows.Close()
+			return err
+		}
+	}
+	if err := oldCredRows.Err(); err != nil {
+		_ = oldCredRows.Close()
+		return err
+	}
+	_ = oldCredRows.Close()
+
 	result, err := client.ExecContext(ctx, `
 		UPDATE accounts
 		SET
@@ -942,6 +1003,43 @@ func (r *accountRepository) UpdateCredentials(ctx context.Context, id int64, cre
 	}
 	if affected == 0 {
 		return service.ErrAccountNotFound
+	}
+	// 池上游信息：与上游倍率快照同一语义——探测身份子集（api_key/base_url/
+	// header_override*/pool_mode）变化时快照必须随新身份失效；新凭据里
+	// pool_mode 非 true 时选择键同步归一化为 default+[]（仅对持有池上游键的
+	// apikey 行生效，避免无关账号被写入噪声键）。
+	poolIdentityChanged := false
+	if len(oldCredentialsRaw) > 0 {
+		var oldCredentials map[string]any
+		if jsonErr := json.Unmarshal(oldCredentialsRaw, &oldCredentials); jsonErr == nil {
+			for _, key := range []string{"api_key", "base_url", "header_override_enabled", "header_overrides", "pool_mode"} {
+				oldRaw, _ := json.Marshal(oldCredentials[key])
+				newRaw, _ := json.Marshal(credentials[key])
+				if string(oldRaw) != string(newRaw) {
+					poolIdentityChanged = true
+					break
+				}
+			}
+		}
+	}
+	if poolIdentityChanged {
+		poolModeOff := credentials["pool_mode"] != true
+		if _, err := client.ExecContext(ctx, `
+			UPDATE accounts
+			SET extra = CASE
+					WHEN $2::bool
+					THEN (COALESCE(extra, '{}'::jsonb) - 'pool_upstream_info')
+						|| '{"pool_upstream_platform":"default","pool_upstream_features":[]}'::jsonb
+					ELSE COALESCE(extra, '{}'::jsonb) - 'pool_upstream_info'
+				END,
+				updated_at = NOW()
+			WHERE id = $1
+				AND type = 'apikey'
+				AND (extra ? 'pool_upstream_platform' OR extra ? 'pool_upstream_features' OR extra ? 'pool_upstream_info')
+				AND deleted_at IS NULL
+		`, id, poolModeOff); err != nil {
+			return err
+		}
 	}
 	if err := enqueueSchedulerOutbox(ctx, client, service.SchedulerOutboxEventAccountChanged, &id, nil, nil); err != nil {
 		return err
@@ -2930,6 +3028,116 @@ func (r *accountRepository) updateUpstreamBillingProbeSnapshotInTx(
 	return enqueueSchedulerOutbox(ctx, client, service.SchedulerOutboxEventAccountChanged, &account.ID, nil, nil)
 }
 
+// UpdatePoolUpstreamInfoSnapshot persists a pool upstream information snapshot
+// with the same compare-and-swap protection as the billing probe: the row is
+// only updated when the account identity (platform/type/credentials/proxy),
+// the declared selection, and the previous snapshot are all unchanged since the
+// probe loaded them, so an in-flight probe cannot resurrect state that an
+// intervening edit removed.
+func (r *accountRepository) UpdatePoolUpstreamInfoSnapshot(
+	ctx context.Context,
+	account *service.Account,
+	snapshot *service.PoolUpstreamInfoSnapshot,
+) error {
+	if account == nil || snapshot == nil {
+		return service.ErrAccountNilInput
+	}
+	if dbent.TxFromContext(ctx) == nil {
+		tx, err := r.client.Tx(ctx)
+		if errors.Is(err, dbent.ErrTxStarted) {
+			return r.updatePoolUpstreamInfoSnapshotInTx(ctx, account, snapshot)
+		}
+		if err != nil {
+			return err
+		}
+		defer func() { _ = tx.Rollback() }()
+		if err := r.updatePoolUpstreamInfoSnapshotInTx(dbent.NewTxContext(ctx, tx), account, snapshot); err != nil {
+			return err
+		}
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+		r.syncSchedulerAccountSnapshot(ctx, account.ID)
+		return nil
+	}
+	return r.updatePoolUpstreamInfoSnapshotInTx(ctx, account, snapshot)
+}
+
+func (r *accountRepository) updatePoolUpstreamInfoSnapshotInTx(
+	ctx context.Context,
+	account *service.Account,
+	snapshot *service.PoolUpstreamInfoSnapshot,
+) error {
+	payload, err := json.Marshal(map[string]any{service.PoolUpstreamInfoExtraKey: snapshot})
+	if err != nil {
+		return err
+	}
+	credentials, err := json.Marshal(normalizeJSONMap(account.Credentials))
+	if err != nil {
+		return err
+	}
+	var expectedSnapshot any
+	var expectedPlatform any
+	var expectedFeatures any
+	if account.Extra != nil {
+		expectedSnapshot = account.Extra[service.PoolUpstreamInfoExtraKey]
+		expectedPlatform = account.Extra[service.PoolUpstreamPlatformExtraKey]
+		expectedFeatures = account.Extra[service.PoolUpstreamFeaturesExtraKey]
+	}
+	expectedSnapshotJSON, err := json.Marshal(expectedSnapshot)
+	if err != nil {
+		return err
+	}
+	expectedPlatformJSON, err := json.Marshal(expectedPlatform)
+	if err != nil {
+		return err
+	}
+	expectedFeaturesJSON, err := json.Marshal(expectedFeatures)
+	if err != nil {
+		return err
+	}
+	client := clientFromContext(ctx, r.client)
+	proxyMatches, err := lockAndMatchProbeProxyIdentity(ctx, client, account)
+	if err != nil {
+		return err
+	}
+	if !proxyMatches {
+		return service.ErrPoolUpstreamInfoIdentityChanged
+	}
+	var proxyID any
+	if account.ProxyID != nil {
+		proxyID = *account.ProxyID
+	}
+	result, err := client.ExecContext(ctx, `
+		UPDATE accounts
+		SET
+			extra = COALESCE(extra, '{}'::jsonb) || $1::jsonb,
+			updated_at = NOW()
+		WHERE id = $2
+			AND platform = $3
+			AND type = $4
+			AND credentials = $5::jsonb
+			AND credentials @> '{"pool_mode":true}'::jsonb
+			AND proxy_id IS NOT DISTINCT FROM $6
+			AND COALESCE(extra -> 'pool_upstream_info', 'null'::jsonb) = $7::jsonb
+			AND COALESCE(extra -> 'pool_upstream_platform', 'null'::jsonb) = $8::jsonb
+			AND COALESCE(extra -> 'pool_upstream_features', 'null'::jsonb) = $9::jsonb
+			AND deleted_at IS NULL
+	`, string(payload), account.ID, account.Platform, account.Type, string(credentials), proxyID,
+		string(expectedSnapshotJSON), string(expectedPlatformJSON), string(expectedFeaturesJSON))
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return service.ErrPoolUpstreamInfoIdentityChanged
+	}
+	return enqueueSchedulerOutbox(ctx, client, service.SchedulerOutboxEventAccountChanged, &account.ID, nil, nil)
+}
+
 func lockAndMatchProbeProxyIdentity(ctx context.Context, client *dbent.Client, account *service.Account) (bool, error) {
 	if account.ProxyID == nil {
 		return true, nil
@@ -2996,6 +3204,11 @@ func upstreamBillingProbeExplicitlyDisabled(extra map[string]any) bool {
 
 func upstreamBillingProbeSnapshotClearRequested(extra map[string]any) bool {
 	value, ok := extra[service.UpstreamBillingProbeExtraKey]
+	return ok && value == nil
+}
+
+func poolUpstreamInfoSnapshotClearRequested(extra map[string]any) bool {
+	value, ok := extra[service.PoolUpstreamInfoExtraKey]
 	return ok && value == nil
 }
 
@@ -3128,7 +3341,7 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
 				" AND COALESCE(btrim("+credentialPlaceholder+"::jsonb ->> 'account_mode') <> 'zen', true) IS NOT TRUE")
 	}
 
-	if len(updates.Extra) > 0 || len(ollamaGroupIdentityChanges) > 0 || len(opencodeGroupIdentityChanges) > 0 || ollamaProxyIdentityChanged != "" || updates.EnsureCodexFingerprintSeed {
+	if len(updates.Extra) > 0 || len(ollamaGroupIdentityChanges) > 0 || len(opencodeGroupIdentityChanges) > 0 || ollamaProxyIdentityChanged != "" || updates.EnsureCodexFingerprintSeed || updates.ResetPoolUpstreamOnPoolOff {
 		extraExpression := "COALESCE(extra, '{}'::jsonb)"
 		if len(updates.Extra) > 0 {
 			payload, err := json.Marshal(updates.Extra)
@@ -3144,6 +3357,18 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
 			if ollamaCloudUsageSnapshotClearRequested(updates.Extra) {
 				extraExpression = "(" + extraExpression + ") - 'ollama_cloud_usage_snapshot'"
 			}
+			if poolUpstreamInfoSnapshotClearRequested(updates.Extra) {
+				extraExpression = "(" + extraExpression + ") - 'pool_upstream_info'"
+			}
+		}
+		// 批量关闭 pool_mode：仅对持有池上游键的 apikey 行归一化选择并清除
+		// 快照，其余行的 extra 不受影响。
+		if updates.ResetPoolUpstreamOnPoolOff {
+			extraExpression = "CASE WHEN type = 'apikey' " +
+				"AND (extra ? 'pool_upstream_platform' OR extra ? 'pool_upstream_features' OR extra ? 'pool_upstream_info') " +
+				"THEN ((" + extraExpression + ") - 'pool_upstream_info') " +
+				"|| '{\"pool_upstream_platform\":\"default\",\"pool_upstream_features\":[]}'::jsonb " +
+				"ELSE " + extraExpression + " END"
 		}
 		eligibleAccount := "platform IN (" + ollamaCloudUsagePlatformsSQL + ") AND type = 'apikey'"
 		groupIdentityChanged := ""
@@ -3769,6 +3994,122 @@ func (r *accountRepository) ListDueUpstreamBillingProbeAccounts(ctx context.Cont
 				AND status = 'active'
 				AND type = 'apikey'
 				AND extra @> '{"upstream_billing_probe_enabled": true}'::jsonb
+		), parsed AS MATERIALIZED (
+			SELECT
+				id,
+				probe_status,
+				next_probe_at,
+				next_probe_at ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$' AS rfc3339_shape,
+				jsonb_path_query_first_tz(
+					jsonb_build_object(
+						'value',
+						replace(regexp_replace(regexp_replace(
+							next_probe_at,
+							'(\.[0-9]{6})[0-9]+(Z|[+-][0-9]{2}:[0-9]{2})$',
+							'\1\2'
+						), 'Z$', '+00:00'), 'T', ' ')
+					),
+					'$.value.datetime()',
+					'{}'::jsonb,
+					true
+				) #>> '{}' AS parsed_next_probe_at
+			FROM candidates
+		), normalized AS (
+			SELECT
+				id,
+				probe_status,
+				next_probe_at,
+				parsed_next_probe_at,
+				rfc3339_shape AND parsed_next_probe_at IS NOT NULL AS valid_next_probe_at
+			FROM parsed
+		)
+		SELECT id
+		FROM normalized
+		WHERE probe_status NOT IN ('ok', 'unsupported', 'failed')
+			OR probe_status IS NULL
+			OR next_probe_at IS NULL
+			OR NOT valid_next_probe_at
+			OR CASE WHEN valid_next_probe_at THEN parsed_next_probe_at::timestamptz <= $1 ELSE FALSE END
+		ORDER BY
+			CASE
+				WHEN probe_status NOT IN ('ok', 'unsupported', 'failed')
+					OR probe_status IS NULL
+					OR next_probe_at IS NULL
+					OR NOT valid_next_probe_at
+				THEN 0
+				ELSE 1
+			END ASC,
+			CASE WHEN valid_next_probe_at THEN parsed_next_probe_at::timestamptz END ASC NULLS FIRST,
+			id ASC
+		LIMIT $2
+	`, now.UTC(), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	ids := make([]int64, 0, limit)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(ids) == 0 {
+		return []service.Account{}, nil
+	}
+
+	accounts, err := r.GetByIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]service.Account, 0, len(accounts))
+	for _, account := range accounts {
+		if account != nil {
+			out = append(out, *account)
+		}
+	}
+	return out, nil
+}
+
+// ListDuePoolUpstreamInfoAccounts returns accounts whose pool upstream
+// information probe is due. The opt-in is the declared selection
+// (pool_upstream_platform != default plus a non-empty feature list) under the
+// apikey + pool_mode prerequisite; it never reads the billing probe switches so
+// information probes run even while billing probing is globally disabled.
+func (r *accountRepository) ListDuePoolUpstreamInfoAccounts(ctx context.Context, now time.Time, limit int) ([]service.Account, error) {
+	if limit <= 0 {
+		return []service.Account{}, nil
+	}
+	if r.sql == nil {
+		return nil, errors.New("account repository SQL executor not configured")
+	}
+
+	rows, err := r.sql.QueryContext(ctx, `
+		WITH candidates AS (
+			SELECT
+				id,
+				extra #>> '{pool_upstream_info,status}' AS probe_status,
+				extra #>> '{pool_upstream_info,next_probe_at}' AS next_probe_at
+			FROM accounts
+			WHERE deleted_at IS NULL
+				AND status = 'active'
+				AND type = 'apikey'
+				AND COALESCE(credentials -> 'pool_mode', 'false'::jsonb) = 'true'::jsonb
+				AND CASE extra ->> 'pool_upstream_platform'
+					WHEN 'sub2api' THEN
+						CASE WHEN jsonb_typeof(extra -> 'pool_upstream_features') = 'array'
+							THEN (extra -> 'pool_upstream_features') ? 'balance' ELSE false END
+					WHEN 'chatgpt2api' THEN
+						platform = 'openai' AND
+						CASE WHEN jsonb_typeof(extra -> 'pool_upstream_features') = 'array'
+							THEN (extra -> 'pool_upstream_features') ?| ARRAY['account_count', 'image_quota'] ELSE false END
+					ELSE false
+				END
 		), parsed AS MATERIALIZED (
 			SELECT
 				id,

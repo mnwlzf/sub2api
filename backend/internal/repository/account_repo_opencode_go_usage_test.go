@@ -69,13 +69,15 @@ func TestUpdateOpenCodeGoUsageSnapshotWritesSnapshotOnly(t *testing.T) {
 }
 
 // lockAndMergeAccountProbeExtra 的 SELECT 现在多出三列（opencode 组身份 / 开关 / 快照），
-// 供通用 Update 路径做 OpenCode 受管键的原子回填。
+// 供通用 Update 路径做 OpenCode 受管键的原子回填；尾部再带池上游信息的
+// platform/features/snapshot 三列用于同样的保留判定。
 func openCodeGoMergeMockColumns() []string {
 	return []string{
 		"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged",
 		"enabled", "rate_sync_enabled", "snapshot",
 		"ollama_session", "ollama_auto", "ollama_snapshot",
 		"opencode_group_unchanged", "opencode_auto", "opencode_snapshot",
+		"pool_platform", "pool_features", "pool_snapshot",
 	}
 }
 
@@ -188,7 +190,7 @@ func TestLockAndMergeAccountProbeExtraPreservesOpenCodeGoManagedState(t *testing
 			mock.ExpectQuery(`(?s)`+regexp.QuoteMeta("SELECT")+`.*`+regexp.QuoteMeta("FOR NO KEY UPDATE")).
 				WithArgs(tt.account.ID, tt.account.Platform, tt.account.Type, string(credentials), nil).
 				WillReturnRows(sqlmock.NewRows(openCodeGoMergeMockColumns()).
-					AddRow(false, false, tt.proxyUnchanged, nil, nil, nil, nil, nil, nil, tt.groupUnchanged, tt.databaseAuto, tt.databaseSnapshot))
+					AddRow(false, false, tt.proxyUnchanged, nil, nil, nil, nil, nil, nil, tt.groupUnchanged, tt.databaseAuto, tt.databaseSnapshot, nil, nil, nil))
 
 			got, err := lockAndMergeAccountProbeExtra(context.Background(), client, tt.account, nil, nil)
 			require.NoError(t, err)
@@ -214,11 +216,13 @@ func TestLockAndMergeAccountProbeExtraPreservesOpenCodeGoManagedState(t *testing
 func TestUpdateCredentialsOpenCodeGoIdentityChangeClearsManagedExtra(t *testing.T) {
 	client, mock := newOllamaCloudUsageRepositoryTestClient(t)
 	mock.ExpectBegin()
+	expectUpdateCredentialsOldRowLock(mock, 17, `{"api_key":"old-key","base_url":"https://opencode.ai/zen/go/v1"}`)
 	// opencode 清理分支必须文本上先于 ollama 分支出现，否则 opencode 行的
 	// api_key/base_url 变化会被先求值的 Ollama 分支遮蔽。
 	mock.ExpectExec(`(?s)UPDATE accounts.*- 'opencode_go_usage_auto_refresh'.*- 'opencode_go_usage_snapshot'.*- 'ollama_cloud_usage_session'`).
 		WithArgs(`{"api_key":"new-key","base_url":"https://opencode.ai/zen/go/v1"}`, int64(17)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
+	expectPoolUpstreamIdentityCleanup(mock, 17, true)
 	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO scheduler_outbox")).
 		WithArgs(service.SchedulerOutboxEventAccountChanged, int64(17), nil, nil, sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(1, 1))
@@ -237,9 +241,11 @@ func TestUpdateCredentialsOpenCodeGoIdentityChangeClearsManagedExtra(t *testing.
 func TestUpdateCredentialsOpenCodeGoToOllamaCrossOverClearsManagedExtra(t *testing.T) {
 	client, mock := newOllamaCloudUsageRepositoryTestClient(t)
 	mock.ExpectBegin()
+	expectUpdateCredentialsOldRowLock(mock, 17, `{"api_key":"same-key","base_url":"https://opencode.ai/zen/go/v1"}`)
 	mock.ExpectExec(`(?s)UPDATE accounts.*opencode_go_usage_auto_refresh.*opencode_go_usage_snapshot`).
 		WithArgs(`{"api_key":"same-key","base_url":"https://ollama.com/v1"}`, int64(17)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
+	expectPoolUpstreamIdentityCleanup(mock, 17, true)
 	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO scheduler_outbox")).
 		WithArgs(service.SchedulerOutboxEventAccountChanged, int64(17), nil, nil, sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(1, 1))
@@ -258,6 +264,7 @@ func TestUpdateCredentialsOpenCodeGoToOllamaCrossOverClearsManagedExtra(t *testi
 func TestUpdateCredentialsOpenCodeGoCleanupRequiresChangedCredentials(t *testing.T) {
 	client, mock := newOllamaCloudUsageRepositoryTestClient(t)
 	mock.ExpectBegin()
+	expectUpdateCredentialsOldRowLock(mock, 17, `{"api_key":"same-key","base_url":"https://relay.example.com/v1"}`)
 	mock.ExpectExec(`(?s)UPDATE accounts.*CASE.*AND credentials IS DISTINCT FROM \$1::jsonb`).
 		WithArgs(`{"api_key":"same-key","base_url":"https://relay.example.com/v1"}`, int64(17)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
@@ -458,9 +465,11 @@ func TestInvalidateProxyProbeSnapshotsClearsOpenCodeGoSnapshot(t *testing.T) {
 func TestUpdateCredentialsOpenCodeBranchPrecedesOllamaBranch(t *testing.T) {
 	client, mock := newOllamaCloudUsageRepositoryTestClient(t)
 	mock.ExpectBegin()
+	expectUpdateCredentialsOldRowLock(mock, 17, `{"api_key":"old-key","base_url":"https://opencode.ai/zen/go/v1"}`)
 	mock.ExpectExec(`(?s)UPDATE accounts.*platform = 'opencode_go'.*\[oO\]\[lL\]\[lL\]\[aA\]\[mM\]\[aA\]`).
 		WithArgs(`{"api_key":"new-key","base_url":"https://opencode.ai/zen/go/v1"}`, int64(17)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
+	expectPoolUpstreamIdentityCleanup(mock, 17, true)
 	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO scheduler_outbox")).
 		WithArgs(service.SchedulerOutboxEventAccountChanged, int64(17), nil, nil, sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(1, 1))

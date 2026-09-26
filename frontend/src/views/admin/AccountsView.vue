@@ -378,6 +378,14 @@
               @probe="handleProbeUpstreamBilling(row)"
             />
           </template>
+          <template #cell-pool_upstream_info="{ row }">
+            <PoolUpstreamInfoCell
+              :account="row"
+              :now="upstreamBillingNow"
+              :probing="probingPoolUpstreamInfo.has(row.id)"
+              @probe="handleProbePoolUpstreamInfo(row)"
+            />
+          </template>
           <template #cell-priority="{ value }">
             <span class="text-sm text-gray-700 dark:text-gray-300">{{ value }}</span>
           </template>
@@ -520,6 +528,7 @@ import AccountTodayStatsCell from '@/components/account/AccountTodayStatsCell.vu
 import AccountGroupsCell from '@/components/account/AccountGroupsCell.vue'
 import AccountCapacityCell from '@/components/account/AccountCapacityCell.vue'
 import UpstreamBillingRateCell from '@/components/account/UpstreamBillingRateCell.vue'
+import PoolUpstreamInfoCell from '@/components/account/PoolUpstreamInfoCell.vue'
 import PlatformTypeBadge from '@/components/common/PlatformTypeBadge.vue'
 import Icon from '@/components/icons/Icon.vue'
 import ErrorPassthroughRulesModal from '@/components/admin/ErrorPassthroughRulesModal.vue'
@@ -532,7 +541,7 @@ import { extractApiErrorMessage } from '@/utils/apiError'
 import { sanitizeUrl } from '@/utils/url'
 import { getFloatingPanelPosition } from '@/utils/floatingPanel'
 import { formatMultiplier } from '@/utils/formatters'
-import type { Account, AccountListItem, AccountPlatform, AccountSchedulerGroupScore, AccountType, AccountUsageInfo, Proxy as AccountProxy, AdminGroup, WindowStats, ClaudeModel, UpstreamBillingProbeSnapshot } from '@/types'
+import type { Account, AccountListItem, AccountPlatform, AccountSchedulerGroupScore, AccountType, AccountUsageInfo, Proxy as AccountProxy, AdminGroup, WindowStats, ClaudeModel, UpstreamBillingProbeSnapshot, PoolUpstreamInfoSnapshot } from '@/types'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -617,6 +626,7 @@ const togglingSchedulable = ref<number | null>(null)
 const menu = reactive<{show:boolean, acc:Account|null, anchorRect:DOMRect|null}>({ show: false, acc: null, anchorRect: null })
 const exportingData = ref(false)
 const probingUpstreamBilling = reactive(new Set<number>())
+const probingPoolUpstreamInfo = reactive(new Set<number>())
 const upstreamBillingProbeGloballyEnabled = ref<boolean | undefined>(undefined)
 const upstreamBillingNow = ref(Date.now())
 const upstreamBillingRateETag = ref<string | null>(null)
@@ -1220,11 +1230,18 @@ const applyUpstreamBillingRateSnapshots = async (
     if (!item) return account
     const nextSnapshot = item.snapshot ?? null
     const previousSnapshot = account.extra?.upstream_billing_probe ?? null
-    if (JSON.stringify(previousSnapshot) === JSON.stringify(nextSnapshot)) return account
+    const nextPoolInfo = item.pool_upstream_info ?? null
+    const previousPoolInfo = account.extra?.pool_upstream_info ?? null
+    if (
+      JSON.stringify(previousSnapshot) === JSON.stringify(nextSnapshot) &&
+      JSON.stringify(previousPoolInfo) === JSON.stringify(nextPoolInfo)
+    ) return account
 
     const nextExtra = { ...(account.extra ?? {}) }
     if (nextSnapshot) nextExtra.upstream_billing_probe = nextSnapshot
     else delete nextExtra.upstream_billing_probe
+    if (nextPoolInfo) nextExtra.pool_upstream_info = nextPoolInfo
+    else delete nextExtra.pool_upstream_info
     const nextAccount = {
       ...account,
       ...(typeof nextSnapshot?.synced_rate_multiplier === 'number'
@@ -1247,6 +1264,7 @@ const refreshUpstreamBillingRates = async (force = false) => {
   if (upstreamBillingRateRefreshing.value || loading.value || accounts.value.length === 0) return
   if (!force && (
     probingUpstreamBilling.size > 0 ||
+    probingPoolUpstreamInfo.size > 0 ||
     isAnyModalOpen.value ||
     menu.show ||
     showAccountToolsDropdown.value ||
@@ -1800,6 +1818,7 @@ const allColumns = computed(() => {
     { key: 'scheduler_score', label: t('admin.accounts.columns.schedulerScore'), sortable: false },
     { key: 'rate_multiplier', label: t('admin.accounts.columns.billingRateMultiplier'), sortable: true },
     { key: 'upstream_billing_rate', label: t('admin.accounts.columns.upstreamBillingRate'), sortable: true },
+    { key: 'pool_upstream_info', label: t('admin.accounts.columns.poolUpstreamInfo'), sortable: false },
     { key: 'last_used_at', label: t('admin.accounts.columns.lastUsed'), sortable: true },
     { key: 'created_at', label: t('admin.accounts.columns.createdAt'), sortable: true },
     { key: 'expires_at', label: t('admin.accounts.columns.expiresAt'), sortable: true },
@@ -2246,6 +2265,31 @@ const handleProbeUpstreamBilling = async (account: Account) => {
     appStore.showError(extractApiErrorMessage(error, t('admin.accounts.upstreamBilling.probeFailed')))
   } finally {
     probingUpstreamBilling.delete(account.id)
+  }
+}
+const patchPoolUpstreamInfoSnapshot = (accountID: number, snapshot: PoolUpstreamInfoSnapshot) => {
+  const account = accounts.value.find(item => item.id === accountID)
+  if (!account) return
+  upstreamBillingNow.value = Date.now()
+  patchAccountInList({
+    ...account,
+    extra: { ...account.extra, pool_upstream_info: snapshot }
+  })
+}
+const handleProbePoolUpstreamInfo = async (account: Account) => {
+  if (probingPoolUpstreamInfo.has(account.id)) return
+  probingPoolUpstreamInfo.add(account.id)
+  try {
+    const result = await adminAPI.accounts.probePoolUpstreamInfo(account.id)
+    if (result.snapshot) {
+      patchPoolUpstreamInfoSnapshot(account.id, result.snapshot)
+      await refreshUpstreamBillingRates(true)
+    }
+  } catch (error) {
+    console.error('Failed to probe pool upstream info:', error)
+    appStore.showError(extractApiErrorMessage(error, t('admin.accounts.poolUpstream.probeFailed')))
+  } finally {
+    probingPoolUpstreamInfo.delete(account.id)
   }
 }
 const handleAccountUpdated = (updatedAccount: Account) => {

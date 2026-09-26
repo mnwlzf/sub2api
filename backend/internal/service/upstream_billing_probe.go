@@ -130,10 +130,13 @@ type UpstreamBillingProbeResult struct {
 
 // UpstreamBillingRateSnapshotItem is the compact representation used by the
 // account table's background refresh. It intentionally excludes credentials,
-// runtime counters, and usage data from the response.
+// runtime counters, and usage data from the response. PoolUpstreamInfo carries
+// the sanitized pool upstream information snapshot for the column that follows
+// the billing rate; it rides the same authenticated projection and ETag.
 type UpstreamBillingRateSnapshotItem struct {
-	AccountID int64                         `json:"account_id"`
-	Snapshot  *UpstreamBillingProbeSnapshot `json:"snapshot"`
+	AccountID        int64                         `json:"account_id"`
+	Snapshot         *UpstreamBillingProbeSnapshot `json:"snapshot"`
+	PoolUpstreamInfo *PoolUpstreamInfoSnapshot     `json:"pool_upstream_info,omitempty"`
 }
 
 // BuildUpstreamBillingRateSnapshotItems projects account rows into the
@@ -143,15 +146,18 @@ func BuildUpstreamBillingRateSnapshotItems(accounts []Account) []UpstreamBilling
 	items := make([]UpstreamBillingRateSnapshotItem, 0, len(accounts))
 	for _, account := range accounts {
 		var snapshot *UpstreamBillingProbeSnapshot
+		var poolInfo *PoolUpstreamInfoSnapshot
 		// The billing endpoint is supported by every API-key platform; limiting
 		// this projection to OpenAI would make the background refresh erase the
 		// other platforms' persisted snapshots from the table.
 		if account.Type == AccountTypeAPIKey {
 			snapshot = decodeUpstreamBillingProbeSnapshot(account.Extra)
+			poolInfo = decodePoolUpstreamInfoSnapshot(account.Extra)
 		}
 		items = append(items, UpstreamBillingRateSnapshotItem{
-			AccountID: account.ID,
-			Snapshot:  snapshot,
+			AccountID:        account.ID,
+			Snapshot:         snapshot,
+			PoolUpstreamInfo: poolInfo,
 		})
 	}
 	return items
@@ -352,7 +358,10 @@ func (s *UpstreamBillingProbeService) runLoop() {
 	}
 }
 
-// RunDue executes at most one bounded batch of due accounts.
+// RunDue executes at most one bounded batch of due accounts for both the
+// billing-rate probe and the pool upstream information probe. The two probes
+// share this tick but keep independent gating: the information run happens
+// even when the billing probe is globally disabled or fails.
 func (s *UpstreamBillingProbeService) RunDue(ctx context.Context) error {
 	if s == nil || s.accountRepo == nil {
 		return nil
@@ -360,6 +369,13 @@ func (s *UpstreamBillingProbeService) RunDue(ctx context.Context) error {
 	s.cycleMu.Lock()
 	defer s.cycleMu.Unlock()
 
+	billingErr := s.runBillingDueLocked(ctx)
+	infoErr := s.runPoolUpstreamInfoDueLocked(ctx)
+	return errors.Join(billingErr, infoErr)
+}
+
+// runBillingDueLocked is the billing-rate probe half of RunDue.
+func (s *UpstreamBillingProbeService) runBillingDueLocked(ctx context.Context) error {
 	settings, err := s.getSettings(ctx)
 	if err != nil {
 		return err

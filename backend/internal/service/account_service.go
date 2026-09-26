@@ -170,6 +170,10 @@ type AccountBulkUpdate struct {
 	// EnsureCodexFingerprintSeed asks the repository to atomically preserve an
 	// existing valid Codex fingerprint seed or create one for eligible rows.
 	EnsureCodexFingerprintSeed bool
+	// ResetPoolUpstreamOnPoolOff asks the repository to normalize pool upstream
+	// selection to default+[] and drop the snapshot on rows that hold pool
+	// upstream keys. Set when a bulk credential update turns pool mode off.
+	ResetPoolUpstreamOnPoolOff bool
 }
 
 // CreateAccountRequest 创建账号请求
