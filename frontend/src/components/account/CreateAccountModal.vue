@@ -1648,6 +1648,7 @@
             </div>
             <button
               type="button"
+              data-testid="pool-mode-toggle"
               @click="poolModeEnabled = !poolModeEnabled"
               :class="[
                 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
@@ -1699,6 +1700,13 @@
               {{ t('admin.accounts.poolModeRetryStatusCodesHint', { default: DEFAULT_POOL_MODE_RETRY_STATUS_CODES.join(', ') }) }}
             </p>
           </div>
+          <PoolUpstreamInfoSelector
+            v-if="poolModeEnabled"
+            v-model:platform="poolUpstreamPlatform"
+            v-model:features="poolUpstreamFeatures"
+            :account-platform="form.platform"
+            class="mt-3"
+          />
         </div>
 
         <!-- Custom Error Codes Section -->
@@ -3939,6 +3947,7 @@ import GrokBaseUrlPresets from '@/components/account/GrokBaseUrlPresets.vue'
 import CnBaseUrlPresets from '@/components/account/CnBaseUrlPresets.vue'
 import OpenCodeGoProtocolRulesEditor from '@/components/account/OpenCodeGoProtocolRulesEditor.vue'
 import HeaderOverrideEditor from '@/components/account/HeaderOverrideEditor.vue'
+import PoolUpstreamInfoSelector from '@/components/account/PoolUpstreamInfoSelector.vue'
 import { allSelectedGroupsEnableLongContextPricing } from '@/components/account/longContextBilling'
 import {
   applyAntigravityProjectID,
@@ -4364,6 +4373,9 @@ const DEFAULT_POOL_MODE_RETRY_STATUS_CODES = [401, 403, 429]
 const poolModeEnabled = ref(false)
 const poolModeRetryCount = ref(DEFAULT_POOL_MODE_RETRY_COUNT)
 const poolModeRetryStatusCodesInput = ref('')
+// Pool upstream information opt-in (API-key pool-mode accounts only).
+const poolUpstreamPlatform = ref<'default' | 'sub2api' | 'chatgpt2api'>('default')
+const poolUpstreamFeatures = ref<string[]>([])
 
 function parsePoolModeRetryStatusCodes(input: string): number[] {
   if (!input || !input.trim()) return []
@@ -5339,6 +5351,8 @@ const resetForm = () => {
   poolModeEnabled.value = false
   poolModeRetryCount.value = DEFAULT_POOL_MODE_RETRY_COUNT
   poolModeRetryStatusCodesInput.value = ''
+  poolUpstreamPlatform.value = 'default'
+  poolUpstreamFeatures.value = []
   customErrorCodesEnabled.value = false
   selectedErrorCodes.value = []
   customErrorCodeInput.value = null
@@ -5529,6 +5543,23 @@ const buildAnthropicExtra = (base?: Record<string, unknown>): Record<string, unk
 
 // Helper function to create account with mixed channel warning handling
 const doCreateAccount = async (payload: CreateAccountRequest) => {
+  // 池上游信息选择放在 extra（不是 credentials）；仅 API-key + pool_mode
+  // 账号可声明，非默认选择才落键，其余交给后端归一化校验。此漏斗覆盖所有
+  // 创建路径（API Key 直建、OAuth 回落、bedrock 由 type 守卫排除）。
+  if (
+    payload.type === 'apikey' &&
+    payload.credentials?.pool_mode === true &&
+    (poolUpstreamPlatform.value !== 'default' || poolUpstreamFeatures.value.length > 0)
+  ) {
+    payload = {
+      ...payload,
+      extra: {
+        ...(payload.extra || {}),
+        pool_upstream_platform: poolUpstreamPlatform.value,
+        pool_upstream_features: [...poolUpstreamFeatures.value]
+      }
+    }
+  }
   const canContinue = await ensureAntigravityMixedChannelConfirmed(async () => {
     await submitCreateAccount(payload)
   })

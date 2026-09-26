@@ -44,11 +44,12 @@ development verification.
 ## Probe semantics
 
 - For `sub2api`, request `GET /v1/usage` with the configured API key.
-  When `mode=unrestricted` and a numeric `balance` is present, display
-  wallet balance in USD. Otherwise display a numeric `remaining` as
-  remaining USD quota, not wallet balance. Missing values are unknown,
-  never zero by default. A response with an unexpected unit or invalid
-  number is not a successful measurement.
+  In `mode=unrestricted`, a numeric `balance` is a USD wallet balance;
+  a numeric `remaining` requires a `subscription` object and represents
+  remaining USD subscription quota. In `mode=quota_limited`, a numeric
+  `remaining` is remaining USD key quota. Unknown modes or missing values
+  are unknown, never zero by default. A response with an unexpected unit
+  or invalid number is not a successful measurement.
 - For `chatgpt2api`, request `GET /api/dashboard` using the administrator
   API key configured on that upstream account. Project only
   `accounts.active`, `total_quota`, `unlimited_quota_count`, and
@@ -59,8 +60,11 @@ development verification.
   reverse-proxy path prefix while removing a trailing API version (`/v1`
   or `/api/v1`) before appending the fixed endpoint. Reuse the existing
   upstream URL validation, proxy/TLS transport, redirect prohibition,
-  bounded timeout/body size, and credential-safe diagnostics. Never store
-  full upstream responses, headers, or tokens in a snapshot or log.
+  bounded timeout/body size, and credential-safe diagnostics. Use a 64 KiB
+  body cap for Sub2API usage and a 1 MiB cap for ChatGPT2API dashboard:
+  the latter includes full dashboard charts alongside the small accounts
+  object. Never store full upstream responses, headers, or tokens in a
+  snapshot or log.
 - Reuse the existing billing probe's periodic runner and bounded execution
   infrastructure, but maintain independent opt-in, due time, failure
   state, and snapshot for information probes. A disabled billing probe or
@@ -73,11 +77,14 @@ development verification.
 
 ## UI and verification
 
-The new column follows "Upstream Declared Rate" and uses existing table
+The new column is labeled "Upstream Info", follows "Upstream Declared Rate",
+and uses existing table
 patterns in light/dark themes, empty state, narrow viewports, and i18n
 (Chinese and English). Show current, stale, unsupported, and failed states
-without conflating unknown with zero; disclose last successful/attempt
-times where useful. Do not alter the existing billing-rate column.
+without conflating unknown with zero; its visible cell must label the
+balance/count/quota rather than display unexplained numbers. Disclose
+last successful/attempt times where useful. Do not alter the existing
+billing-rate column.
 
 Regression tests cover default/disabled compatibility, platform/feature
 validation and editing, exact endpoint paths and URL prefixes, response

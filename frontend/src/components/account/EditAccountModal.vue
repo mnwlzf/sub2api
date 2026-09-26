@@ -426,6 +426,7 @@
             </div>
             <button
               type="button"
+              data-testid="pool-mode-toggle"
               @click="poolModeEnabled = !poolModeEnabled"
               :class="[
                 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
@@ -477,6 +478,13 @@
               {{ t('admin.accounts.poolModeRetryStatusCodesHint', { default: DEFAULT_POOL_MODE_RETRY_STATUS_CODES.join(', ') }) }}
             </p>
           </div>
+          <PoolUpstreamInfoSelector
+            v-if="poolModeEnabled"
+            v-model:platform="poolUpstreamPlatform"
+            v-model:features="poolUpstreamFeatures"
+            :account-platform="account.platform"
+            class="mt-3"
+          />
         </div>
 
         <!-- Custom Error Codes Section -->
@@ -3141,6 +3149,7 @@ import GrokBaseUrlPresets from '@/components/account/GrokBaseUrlPresets.vue'
 import CnBaseUrlPresets from '@/components/account/CnBaseUrlPresets.vue'
 import OpenCodeGoProtocolRulesEditor from '@/components/account/OpenCodeGoProtocolRulesEditor.vue'
 import HeaderOverrideEditor from '@/components/account/HeaderOverrideEditor.vue'
+import PoolUpstreamInfoSelector from '@/components/account/PoolUpstreamInfoSelector.vue'
 import OllamaCloudUsageSettings from '@/components/account/OllamaCloudUsageSettings.vue'
 import {
   applyAntigravityProjectID,
@@ -3520,6 +3529,9 @@ const GROK_CLIENT_TOOL_CACHE_EXTRA_KEY = 'grok_client_tool_cache_enabled'
 const poolModeEnabled = ref(false)
 const poolModeRetryCount = ref(DEFAULT_POOL_MODE_RETRY_COUNT)
 const poolModeRetryStatusCodesInput = ref('')
+// Pool upstream information opt-in (API-key pool-mode accounts only).
+const poolUpstreamPlatform = ref<'default' | 'sub2api' | 'chatgpt2api'>('default')
+const poolUpstreamFeatures = ref<string[]>([])
 
 function parsePoolModeRetryStatusCodes(input: string): number[] {
   if (!input || !input.trim()) return []
@@ -4460,6 +4472,18 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     )
     poolModeRetryStatusCodesInput.value = formatPoolModeRetryStatusCodes(credentials.pool_mode_retry_status_codes)
 
+    // Load pool upstream information selection (stored in extra, not credentials)
+    const apikeyExtra = (newAccount.extra as Record<string, unknown>) || {}
+    const storedPoolPlatform = apikeyExtra.pool_upstream_platform
+    poolUpstreamPlatform.value =
+      storedPoolPlatform === 'sub2api' || storedPoolPlatform === 'chatgpt2api'
+        ? storedPoolPlatform
+        : 'default'
+    const storedPoolFeatures = apikeyExtra.pool_upstream_features
+    poolUpstreamFeatures.value = Array.isArray(storedPoolFeatures)
+      ? storedPoolFeatures.filter((item): item is string => typeof item === 'string')
+      : []
+
     // Load custom error codes
     customErrorCodesEnabled.value = credentials.custom_error_codes_enabled === true
     const existingErrorCodes = credentials.custom_error_codes as number[] | undefined
@@ -4488,6 +4512,9 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     const retryCount = bedrockCreds.pool_mode_retry_count
     poolModeRetryCount.value = (typeof retryCount === 'number' && retryCount >= 0) ? retryCount : DEFAULT_POOL_MODE_RETRY_COUNT
     poolModeRetryStatusCodesInput.value = formatPoolModeRetryStatusCodes(bedrockCreds.pool_mode_retry_status_codes)
+    // Bedrock pool mode does not support the pool upstream information opt-in.
+    poolUpstreamPlatform.value = 'default'
+    poolUpstreamFeatures.value = []
 
     // Load quota limits for bedrock
     const bedrockExtra = (newAccount.extra as Record<string, unknown>) || {}
@@ -4533,6 +4560,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     poolModeEnabled.value = false
     poolModeRetryCount.value = DEFAULT_POOL_MODE_RETRY_COUNT
     poolModeRetryStatusCodesInput.value = ''
+    poolUpstreamPlatform.value = 'default'
+    poolUpstreamFeatures.value = []
     customErrorCodesEnabled.value = false
     selectedErrorCodes.value = []
   }
@@ -5790,6 +5819,11 @@ const handleSubmit = async () => {
       if (props.account.type === 'apikey') {
         delete newExtra.upstream_billing_probe_enabled
         delete newExtra.upstream_billing_rate_sync_enabled
+        // 池上游信息：声明式选择写回 extra（快照由探测受管，不回传）；
+        // 关闭池模式时保存 default+[]，与后端归一化语义一致。
+        delete newExtra.pool_upstream_info
+        newExtra.pool_upstream_platform = poolModeEnabled.value ? poolUpstreamPlatform.value : 'default'
+        newExtra.pool_upstream_features = poolModeEnabled.value ? [...poolUpstreamFeatures.value] : []
       }
       // Total quota
       if (editQuotaLimit.value != null && editQuotaLimit.value > 0) {

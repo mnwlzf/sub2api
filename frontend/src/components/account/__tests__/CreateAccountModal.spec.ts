@@ -711,4 +711,75 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
 
     expect(createOpenAICodexPATMock.mock.calls[0]?.[0]?.extra?.openai_long_context_billing_enabled).toBe(false)
   })
+
+  it('shows the pool upstream selector only while pool mode is enabled', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'OpenAI')
+    await selectButtonByText(wrapper, 'API Key')
+
+    expect(wrapper.find('[data-testid="pool-upstream-info-selector"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="pool-mode-toggle"]').trigger('click')
+    expect(wrapper.find('[data-testid="pool-upstream-info-selector"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="pool-mode-toggle"]').trigger('click')
+    expect(wrapper.find('[data-testid="pool-upstream-info-selector"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('submits the declared pool upstream selection in extra for pool-mode apikey accounts', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'OpenAI')
+    await selectButtonByText(wrapper, 'API Key')
+    await wrapper.get('[data-testid="pool-mode-toggle"]').trigger('click')
+    await wrapper.get('[data-testid="pool-upstream-platform"]').setValue('chatgpt2api')
+    await wrapper.get('[data-testid="pool-upstream-feature-account_count"]').setValue(true)
+    await wrapper.get('[data-testid="pool-upstream-feature-image_quota"]').setValue(true)
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('pool account')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('test-api-key')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createAccountMock).toHaveBeenCalledTimes(1)
+    const payload = createAccountMock.mock.calls[0]?.[0]
+    expect(payload.credentials?.pool_mode).toBe(true)
+    expect(payload.extra?.pool_upstream_platform).toBe('chatgpt2api')
+    expect(payload.extra?.pool_upstream_features).toEqual(['account_count', 'image_quota'])
+    expect(payload.credentials).not.toHaveProperty('pool_upstream_platform')
+    wrapper.unmount()
+  })
+
+  it('omits pool upstream keys when the selection stays default', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'OpenAI')
+    await selectButtonByText(wrapper, 'API Key')
+    await wrapper.get('[data-testid="pool-mode-toggle"]').trigger('click')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('pool account')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('test-api-key')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    const payload = createAccountMock.mock.calls[0]?.[0]
+    expect(payload.credentials?.pool_mode).toBe(true)
+    expect(payload.extra ?? {}).not.toHaveProperty('pool_upstream_platform')
+    expect(payload.extra ?? {}).not.toHaveProperty('pool_upstream_features')
+    wrapper.unmount()
+  })
+
+  it('omits pool upstream keys when pool mode is disabled after selecting a platform', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'OpenAI')
+    await selectButtonByText(wrapper, 'API Key')
+    await wrapper.get('[data-testid="pool-mode-toggle"]').trigger('click')
+    await wrapper.get('[data-testid="pool-upstream-platform"]').setValue('sub2api')
+    await wrapper.get('[data-testid="pool-upstream-feature-balance"]').setValue(true)
+    await wrapper.get('[data-testid="pool-mode-toggle"]').trigger('click')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('pool account')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('test-api-key')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    const payload = createAccountMock.mock.calls[0]?.[0]
+    expect(payload.credentials?.pool_mode).toBeUndefined()
+    expect(payload.extra ?? {}).not.toHaveProperty('pool_upstream_platform')
+    wrapper.unmount()
+  })
 })

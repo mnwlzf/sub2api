@@ -134,6 +134,9 @@ var duplicateAccountDiscardedExtraKeys = map[string]struct{}{
 	"drive_storage_limit":                    {},
 	"drive_storage_usage":                    {},
 	"drive_tier_updated_at":                  {},
+	// Pool upstream info snapshots are probe-derived runtime state tied to the
+	// source row's probe schedule; the copy re-probes on its own cadence.
+	PoolUpstreamInfoExtraKey: {},
 	// Codex fingerprint convergence uses a per-account random seed, never copied from another account.
 	codexFingerprintSeedExtraKey:           {},
 	"codex_primary_used_percent":           {},
@@ -420,6 +423,7 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 	delete(accountExtra, OllamaCloudUsageSnapshotExtraKey)
 	delete(accountExtra, OpenCodeGoUsageAutoRefreshExtraKey)
 	delete(accountExtra, OpenCodeGoUsageSnapshotExtraKey)
+	delete(accountExtra, PoolUpstreamInfoExtraKey)
 	accountExtra = prepareCodexFingerprintExtraForCreate(input.Platform, input.Type, accountExtra)
 	account := &Account{
 		Name:        input.Name,
@@ -442,6 +446,11 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 			account.Extra = make(map[string]any)
 		}
 		account.Extra[UpstreamBillingProbeEnabledExtraKey] = true
+	}
+	// 池上游信息选择：校验枚举/组合/apikey+pool_mode 前提后归一化写回；
+	// 无效组合直接拒绝而非静默改写。
+	if err := applyPoolUpstreamSelectionForCreate(account); err != nil {
+		return nil, err
 	}
 	// 预计算固定时间重置的下次重置时间
 	if account.Extra != nil {
@@ -601,6 +610,11 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	previousProbeIdentity := upstreamBillingProbeIdentity(account)
 	previousOllamaUsageIdentity := ollamaCloudUsageIdentity(account)
 	previousOpenCodeUsageIdentity := openCodeGoUsageIdentity(account)
+	// 池上游信息：storedPoolExtra 必须指向更新前的 extra（下方
+	// account.Extra = normalizedExtra 之后旧选择即不可读）；身份快照同样基于
+	// 更新前的凭证/代理/选择。
+	storedPoolExtra := account.Extra
+	previousPoolInfoIdentity := poolUpstreamInfoIdentity(account)
 	// 安全/身份不变量(影子账号):通用更新路径被 edit/re-auth/refresh/batch 共用,
 	// 必须在此守住,否则仅在创建时的保证可被这些路径绕过。
 	if account.IsCredentialShadow() {
@@ -659,6 +673,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	// 关闭配额限制时前端会删除 quota_* 键并提交 extra:{}，此时也必须落库。
 	requestedProbeEnabledUpdate := input.ProbeEnabled
 	requestedRateSyncEnabledUpdate := input.RateSyncEnabled
+	var poolSelectionUpdate poolUpstreamSelectionUpdate
 	if input.Extra != nil {
 		requestedProbeEnabled, hasRequestedProbeEnabled := normalizedExtra[UpstreamBillingProbeEnabledExtraKey]
 		if hasRequestedProbeEnabled {
@@ -679,6 +694,12 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		delete(normalizedExtra, OllamaCloudUsageSnapshotExtraKey)
 		delete(normalizedExtra, OpenCodeGoUsageAutoRefreshExtraKey)
 		delete(normalizedExtra, OpenCodeGoUsageSnapshotExtraKey)
+		// 池上游信息：客户端提交的是声明式选择（platform/features），快照键
+		// 属探测受管状态，一律剥离（稍后从旧 extra 回填或由身份守卫清除）。
+		poolSelectionUpdate, err = extractPoolUpstreamSelectionUpdate(normalizedExtra)
+		if err != nil {
+			return nil, err
+		}
 		// 保留配额用量和专用服务受管字段，防止普通账号编辑意外覆盖。
 		for _, key := range []string{
 			"quota_used",
@@ -696,6 +717,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 			OpenAIAutoResetCreditStateExtraKey,
 			OpenCodeGoUsageAutoRefreshExtraKey,
 			OpenCodeGoUsageSnapshotExtraKey,
+			PoolUpstreamInfoExtraKey,
 		} {
 			if v, ok := account.Extra[key]; ok {
 				normalizedExtra[key] = v
@@ -763,6 +785,21 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 			account.ProxyID = input.ProxyID
 		}
 		account.Proxy = nil // 清除关联对象，防止 GORM Save 时根据 Proxy.ID 覆盖 ProxyID
+	}
+	// 池上游信息选择：必须在凭据/代理合并完成、type 变更生效之后解析——
+	// 无效枚举或组合直接拒绝；pool_mode 关闭/类型不再是 apikey 时，显式选择
+	// 被拒绝、存量选择归一化为 default+[]。身份（含选择）变化即清除快照，
+	// 杜绝陈旧快照随新身份复活。
+	poolPlatform, poolFeatures, err := resolvePoolUpstreamSelection(account, poolSelectionUpdate, storedPoolExtra)
+	if err != nil {
+		return nil, err
+	}
+	writePoolUpstreamSelection(account, poolPlatform, poolFeatures, poolSelectionUpdate, storedPoolExtra)
+	if account.Extra != nil {
+		if poolPlatform == PoolUpstreamPlatformDefault || len(poolFeatures) == 0 ||
+			!poolUpstreamInfoIdentityEqual(previousPoolInfoIdentity, poolUpstreamInfoIdentity(account)) {
+			delete(account.Extra, PoolUpstreamInfoExtraKey)
+		}
 	}
 	if !reflect.DeepEqual(previousProbeIdentity, upstreamBillingProbeIdentity(account)) && account.Extra != nil {
 		delete(account.Extra, UpstreamBillingProbeExtraKey)
@@ -930,6 +967,11 @@ func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, upd
 	delete(updates, OllamaCloudUsageSnapshotExtraKey)
 	delete(updates, OpenCodeGoUsageAutoRefreshExtraKey)
 	delete(updates, OpenCodeGoUsageSnapshotExtraKey)
+	// 池上游信息：三个键都不接受裸 extra 写入——快照由探测受管，选择键必须
+	// 走带校验的账号编辑路径。
+	delete(updates, PoolUpstreamPlatformExtraKey)
+	delete(updates, PoolUpstreamFeaturesExtraKey)
+	delete(updates, PoolUpstreamInfoExtraKey)
 	if _, exists := updates[openAILongContextBillingEnabledKey]; exists {
 		account, err := s.accountRepo.GetByID(ctx, id)
 		if err != nil {
@@ -959,6 +1001,11 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	delete(input.Extra, OllamaCloudUsageSnapshotExtraKey)
 	delete(input.Extra, OpenCodeGoUsageAutoRefreshExtraKey)
 	delete(input.Extra, OpenCodeGoUsageSnapshotExtraKey)
+	// 池上游信息：批量 extra 不能携带快照或选择键；批量关闭 pool_mode /
+	// 变更身份凭据/代理时由下方 repoUpdates 统一清理。
+	delete(input.Extra, PoolUpstreamPlatformExtraKey)
+	delete(input.Extra, PoolUpstreamFeaturesExtraKey)
+	delete(input.Extra, PoolUpstreamInfoExtraKey)
 
 	if len(input.AccountIDs) == 0 && input.Filters != nil {
 		accountIDs, err := s.resolveBulkUpdateTargetIDs(ctx, input.Filters)
@@ -1128,6 +1175,19 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 		// JSON null makes every reader treat the old snapshot as absent and lets the
 		// next enabled runner cycle probe the new upstream identity immediately.
 		repoUpdates.Extra[UpstreamBillingProbeExtraKey] = nil
+	}
+	if updatesPoolUpstreamProbeIdentity(input.Credentials) || input.ProxyID != nil {
+		if repoUpdates.Extra == nil {
+			repoUpdates.Extra = make(map[string]any)
+		}
+		// 与上游倍率快照同一语义：身份子集（api_key/base_url/header 覆写/
+		// pool_mode）或代理变化时清除信息快照。
+		repoUpdates.Extra[PoolUpstreamInfoExtraKey] = nil
+	}
+	// 批量关闭 pool_mode 时，持有池上游选择的行同步归一化为 default+[]（由
+	// 仓储层按行条件执行，未持有该配置的行不受影响）。
+	if poolModeValue, ok := input.Credentials["pool_mode"]; ok && poolModeValue != true {
+		repoUpdates.ResetPoolUpstreamOnPoolOff = true
 	}
 	if input.Name != "" {
 		repoUpdates.Name = &input.Name
