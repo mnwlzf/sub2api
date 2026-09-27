@@ -60,7 +60,7 @@ func NewStudentVerificationService(
 		emailService:         emailService,
 		entClient:            entClient,
 		authCacheInvalidator: authCacheInvalidator,
-		interval:             time.Minute,
+		interval:             24 * time.Hour,
 		stopCh:               make(chan struct{}),
 	}
 }
@@ -73,6 +73,7 @@ func (s *StudentVerificationService) Start() {
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
+		s.sweepOnce()
 		ticker := time.NewTicker(s.interval)
 		defer ticker.Stop()
 		for {
