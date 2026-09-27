@@ -15,9 +15,9 @@ import (
 // --- stubs ---
 
 type studentVerificationRepoStub struct {
-	mu      sync.Mutex
-	nextID  int64
-	byID    map[int64]*StudentVerification
+	mu     sync.Mutex
+	nextID int64
+	byID   map[int64]*StudentVerification
 }
 
 func newStudentVerificationRepoStub() *studentVerificationRepoStub {
@@ -146,10 +146,10 @@ func (r *studentVerificationRepoStub) get(id int64) *StudentVerification {
 }
 
 type studentVerificationGroupStub struct {
-	mu       sync.Mutex
-	granted  map[int64]map[int64]bool // userID -> groupID
-	groups   map[int64]*Group
-	removed  [][2]int64
+	mu      sync.Mutex
+	granted map[int64]map[int64]bool // userID -> groupID
+	groups  map[int64]*Group
+	removed [][2]int64
 }
 
 func newStudentVerificationGroupStub() *studentVerificationGroupStub {
@@ -258,8 +258,8 @@ type studentVerificationCacheStub struct {
 	invalidated []int64
 }
 
-func (c *studentVerificationCacheStub) InvalidateAuthCacheByKey(context.Context, string)     {}
-func (c *studentVerificationCacheStub) InvalidateAuthCacheByGroupID(context.Context, int64)  {}
+func (c *studentVerificationCacheStub) InvalidateAuthCacheByKey(context.Context, string)    {}
+func (c *studentVerificationCacheStub) InvalidateAuthCacheByGroupID(context.Context, int64) {}
 
 func (c *studentVerificationCacheStub) InvalidateAuthCacheByUserID(_ context.Context, userID int64) {
 	c.mu.Lock()

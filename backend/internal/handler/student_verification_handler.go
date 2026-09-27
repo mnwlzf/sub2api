@@ -18,17 +18,17 @@ func NewStudentVerificationHandler(studentVerificationService *service.StudentVe
 }
 
 type studentVerificationView struct {
-	Status     string  `json:"status"`
-	Email      string  `json:"email"`
-	VerifiedAt string  `json:"verified_at"`
-	ExpiresAt  string  `json:"expires_at"`
+	Status     string `json:"status"`
+	Email      string `json:"email"`
+	VerifiedAt string `json:"verified_at"`
+	ExpiresAt  string `json:"expires_at"`
 }
 
 type studentVerificationStatusResponse struct {
-	Enabled      bool                      `json:"enabled"`
-	Verification *studentVerificationView  `json:"verification,omitempty"`
-	RebateRate   float64                   `json:"rebate_rate"`
-	GroupCount   int                       `json:"group_count"`
+	Enabled      bool                     `json:"enabled"`
+	Verification *studentVerificationView `json:"verification,omitempty"`
+	RebateRate   float64                  `json:"rebate_rate"`
+	GroupCount   int                      `json:"group_count"`
 }
 
 func studentVerificationToView(v *service.StudentVerification) *studentVerificationView {
