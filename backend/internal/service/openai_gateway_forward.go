@@ -1113,9 +1113,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
 			upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
 			upstreamCode := extractUpstreamErrorCode(respBody)
-			// 兼容中转拒了 Codex 签名时把出站 body 打出来：该错误不给字段级线索，
-			// 只有原始报文能定位（仅对开启签名补齐的账号生效）。
-			logOpenAIInvalidCodexRequestDebug(account, resp.StatusCode, upstreamMsg, respBody, body)
 			if !agentTaskRecoveryTried && s.isAgentIdentityAccount(ctx, account) && isAgentIdentityTaskInvalidHTTPResponse(resp.StatusCode, respBody) {
 				agentTaskRecoveryTried = true
 				expectedTaskID := account.GetCredential("task_id")

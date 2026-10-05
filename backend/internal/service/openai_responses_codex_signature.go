@@ -1,13 +1,11 @@
 package service
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"strconv"
 	"strings"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
@@ -71,38 +69,6 @@ func ensureOpenAIResponsesCodexSignature(body []byte) ([]byte, bool, error) {
 		return body, false, nil
 	}
 	return out, true, nil
-}
-
-// isOpenAIInvalidCodexRequestError 报告上游的 400 是否为兼容中转的
-// 「Codex 请求签名」拒绝。这类拒绝只回一句 invalid codex request，不带任何
-// 字段级线索，定位只能靠出站请求体本身。
-func isOpenAIInvalidCodexRequestError(upstreamMsg string, body []byte) bool {
-	if strings.Contains(strings.ToLower(upstreamMsg), "invalid codex request") {
-		return true
-	}
-	return bytes.Contains(bytes.ToLower(body), []byte("invalid codex request"))
-}
-
-// openAIResponsesCodexSignatureDebugBodyLimit 是调试日志里出站请求体的上限。
-// 签名校验失败的请求往往很大（Codex 的完整上下文），截断避免刷爆日志。
-const openAIResponsesCodexSignatureDebugBodyLimit = 8192
-
-// logOpenAIInvalidCodexRequestDebug 在开启了签名补齐的账号被上游以
-// invalid codex request 拒绝时，打出出站请求体。
-//
-// 这是定位「补了签名还是被拒」的唯一手段：上游不告诉缺什么，只有原始 body
-// 能看出客户端到底发了什么形态。只在账号显式开启开关时打印，正常账号不受影响。
-func logOpenAIInvalidCodexRequestDebug(account *Account, statusCode int, upstreamMsg string, upstreamBody, requestBody []byte) {
-	if account == nil || !account.IsOpenAIResponsesEnsureCodexSignatureEnabled() {
-		return
-	}
-	if !isOpenAIInvalidCodexRequestError(upstreamMsg, upstreamBody) {
-		return
-	}
-	logger.LegacyPrintf("service.openai_gateway",
-		"[OpenAI] invalid codex request (account=%s id=%d status=%d) outbound_body=%s",
-		account.Name, account.ID, statusCode,
-		truncateForLog(requestBody, openAIResponsesCodexSignatureDebugBodyLimit))
 }
 
 // openAIResponsesIncludeHasCodexSignature 报告 include 数组里是否已含签名取值。
