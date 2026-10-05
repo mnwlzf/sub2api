@@ -331,8 +331,9 @@ func openCodeGateContentText(content gjson.Result) string {
 }
 
 // applyOpenCodeFreeTierGateBody 对出站 body 施加门禁要求：强制 stream:true，
-// 按方言补齐官方 6 个工具并按名称排序；原本不带工具的请求额外补
-// tool_choice 禁止工具调用。dialect 取 openCodeGateDialect* 之一。
+// 并按方言补齐工具（客户端已带工具时只补门禁硬性要求的 bash+read，否则补齐全
+// 套官方工具）；原本不带工具的请求额外补 tool_choice 禁止工具调用。
+// dialect 取 openCodeGateDialect* 之一。
 //
 // body 不是合法 JSON、或 tools 存在但不是数组时原样返回：门禁伪装是尽力而为
 // 的上游兼容层，绝不能因为形状意外而让请求在网关侧失败。
@@ -379,16 +380,47 @@ func applyOpenCodeFreeTierGateBody(account *Account, body []byte, dialect string
 	return out, nil
 }
 
-// openCodeGateToolPlan 是补齐官方工具集之后的计划。
+// openCodeGateToolPlan 是补齐工具集之后的计划。
 type openCodeGateToolPlan struct {
 	Tools    []json.RawMessage
 	HadTools bool
 }
 
-// openCodeGateToolsWithRequired 返回补齐官方 6 个工具并按名称排序后的工具集。
+// openCodeGateRequiredToolNames 是门禁硬性要求的工具名：实测请求缺少其中任意
+// 一个即返回 403 FreeTierError，换成客户端自定义的工具名（如 shell / read_file）
+// 同样不满足。因此这两个名字必须出现在出站请求里。
+var openCodeGateRequiredToolNames = []string{"bash", "read"}
+
+// openCodeGateToolsToInject 返回本次需要补齐的工具集。
+//
+// 客户端已带工具时**只补门禁硬性要求的 bash+read**：注入客户端不认识、模型却
+// 可能调用的工具名会被客户端以 "unsupported call" 拒绝，进而把整轮对话拖垮
+// （实测 muse-spark + Codex 组合下模型会去调用注入的 bash/read，连拒数次后
+// 吐出畸形 tool_call 导致整轮失败）。
+//
+// 原本不带工具的请求（压缩/总结、纯聊天客户端）补齐全套官方工具，形态更接近
+// 官方客户端；调用方随后会设 tool_choice 禁止调用，模型不会真的去调。
+func openCodeGateToolsToInject(hadTools bool) []openCodeGateTool {
+	if !hadTools {
+		return openCodeGateTools
+	}
+	required := make([]openCodeGateTool, 0, len(openCodeGateRequiredToolNames))
+	for _, name := range openCodeGateRequiredToolNames {
+		for i := range openCodeGateTools {
+			if openCodeGateTools[i].Name == name {
+				required = append(required, openCodeGateTools[i])
+				break
+			}
+		}
+	}
+	return required
+}
+
+// openCodeGateToolsWithRequired 返回补齐后的工具集并按名称排序。
 //
 // 返回 nil 表示 tools 存在但不是数组：形状未知，调用方应放弃改动。
-// HadTools 记录原始请求是否本来就带工具，用于决定是否补 tool_choice: none。
+// HadTools 记录原始请求是否本来就带工具，用于决定补哪些工具与是否补
+// tool_choice: none。
 func openCodeGateToolsWithRequired(body []byte, dialect string) (*openCodeGateToolPlan, error) {
 	raw := gjson.GetBytes(body, "tools")
 	tools := make([]json.RawMessage, 0, len(openCodeGateTools))
@@ -411,11 +443,12 @@ func openCodeGateToolsWithRequired(body []byte, dialect string) (*openCodeGateTo
 			present[name] = true
 		}
 	}
-	for i := range openCodeGateTools {
-		if present[openCodeGateTools[i].Name] {
+	wanted := openCodeGateToolsToInject(hadTools)
+	for i := range wanted {
+		if present[wanted[i].Name] {
 			continue
 		}
-		encoded, err := openCodeGateToolJSON(&openCodeGateTools[i], dialect)
+		encoded, err := openCodeGateToolJSON(&wanted[i], dialect)
 		if err != nil {
 			return nil, err
 		}

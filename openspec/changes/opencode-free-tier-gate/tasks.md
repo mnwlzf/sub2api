@@ -75,4 +75,14 @@
 - [x] 8.5 前端：`vue-tsc --noEmit` 通过；i18n 完整性检查通过；ESLint 通过；受影响的 4 个测试文件 173 个用例与新增 10 个用例全部通过
 - [x] 8.6 记录验证边界：Responses 方言因地理封锁（`403 RegionError`）无法从当前网络真实联调；`/zen/go` 付费链路的版本下限因认证先行失败（401）无法判定；`golangci-lint` 因传递依赖校验和不匹配无法本地安装（CI 覆盖）
 
+## 9. 工具注入范围收紧（第三轮，生产故障驱动）
+
+- [x] 9.1 复现并定位生产故障：muse-spark + Codex 组合下模型调用注入的 `bash`/`read`，客户端以 `unsupported call` 拒绝，连拒数次后吐出畸形 `tool_call` → 整轮 `provider_fault`
+- [x] 9.2 实测确认门禁的工具名要求：只有 Codex 风格工具 → 403；只有 `bash`+`read` → 200；两者并存 → 200（门禁强制要求这两个确切名字）
+- [x] 9.3 新增 `openCodeGateRequiredToolNames` 与 `openCodeGateToolsToInject(hadTools)`：客户端已带工具时只补 `bash`+`read`，无工具时补官方 6 件套
+- [x] 9.4 更新 `openCodeGateToolsWithRequired` 使用上述选择逻辑
+- [x] 9.5 更新测试：只补缺失的硬性工具、客户端已备齐时不补、字母序断言按新集合调整
+- [x] 9.6 新增 `TestOpenCodeGateInjectsOnlyRequiredToolsWhenClientHasTools`：Codex 风格工具 + 免费层模型 → 出站只含客户端 3 个 + `bash`+`read`，且不注入 `tool_choice`
+- [x] 9.7 全量回归通过（仅既有失败 `TestOllamaProbeCallback_*`）
+
 

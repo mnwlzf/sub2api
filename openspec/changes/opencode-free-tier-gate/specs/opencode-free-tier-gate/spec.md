@@ -81,13 +81,22 @@
 - **THEN** 该显式值 MUST 保持最终决定权
 
 ### Requirement: 出站 body 门禁伪装
-启用门禁时，系统 MUST 保证出站 body 的 `stream` 为 `true`，且 `tools` 数组中 MUST 同时存在名为 `bash` 与 `read` 的工具（这两项是门禁的硬性要求，实测缺一即 403）。
+启用门禁时，系统 MUST 保证出站 body 的 `stream` 为 `true`，且 `tools` 数组中 MUST 同时存在名为 `bash` 与 `read` 的工具（这两项是门禁的硬性要求，实测缺一即 403；换成客户端自定义的工具名如 `shell` / `read_file` 同样不满足）。
 
-系统 MUST 把工具集补齐到官方客户端的 6 个核心工具（`bash`、`edit`、`glob`、`grep`、`read`、`write`），MUST 使用与官方客户端一致的参数 schema，并按工具名排序。已存在的同名工具 MUST NOT 被重复注入或改动，客户端自带的其他工具 MUST NOT 丢失。
+**补齐范围 MUST 按客户端是否已带工具区分**：
 
-原本不带任何工具的请求（压缩/总结、纯聊天客户端）在补齐工具集后 MUST 同时禁止工具调用（Chat Completions 与 Responses 用 `"none"`，Anthropic 用 `{"type":"none"}`），否则模型会调用客户端无法执行的工具。客户端已显式声明 `tool_choice` 时 MUST NOT 覆盖。
+- 客户端**已带**工具时，系统 MUST 只补齐门禁硬性要求的 `bash` 与 `read`。MUST NOT 注入其余官方工具——那些工具名客户端不认识，模型却可能去调用，会被客户端以 `unsupported call` 拒绝，进而把整轮对话拖垮。
+- 客户端**未带**任何工具时（压缩/总结、纯聊天客户端），系统 MUST 补齐官方 6 个核心工具（`bash`、`edit`、`glob`、`grep`、`read`、`write`），并 MUST 同时禁止工具调用（Chat Completions 与 Responses 用 `"none"`，Anthropic 用 `{"type":"none"}`）。
+
+已存在的同名工具 MUST NOT 被重复注入或改动，客户端自带的其他工具 MUST NOT 丢失。补齐的工具 MUST 使用与官方客户端一致的参数 schema，并按工具名排序。客户端已显式声明 `tool_choice` 时 MUST NOT 覆盖。
 
 Chat Completions 方言 MUST 使用 `{"type":"function","function":{"name":...}}` 嵌套形状，Responses MUST 使用扁平 `{"type":"function","name":...}` 形状，Anthropic MUST 使用 `{"name":...,"input_schema":...}` 形状。body 不是合法 JSON 或结构不符时系统 MUST 原样返回，MUST NOT 报错中断请求。
+
+#### Scenario: 客户端已带工具时只补 bash 与 read
+- **WHEN** 客户端以 Codex 风格工具（`shell`、`read_file`、`apply_patch`）请求免费层模型
+- **THEN** 出站 `tools` MUST 为客户端 3 个工具加上 `bash`、`read`
+- **THEN** 出站 `tools` MUST NOT 含 `edit`、`glob`、`grep`、`write`
+- **THEN** 出站 `tool_choice` MUST NOT 被注入
 
 #### Scenario: 无工具时补齐到官方 6 件套
 - **WHEN** 出站 body 的 `tools` 缺失且模型为免费层
@@ -97,8 +106,12 @@ Chat Completions 方言 MUST 使用 `{"type":"function","function":{"name":...}}
 
 #### Scenario: 仅缺一个工具
 - **WHEN** 出站 body 已有 `bash` 但缺 `read`
-- **THEN** 系统 MUST 只补缺失的官方工具
+- **THEN** 系统 MUST 只补 `read`
 - **THEN** 已有的 `bash` 定义 MUST 保持不变
+
+#### Scenario: 客户端已备齐 bash 与 read
+- **WHEN** 出站 body 已同时含 `bash` 与 `read`
+- **THEN** 系统 MUST NOT 补齐任何工具
 
 #### Scenario: 工具按名称排序
 - **WHEN** 客户端以非字母序提供工具
@@ -107,7 +120,7 @@ Chat Completions 方言 MUST 使用 `{"type":"function","function":{"name":...}}
 #### Scenario: 客户端自带工具不丢失
 - **WHEN** 客户端提供了自定义工具 `my_tool`
 - **THEN** 出站 `tools` MUST 保留 `my_tool`
-- **THEN** 系统 MUST NOT 重复注入官方工具
+- **THEN** 系统 MUST NOT 重复注入已存在的工具
 
 #### Scenario: 原本有工具时不改 tool_choice
 - **WHEN** 客户端请求已带 `tools` 且显式声明 `tool_choice`
