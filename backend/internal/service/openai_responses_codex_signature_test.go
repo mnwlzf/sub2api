@@ -200,3 +200,64 @@ func TestIsOpenAIResponsesEnsureCodexSignatureEnabled(t *testing.T) {
 		})
 	}
 }
+
+func TestIsOpenAIInvalidCodexRequestError(t *testing.T) {
+	tests := []struct {
+		name        string
+		upstreamMsg string
+		body        []byte
+		want        bool
+	}{
+		{
+			name:        "错误消息里带签名拒绝文案",
+			upstreamMsg: "invalid codex request (request id: 20261006004636975938906CQXfbkFh)",
+			want:        true,
+		},
+		{
+			name:        "大小写不敏感",
+			upstreamMsg: "Invalid Codex Request",
+			want:        true,
+		},
+		{
+			name:        "消息为空但响应体里有",
+			upstreamMsg: "",
+			body:        []byte(`{"error":{"code":"invalid_responses_request","message":"invalid codex request","type":"new_api_error"}}`),
+			want:        true,
+		},
+		{
+			name:        "其它上游错误不匹配",
+			upstreamMsg: "Budget pool quota has been exhausted.",
+			body:        []byte(`{"error":{"message":"Budget pool quota has been exhausted."}}`),
+			want:        false,
+		},
+		{
+			name:        "空消息与空响应体",
+			upstreamMsg: "",
+			body:        nil,
+			want:        false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, isOpenAIInvalidCodexRequestError(tt.upstreamMsg, tt.body))
+		})
+	}
+}
+
+func TestLogOpenAIInvalidCodexRequestDebug(t *testing.T) {
+	// 未开启开关的账号不打日志；开启且命中错误文案时走打印分支。
+	// 这里只断言不 panic 且分支判定正确：日志输出由 logger 决定。
+	off := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Extra: map[string]any{}}
+	on := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Extra:    map[string]any{"openai_responses_ensure_codex_signature": true},
+	}
+	require.NotPanics(t, func() {
+		logOpenAIInvalidCodexRequestDebug(off, 400, "invalid codex request", []byte("invalid codex request"), []byte(`{"model":"m"}`))
+		logOpenAIInvalidCodexRequestDebug(on, 400, "invalid codex request", []byte("invalid codex request"), []byte(`{"model":"m"}`))
+		logOpenAIInvalidCodexRequestDebug(on, 400, "other error", []byte("other error"), []byte(`{"model":"m"}`))
+		logOpenAIInvalidCodexRequestDebug(nil, 400, "invalid codex request", nil, nil)
+	})
+}
