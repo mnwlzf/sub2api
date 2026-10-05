@@ -91,6 +91,56 @@
 
 即使只注入 2 个，模型仍可能调用它们并被客户端拒绝（生产日志里模型还幻觉出过 `default`）。**彻底解法是响应侧过滤**掉指向注入工具的 `tool_call`，但会丢弃模型这一轮的工具意图，属于更大的改动，暂未实施。
 
+## 第四轮：`tool_choice` 方言约束（2026-10-06，生产故障驱动）
+
+### 故障现场
+
+第三轮修复上线前后，Codex 侧出现新的稳定失败：
+
+```json
+{"error":{"code":null,
+  "message":"opencode: only `\"auto\"` is supported for `tool_choice`. `\"none\"`, `\"required\"`, and named function choices are not currently supported",
+  "param":null,"type":"invalid_request_error"}}
+```
+
+生产日志确认这是**上游返回的 400**（经 sub2api 透传），不是网关自身报错：
+
+```
+service/openai_gateway_upstream_errors.go:579
+OpenAI upstream error 400 (account=31568 platform=opencode_go type=apikey):
+{"model":"muse-spark-1.3-contributor-free","error":{"code":null,
+  "message":"only `\"auto\"` is supported for `tool_choice`...","param":"tool_choice","type":"invalid_request_error"}}
+```
+
+路径 `/responses`，模型 `muse-spark-1.3-contributor-free`。
+
+### 根因
+
+门禁对「无工具的请求」注入了 `tool_choice: "none"`。**OpenCode 的 `/responses` 端点只接受 `"auto"`**，其它取值一律 400。
+
+实测对照：
+
+| 端点 | `tool_choice:"none"` |
+| --- | --- |
+| `/chat/completions` | **200** |
+| `/responses` | **400** |
+
+**这是第二轮的测试盲区**：当时只在 `/chat/completions` 上验证过 `tool_choice:"none"`（200 通过），而 muse-spark 在本网络被地理封锁（`403 RegionError`），`/responses` 路径从未被验证。
+
+### 修正
+
+1. `tool_choice` 只在 **Chat Completions** 方言注入（新增 `openCodeGateSupportsToolChoiceNone`）。
+2. Responses 与 Anthropic 方言下，**无工具请求也只补 `bash`+`read`**——既然无法禁止调用，就不该把更多工具塞进去。
+
+### 第四轮测试
+
+- 新增 `Responses 方言不注入 tool_choice` / `Anthropic 方言不注入 tool_choice` 两个子测试，断言 `tool_choice` 不存在且 `bash`+`read` 仍被补齐
+- 全量 `go test -tags=unit ./...`：仅既有失败 `TestOllamaProbeCallback_*`
+
+### 佐证：上游接受了工具集
+
+上游的 400 **只针对 `tool_choice`**，说明它已成功解析请求、且 `tools` 被接受。因此移除 `tool_choice` 后该请求应当放行——这比"改完再试"更早地给了我们信心。
+
 ## 门禁规格的来源
 
 规格不是从 CPA 插件照抄的，而是对真实上游做消融实验测出来的。以下每一项都同时有「拒绝」与「放行」两侧证据：

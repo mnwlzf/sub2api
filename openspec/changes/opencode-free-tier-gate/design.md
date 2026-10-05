@@ -172,7 +172,22 @@ unsupported call: default
 
 > 参考实现同样是无条件补齐 6 件套、且响应侧没有任何过滤，因此它也存在同一缺陷，只是在别的客户端组合下未必暴露。**这是我们在参考实现之上主动收紧的一处。**
 
-**`tool_choice` 的必要性**：无工具请求补齐工具集后必须禁止调用，否则模型会去调用客户端无法执行的工具。Anthropic 方言的 `tool_choice` 是对象而非字符串，用 `{"type":"none"}`。
+**`tool_choice` 只在 Chat Completions 方言注入**：无工具请求补齐工具集后应当禁止调用，否则模型会去调用客户端无法执行的工具。但 OpenCode 的 `/responses` 端点**只接受 `tool_choice:"auto"`**，发送 `"none"` 会被上游以 400 拒绝：
+
+```
+{"error":{"message":"only `\"auto\"` is supported for `tool_choice`. `\"none\"`, `\"required\"`, and named function choices are not currently supported","param":"tool_choice","type":"invalid_request_error"}}
+```
+
+实测对照：
+
+| 端点 | `tool_choice:"none"` |
+| --- | --- |
+| `/chat/completions` | **200** |
+| `/responses` | **400**（生产环境稳定复现） |
+
+因此 Responses 与 Anthropic 方言 MUST NOT 注入 `tool_choice`；相应地，这两种方言下**无工具请求也只补最小集**（既然无法禁止调用，就不该把更多工具塞进去）。
+
+> 参考实现的 `reshapeToolChoice` 注释明确写着 `none`/`auto`/`required` 原样透传，所以它也会踩这个 400——只是 agent 客户端通常自带工具，很少走到"无工具"分支。
 
 **已知残余风险**：即使只注入 2 个，模型仍可能调用它们并被客户端拒绝（生产日志里模型还幻觉出过 `default` 这个名字）。彻底解法是响应侧过滤掉指向注入工具的 tool_call，但会丢弃模型这一轮的工具意图，属于更大的改动，暂未实施。
 

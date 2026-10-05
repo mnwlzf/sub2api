@@ -85,4 +85,14 @@
 - [x] 9.6 新增 `TestOpenCodeGateInjectsOnlyRequiredToolsWhenClientHasTools`：Codex 风格工具 + 免费层模型 → 出站只含客户端 3 个 + `bash`+`read`，且不注入 `tool_choice`
 - [x] 9.7 全量回归通过（仅既有失败 `TestOllamaProbeCallback_*`）
 
+## 10. tool_choice 方言约束（第四轮，生产故障驱动）
+
+- [x] 10.1 定位生产故障：`/responses` 请求被上游 400 拒绝，`only "auto" is supported for tool_choice`
+- [x] 10.2 实测对照：`/chat/completions` 接受 `tool_choice:"none"`（200），`/responses` 拒绝（400）
+- [x] 10.3 新增 `openCodeGateSupportsToolChoiceNone(dialect)`：仅 Chat Completions 方言接受
+- [x] 10.4 `tool_choice` 只在 Chat Completions 方言注入
+- [x] 10.5 `openCodeGateToolsToInject(hadTools, dialect)` 增加方言参数：非 chat 方言下无工具请求也只补 `bash`+`read`
+- [x] 10.6 新增两个子测试：Responses / Anthropic 方言不注入 `tool_choice`，且仍补齐 `bash`+`read`
+- [x] 10.7 全量回归通过（仅既有失败 `TestOllamaProbeCallback_*`）
+
 
