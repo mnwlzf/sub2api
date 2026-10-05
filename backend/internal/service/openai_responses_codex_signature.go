@@ -118,16 +118,17 @@ func deriveCodexSignaturePromptCacheKey(root gjson.Result) string {
 	if !instructions.Exists() && !input.Exists() {
 		return codexSignatureCacheKeyFallback
 	}
-	digest := sha256.New()
-	digest.Write([]byte(instructions.String()))
+	// 拼成一段再一次性哈希：hash.Hash.Write 永远返回 nil，逐个检查只会制造噪声。
+	payload := make([]byte, 0, len(instructions.Str)+64)
+	payload = append(payload, instructions.String()...)
 	switch {
 	case input.IsArray():
 		if items := input.Array(); len(items) > 0 {
-			digest.Write([]byte(items[0].Raw))
+			payload = append(payload, items[0].Raw...)
 		}
 	case input.Type == gjson.String:
-		digest.Write([]byte(input.Str))
+		payload = append(payload, input.Str...)
 	}
-	sum := hex.EncodeToString(digest.Sum(nil))
-	return codexSignatureCacheKeyPrefix + sum[:32]
+	sum := sha256.Sum256(payload)
+	return codexSignatureCacheKeyPrefix + hex.EncodeToString(sum[:])[:32]
 }
