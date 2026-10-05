@@ -42,6 +42,55 @@
 - 全量 `go test -tags=unit ./...`：仅 `TestOllamaProbeCallback_StaleLongDoesNotOverrideNewShort` 失败（既有失败）。
   - 首轮全量跑还出现一次 `TestGatewayService_StreamingKeepaliveUsesNoopDeltaDuringToolUseForAffectedClaudeCodeVersion` 失败，单独重跑 3 次与全量重跑均通过，确认为**偶发**，与本改动无关（该用例走 Claude Code 路径，不经过 OpenCode 门禁）。
 
+## 第三轮：工具注入范围收紧（2026-10-06，生产故障驱动）
+
+### 故障现场
+
+生产 harness（Codex agent）使用 `specai-opencode` provider（`api: openai-responses`，`baseURL: https://codex.trovebox.online/` = 本站 sub2api），模型 `muse-spark-1.3-contributor-free`。两次 dispatch 死于完全相同的签名：
+
+```
+[3] Model metadata for muse-spark-1.3-contributor-free not found. Defaulting to fallback metadata
+[7]  ERROR codex_core::tools::router: error=unsupported call: read
+[9]  ERROR codex_core::tools::router: error=unsupported call: bash
+[11] ERROR codex_core::tools::router: error=unsupported call: bash
+[13] ERROR codex_core::tools::router: error=unsupported call: default
+[14] {"error":{"message":"`arguments` must be valid JSON","param":"arguments","type":"invalid_request_error"}}
+[15] turn.failed → [16] process_exit exitCode=1 → [17] classification: provider_fault
+[18] toolCallCount: 0, usageUnavailable: true
+```
+
+### 根因
+
+**注入的工具名客户端不认识，模型却会去调用。**
+
+客户端（Codex）只注册了 `shell` / `read_file` / `apply_patch`；门禁为满足上游校验又注入 6 个官方工具，模型面对 9 个工具并挑中了 `bash` / `read`；客户端以 `unsupported call` 拒绝；模型被拒后反复换名字重试（含幻觉出的 `default`），最终吐出畸形 `tool_call` 被上游 400 掉，整轮判为 `provider_fault`。`toolCallCount: 0` 印证一次工具都没真正执行。
+
+这是第二轮把工具补齐从 2 个扩到 6 个所**放大**的缺陷（外来工具面 ×3）。
+
+### 实测确认门禁的工具名要求
+
+| 请求的工具集 | 结果 |
+| --- | --- |
+| 只有 Codex 风格（`shell`/`read_file`/`apply_patch`） | **403 FreeTierError** |
+| 只有 `bash`+`read` | **200 OK** |
+| Codex 风格 + `bash`+`read` | **200 OK** |
+
+门禁**强制要求 `bash` 与 `read` 这两个确切名字**，任意工具名不满足 → 注入无法避免。
+
+### 修正
+
+客户端**已带**工具时只补 `bash`+`read`，把外来工具面压回最小；客户端**未带**工具时仍补 6 件套并设 `tool_choice: none`（此时模型无法调用，形态对齐是安全的）。
+
+### 第三轮测试
+
+- 新增 `TestOpenCodeGateInjectsOnlyRequiredToolsWhenClientHasTools`：Codex 风格 3 工具 + 免费层模型 → 出站恰为 `apply_patch`/`bash`/`read`/`read_file`/`shell`，且不注入 `tool_choice`
+- 更新：`OnlyFillsMissingTool`（1 客户端工具 → 补 1 个，共 2）、`KeepsClientTools`（已备齐 → 不补，共 3）、`AreSortedByName`（补 `read`，共 3）
+- 全量 `go test -tags=unit ./...`：仅既有失败 `TestOllamaProbeCallback_*`
+
+### 残余风险（未解决）
+
+即使只注入 2 个，模型仍可能调用它们并被客户端拒绝（生产日志里模型还幻觉出过 `default`）。**彻底解法是响应侧过滤**掉指向注入工具的 `tool_call`，但会丢弃模型这一轮的工具意图，属于更大的改动，暂未实施。
+
 ## 门禁规格的来源
 
 规格不是从 CPA 插件照抄的，而是对真实上游做消融实验测出来的。以下每一项都同时有「拒绝」与「放行」两侧证据：

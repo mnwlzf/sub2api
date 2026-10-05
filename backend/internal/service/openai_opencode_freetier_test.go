@@ -223,8 +223,30 @@ func TestApplyOpenCodeFreeTierGateBodyOnlyFillsMissingTool(t *testing.T) {
 	// 已有的 bash 定义必须原样保留，不能被覆盖成官方 schema。
 	require.Equal(t, "mine", gjson.GetBytes(out, "tools.0.function.description").String())
 	require.True(t, gjson.GetBytes(out, "tools.0.function.parameters.properties.cmd").Exists())
-	// 客户端 1 个 + 补齐 5 个缺失的官方工具。
-	require.Equal(t, 6, len(gjson.GetBytes(out, "tools").Array()))
+	// 客户端已带工具时只补门禁硬性要求的 bash+read，这里只缺 read。
+	require.Equal(t, 2, len(gjson.GetBytes(out, "tools").Array()))
+}
+
+// TestOpenCodeGateInjectsOnlyRequiredToolsWhenClientHasTools 钉住 C 方案的核心行为：
+// 客户端自带工具时只补门禁硬性要求的 bash+read，绝不把客户端不认识、模型却可能
+// 调用的其余官方工具塞进请求（否则会被客户端以 unsupported call 拒绝）。
+func TestOpenCodeGateInjectsOnlyRequiredToolsWhenClientHasTools(t *testing.T) {
+	account := openCodeGateTestAccount(nil)
+	// Codex 风格工具名：客户端不认识 bash/read，但门禁要求它们存在。
+	body := []byte(`{"model":"muse-spark-1.3-contributor-free","stream":true,"input":[{"role":"user","content":"hi"}],"tools":[{"type":"function","name":"shell","parameters":{"type":"object"}},{"type":"function","name":"read_file","parameters":{"type":"object"}},{"type":"function","name":"apply_patch","parameters":{"type":"object"}}]}`)
+
+	out, err := applyOpenCodeFreeTierGateBody(account, body, openCodeGateDialectResponses)
+	require.NoError(t, err)
+
+	names := []string{}
+	for _, item := range gjson.GetBytes(out, "tools").Array() {
+		names = append(names, item.Get("name").String())
+	}
+	// 客户端 3 个 + 只补 bash、read。
+	require.Equal(t, []string{"apply_patch", "bash", "read", "read_file", "shell"}, names,
+		"客户端已带工具时不得注入 bash/read 之外的官方工具")
+	// 客户端已带工具，不得补 tool_choice。
+	require.False(t, gjson.GetBytes(out, "tool_choice").Exists())
 }
 
 func TestApplyOpenCodeFreeTierGateBodyKeepsClientTools(t *testing.T) {
@@ -235,8 +257,8 @@ func TestApplyOpenCodeFreeTierGateBodyKeepsClientTools(t *testing.T) {
 	require.NoError(t, err)
 
 	requireGateTools(t, out, "function.name")
-	// 客户端 3 个 + 补齐 4 个缺失的官方工具，且不得重复注入。
-	require.Equal(t, 7, len(gjson.GetBytes(out, "tools").Array()), "不得重复注入或丢弃客户端工具")
+	// 客户端已同时提供 bash 与 read，无需补齐任何工具。
+	require.Equal(t, 3, len(gjson.GetBytes(out, "tools").Array()), "不得重复注入或丢弃客户端工具")
 	names := map[string]bool{}
 	for _, item := range gjson.GetBytes(out, "tools").Array() {
 		names[item.Get("function.name").String()] = true
@@ -253,11 +275,12 @@ func TestOpenCodeGateToolsAreSortedByName(t *testing.T) {
 	out, err := applyOpenCodeFreeTierGateBody(account, body, openCodeGateDialectChat)
 	require.NoError(t, err)
 
-	names := make([]string, 0, 6)
+	names := make([]string, 0, 3)
 	for _, item := range gjson.GetBytes(out, "tools").Array() {
 		names = append(names, item.Get("function.name").String())
 	}
-	require.Equal(t, []string{"bash", "edit", "glob", "grep", "read", "write"}, names)
+	// 客户端 2 个 + 只补 read。
+	require.Equal(t, []string{"bash", "read", "write"}, names)
 }
 
 // TestOpenCodeGateToolChoiceNoneForToolLessRequests 钉住无工具请求的保护：

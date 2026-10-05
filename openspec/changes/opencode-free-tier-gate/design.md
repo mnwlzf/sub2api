@@ -134,24 +134,47 @@ id := prefix + "_" + hexPart + string(suffix)   // ses_ / msg_
 
 ### 3.6 与参考实现对保真度
 
-门禁的验收标准只是「四项硬性要求」，但参考实现 cpa-plugin-opencodezen 的伪装范围更大。对照它补齐了三处保真度差异。
+门禁的验收标准只是「四项硬性要求」。参考实现 cpa-plugin-opencodezen 的伪装范围更大，我们对照它补齐了会话头镜像与工具 schema，**但在工具补齐范围上最终选择了比参考实现更保守的做法**（见下）。
 
-| 项 | 参考实现 | 我们的最小集 | 处理 |
-| --- | --- | --- | --- |
-| 会话头 | `X-Opencode-Session` + 镜像到 `X-Session-Affinity` / `X-Session-Id` | 只有 `X-Opencode-Session` | **已补齐镜像** |
-| 工具集 | 官方 6 个（bash/edit/glob/grep/read/write），官方 schema，按名排序 | 只有 bash+read，最小 `{"type":"object"}` schema | **已补齐** |
-| 无工具请求 | 注入全套 + `tool_choice: none` | 注入 bash+read，不设 `tool_choice` | **已补齐** |
-| `X-Opencode-Request` / `Client` / `Project` | 全部发送 | 不发 | 保持不发（实测非必需） |
+| 项 | 参考实现 | 我们的最终做法 |
+| --- | --- | --- |
+| 会话头 | `X-Opencode-Session` + 镜像到 `X-Session-Affinity` / `X-Session-Id` | **已补齐镜像**（实测非门禁必需，纯形态对齐） |
+| 工具补齐范围 | 无条件补齐官方 6 件套 | **客户端已带工具时只补 `bash`+`read`**；无工具时补 6 件套 |
+| 无工具请求 | 注入全套 + `tool_choice: none` | 同参考实现 |
+| `X-Opencode-Request` / `Client` / `Project` | 全部发送 | 保持不发（实测非必需） |
 
-**实测验证**（真实上游，2026-10-04）：
+**实测验证**（真实上游）：
 
-- 6 官方工具 + affinity 头 → 200
-- 6 官方工具 + `tool_choice: "none"` → 200
-- 只发 `X-Opencode-Session`、不发 affinity → 200（确认 affinity **不是**门禁要求）
+- 只有 Codex 风格工具（`shell`/`read_file`/`apply_patch`）→ **403 FreeTierError**
+- 只有 `bash`+`read` → **200**
+- Codex 风格 + `bash`+`read` → **200**
+- 只发 `X-Opencode-Session`、不发 affinity → **200**
 
-**为什么补齐而不是停在最小集**：门禁是上游单方面实现的校验，规则会变。最小集只能保证「今天能过」；与官方客户端形态越接近，上游收紧规则时的回归风险越低。affinity 头与 6 件套都属于这类防御性对齐。
+结论：门禁**强制要求 `bash` 与 `read` 这两个确切名字**，任意工具名不满足；affinity 头**不是**门禁要求。
 
-**`tool_choice` 的必要性**：补齐工具集会让原本无工具的请求（压缩/总结、纯聊天客户端）带上工具，模型可能去调用客户端根本无法执行的工具。参考实现用 `tool_choice: none` 解决，本能力照做。Anthropic 方言的 `tool_choice` 是对象而非字符串，用 `{"type":"none"}`。
+### 为什么最终没有无条件补齐 6 件套
+
+曾按参考实现无条件补齐 6 件套（PR #7）。随后在生产上观测到稳定复现的故障（muse-spark + Codex）：
+
+```
+unsupported call: read
+unsupported call: bash
+unsupported call: bash
+unsupported call: default
+→ {"error":{"message":"`arguments` must be valid JSON"}} → turn.failed
+```
+
+链路：客户端（Codex）只注册了 `shell`/`read_file`/`apply_patch`；门禁又注入 6 个官方工具，模型面对 9 个工具并挑中了 `bash`/`read`；客户端不认识这些名字，以 `unsupported call` 拒绝；模型被拒后反复换名字重试，最终吐出畸形 `tool_call` 被上游 400 掉，整轮判为 `provider_fault`（`toolCallCount: 0`，一次工具都没真正执行）。
+
+**根因**：注入的工具名客户端不认识，模型却可能去调用。无条件补齐把外来工具从 2 个放大到 6 个，显著提高了模型选错的概率。
+
+**修正**：客户端已带工具时只补门禁硬性要求的 `bash`+`read`，把外来工具面压到最小；无工具时仍补 6 件套并设 `tool_choice: none`（此时模型无法调用，形态对齐是安全的）。
+
+> 参考实现同样是无条件补齐 6 件套、且响应侧没有任何过滤，因此它也存在同一缺陷，只是在别的客户端组合下未必暴露。**这是我们在参考实现之上主动收紧的一处。**
+
+**`tool_choice` 的必要性**：无工具请求补齐工具集后必须禁止调用，否则模型会去调用客户端无法执行的工具。Anthropic 方言的 `tool_choice` 是对象而非字符串，用 `{"type":"none"}`。
+
+**已知残余风险**：即使只注入 2 个，模型仍可能调用它们并被客户端拒绝（生产日志里模型还幻觉出过 `default` 这个名字）。彻底解法是响应侧过滤掉指向注入工具的 tool_call，但会丢弃模型这一轮的工具意图，属于更大的改动，暂未实施。
 
 **关于 `jev-1.13-free`**：参考实现明确把它排除在注册之外（其提交信息为 "unsupported dialect models are not announced, specifically handling the jev-1.13-free model"），因为它走 `/systemone` 方言，而该方言属于独立的 `typesafe` 平台。本能力的目录仍包含它——运营者自行选择使用哪些模型，且实测该模型在 chat 与 responses 两个方言上均返回 500。
 
