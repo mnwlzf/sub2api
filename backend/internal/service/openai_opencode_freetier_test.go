@@ -308,14 +308,29 @@ func TestOpenCodeGateToolChoiceNoneForToolLessRequests(t *testing.T) {
 			"客户端显式声明的 tool_choice 不得被覆盖")
 	})
 
-	t.Run("Anthropic 方言用对象形状", func(t *testing.T) {
+	// 回归：OpenCode 的 /responses 只接受 tool_choice:"auto"，发送 "none" 会被
+	// 上游 400 拒绝（生产环境稳定复现）。因此非 chat 方言不得注入 tool_choice。
+	t.Run("Responses 方言不注入 tool_choice", func(t *testing.T) {
+		body := []byte(`{"model":"muse-spark-1.3-contributor-free","stream":true,"input":[{"role":"user","content":"hi"}]}`)
+
+		out, err := applyOpenCodeFreeTierGateBody(account, body, openCodeGateDialectResponses)
+		require.NoError(t, err)
+
+		require.False(t, gjson.GetBytes(out, "tool_choice").Exists(),
+			"OpenCode /responses 只接受 tool_choice:auto，不得注入 none")
+		// 无工具请求仍须补齐门禁硬性要求，否则 403。
+		requireGateTools(t, out, "name")
+	})
+
+	t.Run("Anthropic 方言不注入 tool_choice", func(t *testing.T) {
 		body := []byte(`{"model":"mimo-v2.6-flash-free","stream":true,"max_tokens":16,"messages":[{"role":"user","content":"hi"}]}`)
 
 		out, err := applyOpenCodeFreeTierGateBody(account, body, openCodeGateDialectAnthropic)
 		require.NoError(t, err)
 
-		require.Equal(t, "none", gjson.GetBytes(out, "tool_choice.type").String(),
-			"Anthropic 的 tool_choice 是对象，必须用 {\"type\":\"none\"}")
+		require.False(t, gjson.GetBytes(out, "tool_choice").Exists(),
+			"非 chat 方言不注入 tool_choice")
+		requireGateTools(t, out, "name")
 	})
 }
 

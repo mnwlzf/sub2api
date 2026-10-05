@@ -83,10 +83,13 @@
 ### Requirement: 出站 body 门禁伪装
 启用门禁时，系统 MUST 保证出站 body 的 `stream` 为 `true`，且 `tools` 数组中 MUST 同时存在名为 `bash` 与 `read` 的工具（这两项是门禁的硬性要求，实测缺一即 403；换成客户端自定义的工具名如 `shell` / `read_file` 同样不满足）。
 
-**补齐范围 MUST 按客户端是否已带工具区分**：
+**补齐范围 MUST 按「客户端是否已带工具」与「方言是否接受 tool_choice 禁用」共同决定**：
 
 - 客户端**已带**工具时，系统 MUST 只补齐门禁硬性要求的 `bash` 与 `read`。MUST NOT 注入其余官方工具——那些工具名客户端不认识，模型却可能去调用，会被客户端以 `unsupported call` 拒绝，进而把整轮对话拖垮。
-- 客户端**未带**任何工具时（压缩/总结、纯聊天客户端），系统 MUST 补齐官方 6 个核心工具（`bash`、`edit`、`glob`、`grep`、`read`、`write`），并 MUST 同时禁止工具调用（Chat Completions 与 Responses 用 `"none"`，Anthropic 用 `{"type":"none"}`）。
+- 客户端**未带**工具、**且**方言接受禁用工具调用时，系统 MUST 补齐官方 6 个核心工具（`bash`、`edit`、`glob`、`grep`、`read`、`write`），并 MUST 同时禁止工具调用。
+- 客户端**未带**工具、但方言**不接受**禁用工具调用时，系统 MUST 仍只补齐 `bash` 与 `read`：既无法阻止模型调用，就 MUST NOT 把更多工具塞进请求。
+
+**`tool_choice` 只在 Chat Completions 方言注入**：OpenCode 的 `/responses` 端点只接受 `"auto"`，发送 `"none"` 会被上游以 400 `invalid_request_error` 拒绝（生产环境稳定复现）。因此 Responses 与 Anthropic 方言 MUST NOT 注入 `tool_choice`。
 
 已存在的同名工具 MUST NOT 被重复注入或改动，客户端自带的其他工具 MUST NOT 丢失。补齐的工具 MUST 使用与官方客户端一致的参数 schema，并按工具名排序。客户端已显式声明 `tool_choice` 时 MUST NOT 覆盖。
 
@@ -98,11 +101,22 @@ Chat Completions 方言 MUST 使用 `{"type":"function","function":{"name":...}}
 - **THEN** 出站 `tools` MUST NOT 含 `edit`、`glob`、`grep`、`write`
 - **THEN** 出站 `tool_choice` MUST NOT 被注入
 
-#### Scenario: 无工具时补齐到官方 6 件套
-- **WHEN** 出站 body 的 `tools` 缺失且模型为免费层
+#### Scenario: Chat 方言无工具时补齐到官方 6 件套
+- **WHEN** Chat Completions 方言的请求 `tools` 缺失且模型为免费层
 - **THEN** 出站 `tools` MUST 同时含 `bash` 与 `read`
 - **THEN** 出站 `tools` MUST 为官方 6 件套且按名称排序
-- **THEN** 出站 `tool_choice` MUST 为禁止调用工具的取值
+- **THEN** 出站 `tool_choice` MUST 为 `"none"`
+
+#### Scenario: Responses 方言无工具时不注入 tool_choice
+- **WHEN** Responses 方言的请求 `tools` 缺失且模型为免费层
+- **THEN** 出站 `tools` MUST 同时含 `bash` 与 `read`
+- **THEN** 出站 `tools` MUST NOT 含 `edit`、`glob`、`grep`、`write`
+- **THEN** 出站 `tool_choice` MUST NOT 存在
+
+#### Scenario: Anthropic 方言无工具时不注入 tool_choice
+- **WHEN** Anthropic 方言的请求 `tools` 缺失且模型为免费层
+- **THEN** 出站 `tools` MUST 同时含 `bash` 与 `read`
+- **THEN** 出站 `tool_choice` MUST NOT 存在
 
 #### Scenario: 仅缺一个工具
 - **WHEN** 出站 body 已有 `bash` 但缺 `read`

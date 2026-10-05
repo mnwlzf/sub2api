@@ -369,9 +369,12 @@ func applyOpenCodeFreeTierGateBody(account *Account, body []byte, dialect string
 	if err != nil {
 		return body, fmt.Errorf("opencode free tier gate: write tools: %w", err)
 	}
-	// 原本不带工具的请求（压缩/总结、纯聊天客户端）在补齐工具集后必须禁止工具
-	// 调用，否则模型会去调用客户端根本无法执行的工具。
-	if !plan.HadTools {
+	// 原本不带工具的请求（压缩/总结、纯聊天客户端）在补齐工具集后禁止工具调用，
+	// 否则模型会去调用客户端根本无法执行的工具。
+	//
+	// 但 OpenCode 的 /responses 端点只接受 tool_choice:"auto"，发送 "none" 会
+	// 被上游 400 拒绝（实测生产环境稳定复现），因此只在接受该取值的方言上设置。
+	if !plan.HadTools && openCodeGateSupportsToolChoiceNone(dialect) {
 		out, err = sjson.SetBytes(out, "tool_choice", openCodeGateToolChoiceNone(dialect))
 		if err != nil {
 			return body, fmt.Errorf("opencode free tier gate: set tool_choice: %w", err)
@@ -391,6 +394,29 @@ type openCodeGateToolPlan struct {
 // 同样不满足。因此这两个名字必须出现在出站请求里。
 var openCodeGateRequiredToolNames = []string{"bash", "read"}
 
+// openCodeGateRequiredTools 是门禁硬性要求的最小工具集（bash + read）。
+var openCodeGateRequiredTools = func() []openCodeGateTool {
+	out := make([]openCodeGateTool, 0, len(openCodeGateRequiredToolNames))
+	for _, name := range openCodeGateRequiredToolNames {
+		for i := range openCodeGateTools {
+			if openCodeGateTools[i].Name == name {
+				out = append(out, openCodeGateTools[i])
+				break
+			}
+		}
+	}
+	return out
+}()
+
+// openCodeGateSupportsToolChoiceNone 报告该方言能否安全使用「禁止工具调用」。
+//
+// OpenCode 的 /responses 端点只接受 tool_choice:"auto"，发送 "none" 会返回
+// 400 invalid_request_error（"only `auto` is supported for `tool_choice`"）；
+// /chat/completions 接受 "none"（实测 200）。因此只在 chat 方言上做该保护。
+func openCodeGateSupportsToolChoiceNone(dialect string) bool {
+	return dialect == openCodeGateDialectChat
+}
+
 // openCodeGateToolsToInject 返回本次需要补齐的工具集。
 //
 // 客户端已带工具时**只补门禁硬性要求的 bash+read**：注入客户端不认识、模型却
@@ -398,22 +424,14 @@ var openCodeGateRequiredToolNames = []string{"bash", "read"}
 // （实测 muse-spark + Codex 组合下模型会去调用注入的 bash/read，连拒数次后
 // 吐出畸形 tool_call 导致整轮失败）。
 //
-// 原本不带工具的请求（压缩/总结、纯聊天客户端）补齐全套官方工具，形态更接近
-// 官方客户端；调用方随后会设 tool_choice 禁止调用，模型不会真的去调。
-func openCodeGateToolsToInject(hadTools bool) []openCodeGateTool {
-	if !hadTools {
+// 客户端未带工具时，只有在**能禁止工具调用**的方言上才补齐全套官方工具（形态
+// 更接近官方客户端，且模型不会真的去调）；无法禁止调用的方言仍只补最小集，
+// 避免把模型可能误调的工具塞进请求。
+func openCodeGateToolsToInject(hadTools bool, dialect string) []openCodeGateTool {
+	if !hadTools && openCodeGateSupportsToolChoiceNone(dialect) {
 		return openCodeGateTools
 	}
-	required := make([]openCodeGateTool, 0, len(openCodeGateRequiredToolNames))
-	for _, name := range openCodeGateRequiredToolNames {
-		for i := range openCodeGateTools {
-			if openCodeGateTools[i].Name == name {
-				required = append(required, openCodeGateTools[i])
-				break
-			}
-		}
-	}
-	return required
+	return openCodeGateRequiredTools
 }
 
 // openCodeGateToolsWithRequired 返回补齐后的工具集并按名称排序。
@@ -443,7 +461,7 @@ func openCodeGateToolsWithRequired(body []byte, dialect string) (*openCodeGateTo
 			present[name] = true
 		}
 	}
-	wanted := openCodeGateToolsToInject(hadTools)
+	wanted := openCodeGateToolsToInject(hadTools, dialect)
 	for i := range wanted {
 		if present[wanted[i].Name] {
 			continue
