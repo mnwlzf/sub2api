@@ -15,6 +15,7 @@ import (
 	"github.com/tidwall/sjson"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 )
 
 // OpenCode Zen 免费层门禁伪装。
@@ -149,6 +150,34 @@ func openCodeGateNumberSchema(description string) map[string]any {
 
 func openCodeGateBooleanSchema(description string) map[string]any {
 	return map[string]any{"type": "boolean", "description": description}
+}
+
+// openCodeGateSchemaRefPattern 匹配 JSON Schema 的引用关键字。
+var openCodeGateSchemaRefPattern = regexp.MustCompile(`"\$(?:ref|defs|dynamicRef|dynamicAnchor|recursiveRef|recursiveAnchor)"\s*:`)
+
+// openCodeGateLogSchemaRefs 在出站工具集里出现 JSON Schema 引用关键字时打一条诊断
+// 日志。
+//
+// OpenCode 的 /responses 上游会以 400 "Recursive JSON schemas are not currently
+// supported" 拒绝带引用的工具 schema。门禁自己补齐的工具是纯扁平 schema（不可能
+// 出现引用），所以命中的一定是客户端带来的工具。记下工具名与引用目标，便于定位
+// 是哪个客户端工具触发的。
+func openCodeGateLogSchemaRefs(account *Account, dialect string, tools []json.RawMessage) {
+	for _, tool := range tools {
+		raw := string(tool)
+		if !openCodeGateSchemaRefPattern.MatchString(raw) {
+			continue
+		}
+		accountID := int64(0)
+		if account != nil {
+			accountID = account.ID
+		}
+		logger.LegacyPrintf("service.opencode_gate",
+			"opencode free tier gate: tool %q carries JSON Schema reference keywords %v (account=%d dialect=%s); OpenCode /responses rejects recursive JSON schemas",
+			openCodeGateToolName(tool, dialect),
+			openCodeGateSchemaRefPattern.FindAllString(raw, 8),
+			accountID, dialect)
+	}
 }
 
 // canonicalOpenCodeID 把任意来源字符串确定性映射到上游规范 ID 形状
@@ -361,6 +390,9 @@ func applyOpenCodeFreeTierGateBody(account *Account, body []byte, dialect string
 		// tools 存在但不是数组：形状未知，不猜测也不改动。
 		return out, nil
 	}
+	// 诊断：OpenCode /responses 会以 400 拒绝带 JSON Schema 引用的工具。
+	// 门禁补齐的工具是纯扁平 schema，命中的必然是客户端带来的工具。
+	openCodeGateLogSchemaRefs(account, dialect, plan.Tools)
 	encoded, err := json.Marshal(plan.Tools)
 	if err != nil {
 		return body, fmt.Errorf("opencode free tier gate: encode tools: %w", err)
