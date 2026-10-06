@@ -15,6 +15,7 @@ import (
 	"github.com/tidwall/sjson"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 )
 
 // OpenCode Zen 免费层门禁伪装。
@@ -149,6 +150,34 @@ func openCodeGateNumberSchema(description string) map[string]any {
 
 func openCodeGateBooleanSchema(description string) map[string]any {
 	return map[string]any{"type": "boolean", "description": description}
+}
+
+// openCodeGateSchemaRefPattern 匹配 JSON Schema 的引用关键字。
+var openCodeGateSchemaRefPattern = regexp.MustCompile(`"\$(?:ref|defs|dynamicRef|dynamicAnchor|recursiveRef|recursiveAnchor)"\s*:`)
+
+// openCodeGateLogSchemaRefs 在出站工具集里出现 JSON Schema 引用关键字时打一条诊断
+// 日志。
+//
+// OpenCode 的 /responses 上游会以 400 "Recursive JSON schemas are not currently
+// supported" 拒绝带引用的工具 schema。门禁自己补齐的工具是纯扁平 schema（不可能
+// 出现引用），所以命中的一定是客户端带来的工具。记下工具名与引用目标，便于定位
+// 是哪个客户端工具触发的。
+func openCodeGateLogSchemaRefs(account *Account, dialect string, tools []json.RawMessage) {
+	for _, tool := range tools {
+		raw := string(tool)
+		if !openCodeGateSchemaRefPattern.MatchString(raw) {
+			continue
+		}
+		accountID := int64(0)
+		if account != nil {
+			accountID = account.ID
+		}
+		logger.LegacyPrintf("service.opencode_gate",
+			"opencode free tier gate: tool %q carries JSON Schema reference keywords %v (account=%d dialect=%s); OpenCode /responses rejects recursive JSON schemas",
+			openCodeGateToolName(tool, dialect),
+			openCodeGateSchemaRefPattern.FindAllString(raw, 8),
+			accountID, dialect)
+	}
 }
 
 // canonicalOpenCodeID 把任意来源字符串确定性映射到上游规范 ID 形状
@@ -361,6 +390,9 @@ func applyOpenCodeFreeTierGateBody(account *Account, body []byte, dialect string
 		// tools 存在但不是数组：形状未知，不猜测也不改动。
 		return out, nil
 	}
+	// 诊断：OpenCode /responses 会以 400 拒绝带 JSON Schema 引用的工具。
+	// 门禁补齐的工具是纯扁平 schema，命中的必然是客户端带来的工具。
+	openCodeGateLogSchemaRefs(account, dialect, plan.Tools)
 	encoded, err := json.Marshal(plan.Tools)
 	if err != nil {
 		return body, fmt.Errorf("opencode free tier gate: encode tools: %w", err)
@@ -388,6 +420,15 @@ type openCodeGateToolPlan struct {
 	Tools    []json.RawMessage
 	HadTools bool
 }
+
+// openCodeGateReservedToolNote 加在「客户端已自带工具」时补入的 bash/read 描述前面。
+//
+// 这两个工具只是为了让上游门禁通过：客户端（Codex 等）的注册表里并没有它们，
+// 一旦模型调用，客户端会以 "unsupported call" 拒绝。实测 muse-spark + Codex
+// 组合下模型会优先调用它们，而且被拒后还会沿用它们的参数形状去调客户端自己的
+// 工具（bash 的 {command} 被套到 exec_command 上），把后续调用一起带偏。
+// 因此描述里必须明确劝阻调用。
+const openCodeGateReservedToolNote = "RESERVED RUNTIME MARKER — DO NOT CALL. This tool exists only to satisfy the upstream runtime handshake; the caller cannot execute it and will reject the call. Use the tools the caller provides instead. "
 
 // openCodeGateRequiredToolNames 是门禁硬性要求的工具名：实测请求缺少其中任意
 // 一个即返回 403 FreeTierError，换成客户端自定义的工具名（如 shell / read_file）
@@ -422,7 +463,8 @@ func openCodeGateSupportsToolChoiceNone(dialect string) bool {
 // 客户端已带工具时**只补门禁硬性要求的 bash+read**：注入客户端不认识、模型却
 // 可能调用的工具名会被客户端以 "unsupported call" 拒绝，进而把整轮对话拖垮
 // （实测 muse-spark + Codex 组合下模型会去调用注入的 bash/read，连拒数次后
-// 吐出畸形 tool_call 导致整轮失败）。
+// 吐出畸形 tool_call 导致整轮失败）。此时还会给它们加上劝阻描述，尽量让模型
+// 不去调用。
 //
 // 客户端未带工具时，只有在**能禁止工具调用**的方言上才补齐全套官方工具（形态
 // 更接近官方客户端，且模型不会真的去调）；无法禁止调用的方言仍只补最小集，
@@ -431,7 +473,15 @@ func openCodeGateToolsToInject(hadTools bool, dialect string) []openCodeGateTool
 	if !hadTools && openCodeGateSupportsToolChoiceNone(dialect) {
 		return openCodeGateTools
 	}
-	return openCodeGateRequiredTools
+	injected := make([]openCodeGateTool, 0, len(openCodeGateRequiredTools))
+	for i := range openCodeGateRequiredTools {
+		tool := openCodeGateRequiredTools[i]
+		if hadTools {
+			tool.Description = openCodeGateReservedToolNote + tool.Description
+		}
+		injected = append(injected, tool)
+	}
+	return injected
 }
 
 // openCodeGateToolsWithRequired 返回补齐后的工具集并按名称排序。

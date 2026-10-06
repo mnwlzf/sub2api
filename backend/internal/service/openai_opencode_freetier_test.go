@@ -247,6 +247,19 @@ func TestOpenCodeGateInjectsOnlyRequiredToolsWhenClientHasTools(t *testing.T) {
 		"客户端已带工具时不得注入 bash/read 之外的官方工具")
 	// 客户端已带工具，不得补 tool_choice。
 	require.False(t, gjson.GetBytes(out, "tool_choice").Exists())
+
+	// 补入的 bash/read 必须带劝阻描述：客户端不认识它们，模型一调就被
+	// "unsupported call" 拒绝，还会沿用它们的参数形状把后续调用带偏。
+	for _, item := range gjson.GetBytes(out, "tools").Array() {
+		switch item.Get("name").String() {
+		case "bash", "read":
+			require.Contains(t, item.Get("description").String(), "DO NOT CALL",
+				"补入的 %s 必须带劝阻描述", item.Get("name").String())
+		case "shell", "read_file", "apply_patch":
+			require.NotContains(t, item.Get("description").String(), "DO NOT CALL",
+				"客户端自带工具的描述不得被改动")
+		}
+	}
 }
 
 func TestApplyOpenCodeFreeTierGateBodyKeepsClientTools(t *testing.T) {
