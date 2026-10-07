@@ -52,6 +52,7 @@ func TestRegisterPromptTemplateRoutes_RegistersExpectedEndpoints(t *testing.T) {
 		"GET /api/v1/admin/prompt-templates/:id/validation",
 		"GET /api/v1/admin/prompt-templates/:id/versions",
 		"POST /api/v1/admin/prompt-templates/:id/versions",
+		"GET /api/v1/admin/prompt-request-events",
 		"GET /api/v1/admin/prompt-versions/:id",
 		"POST /api/v1/admin/prompt-versions/:id/preview",
 		"GET /api/v1/admin/groups/:id/prompt-binding",

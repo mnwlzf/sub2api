@@ -787,6 +787,9 @@ func registerPromptTemplateRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		versions.POST("/:id/preview", ph.PreviewVersion)
 	}
 
+	// 运行期策略记录：解释“这个请求注入了没有、为什么没注入”。
+	admin.GET("/prompt-request-events", ph.ListRequestEvents)
+
 	// 分组绑定与分组内账号覆盖挂在既有 groups 分组下，避免另造授权路径。
 	admin.GET("/groups/:id/prompt-binding", ph.GetGroupBinding)
 	admin.PUT("/groups/:id/prompt-binding", ph.SetGroupBinding)

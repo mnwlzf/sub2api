@@ -588,6 +588,13 @@ func (s *PromptTemplateService) ListAdminEvents(ctx context.Context, templateID,
 	return s.repo.ListAdminEvents(ctx, templateID, groupID, limit)
 }
 
+// ListRequestEvents 查询运行期策略记录。
+//
+// 用于回答“这个请求注入了没有、为什么没注入、重试时是否沿用同一版本”。
+func (s *PromptTemplateService) ListRequestEvents(ctx context.Context, filter PromptRequestEventFilter) ([]PromptRequestEvent, error) {
+	return s.repo.ListRequestEvents(ctx, filter)
+}
+
 // PreviewVersion 生成无上游调用的结构预览。
 //
 // 只做本地结构投影，不发送任何请求、不产生费用；用于管理员确认注入字段与

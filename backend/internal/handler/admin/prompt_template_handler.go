@@ -45,6 +45,47 @@ func parsePromptID(c *gin.Context, name string) (int64, bool) {
 	return id, true
 }
 
+// ListRequestEvents 查询运行期策略记录（不含提示词正文）。
+// GET /api/v1/admin/prompt-request-events?request_id=&group_id=&version_id=&applied=
+func (h *PromptTemplateHandler) ListRequestEvents(c *gin.Context) {
+	filter := service.PromptRequestEventFilter{}
+	if v := strings.TrimSpace(c.Query("request_id")); v != "" {
+		filter.RequestID = &v
+	}
+	if id, ok := parsePromptQueryID(c, "group_id"); ok {
+		filter.GroupID = &id
+	}
+	if id, ok := parsePromptQueryID(c, "version_id"); ok {
+		filter.VersionID = &id
+	}
+	if v := strings.TrimSpace(c.Query("applied")); v != "" {
+		applied := strings.EqualFold(v, "true")
+		filter.Applied = &applied
+	}
+	if limit, err := strconv.Atoi(c.DefaultQuery("limit", "100")); err == nil {
+		filter.Limit = limit
+	}
+	events, err := h.service.ListRequestEvents(c.Request.Context(), filter)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, events)
+}
+
+// parsePromptQueryID 解析可选的正整数查询参数。
+func parsePromptQueryID(c *gin.Context, name string) (int64, bool) {
+	raw := strings.TrimSpace(c.Query(name))
+	if raw == "" {
+		return 0, false
+	}
+	id, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || id <= 0 {
+		return 0, false
+	}
+	return id, true
+}
+
 // ---------------------------------------------------------------- 模板
 
 // CreatePromptTemplateRequest 创建模板。
