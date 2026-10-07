@@ -1084,6 +1084,7 @@ export default {
       failedToUpdate: '更新分组失败',
       nameRequired: '请输入分组名称',
       rateMultipliers: '专属倍率',
+      promptBinding: '文本提示词',
       rateMultipliersTitle: '分组专属倍率管理',
       addUserRate: '添加用户专属倍率',
       rpmOverrides: '专属 RPM',

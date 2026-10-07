@@ -1067,6 +1067,7 @@ export default {
       failedToDelete: 'Failed to delete group',
       nameRequired: 'Please enter group name',
       rateMultipliers: 'Rate Multipliers',
+      promptBinding: 'Text Prompt',
       rateMultipliersTitle: 'Group Rate Multipliers',
       addUserRate: 'Add User Rate Multiplier',
       rpmOverrides: 'RPM Overrides',

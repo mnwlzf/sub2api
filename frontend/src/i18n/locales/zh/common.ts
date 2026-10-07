@@ -215,6 +215,8 @@ export default {
     securityAudit: '安全审计',
     contentModeration: '内容审计',
     promptAudit: '提示词审计',
+    promptTemplates: '文本提示词',
+    promptRequestEvents: '提示词请求记录',
     auditLogs: '操作日志',
   },
 

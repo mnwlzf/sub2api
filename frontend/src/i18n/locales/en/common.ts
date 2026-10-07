@@ -215,6 +215,8 @@ export default {
     securityAudit: 'Security Audit',
     contentModeration: 'Content Moderation',
     promptAudit: 'Prompt Audit',
+    promptTemplates: 'Text Prompts',
+    promptRequestEvents: 'Prompt Request Records',
     auditLogs: 'Audit Logs',
   },
 
