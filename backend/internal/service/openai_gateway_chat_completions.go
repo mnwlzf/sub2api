@@ -368,6 +368,14 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 	responsesBody = updatedBody
 	responsesReq.ServiceTier = normalizedOpenAIServiceTierValue(gjson.GetBytes(responsesBody, "service_tier").String())
 
+	// 文本提示词注入（Chat 入站 → Responses 出站）。
+	// 必须位于 buildUpstreamRequest 之前：注入内容属于最终出站正文，之后的步骤
+	// 只做请求头与传输层处理，不会再改写 body。
+	responsesBody, _, promptInjectErr := s.ApplyFrozenPromptInjection(c, PromptProfileChatToResponses, upstreamModel, responsesBody)
+	if promptInjectErr != nil {
+		return nil, promptInjectErr
+	}
+
 	// 5. Get access token
 	token, _, err := s.GetAccessToken(ctx, account)
 	if err != nil {

@@ -608,6 +608,15 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 	// DeepSeek / Kimi 原生 Responses 端点为无状态实现（见 normalizeDeepSeekResponsesRequestBody）。
 	body = normalizeDeepSeekResponsesRequestBody(account, body)
 
+	// 文本提示词注入（Responses 透传路径）。
+	// 位于本函数最后一次 body 归一化之后、http.NewRequest 之前，保证注入内容是
+	// 最终出站正文的一部分；模型名直接从最终 body 读取，避免依赖调用方变量。
+	body, _, promptInjectErr := s.ApplyFrozenPromptInjection(
+		c, PromptProfileResponsesHTTP, gjson.GetBytes(body, "model").String(), body)
+	if promptInjectErr != nil {
+		return nil, promptInjectErr
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, err

@@ -88,6 +88,11 @@ EOF
   curl -s -o /dev/null -w "健康检查: %{http_code}\n" "http://127.0.0.1:$PORT/health" || die "服务未就绪，见 $LOG"
 
   echo "== 4/5 造数据 =="
+  # 注意：本 heredoc 内的 SQL 一律只写 ASCII。中文注释会让 psql 收到乱码而静默失败
+  # （见文件头第 4 条）—— 注释请写在这个 heredoc 外面。
+  # supported_profiles 声明全部四种：中转账号的 /v1/chat/completions 常被转换为
+  # Responses 出站（chat_to_responses），只声明 chat_http 会得到
+  # applied=false / reason=unsupported_profile —— 那是设计要求的“不静默忽略”，不是缺陷。
   cat > "$WORKDIR/seed.sql" <<EOF
 -- 用户余额必须在首次请求前设好（见文件头第 1 条）
 INSERT INTO users(email,password_hash,role,status,balance)
@@ -120,7 +125,9 @@ SELECT (SELECT max(id) FROM prompt_templates),1,
        'Before answering anything, first output one line: INJECTION_MARKER_E2E. Then answer normally.',
        repeat('a',64),
        octet_length('Before answering anything, first output one line: INJECTION_MARKER_E2E. Then answer normally.'),
-       jsonb_build_array('$TEST_MODEL'),'[]'::jsonb,jsonb_build_array('chat_http'),repeat('b',64),now();
+       jsonb_build_array('$TEST_MODEL'),'[]'::jsonb,
+       jsonb_build_array('chat_http','responses_http','chat_to_responses','responses_to_chat'),
+       repeat('b',64),now();
 
 -- 绑定用子查询取真实 version id（见文件头第 3 条）
 INSERT INTO group_prompt_bindings(group_id,mode,version_id,revision)
