@@ -17,6 +17,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/Wei-Shaw/sub2api/ent/account"
 	"github.com/Wei-Shaw/sub2api/ent/accountgroup"
+	"github.com/Wei-Shaw/sub2api/ent/accountgrouppromptoverride"
 	"github.com/Wei-Shaw/sub2api/ent/announcement"
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
@@ -32,6 +33,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/compositemodelroute"
 	"github.com/Wei-Shaw/sub2api/ent/errorpassthroughrule"
 	"github.com/Wei-Shaw/sub2api/ent/group"
+	"github.com/Wei-Shaw/sub2api/ent/grouppromptbinding"
 	"github.com/Wei-Shaw/sub2api/ent/idempotencyrecord"
 	"github.com/Wei-Shaw/sub2api/ent/identityadoptiondecision"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
@@ -40,6 +42,10 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/pendingauthsession"
 	"github.com/Wei-Shaw/sub2api/ent/promocode"
 	"github.com/Wei-Shaw/sub2api/ent/promocodeusage"
+	"github.com/Wei-Shaw/sub2api/ent/promptadminevent"
+	"github.com/Wei-Shaw/sub2api/ent/prompttemplate"
+	"github.com/Wei-Shaw/sub2api/ent/prompttemplatedraft"
+	"github.com/Wei-Shaw/sub2api/ent/prompttemplateversion"
 	"github.com/Wei-Shaw/sub2api/ent/proxy"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
@@ -70,6 +76,8 @@ type Client struct {
 	Account *AccountClient
 	// AccountGroup is the client for interacting with the AccountGroup builders.
 	AccountGroup *AccountGroupClient
+	// AccountGroupPromptOverride is the client for interacting with the AccountGroupPromptOverride builders.
+	AccountGroupPromptOverride *AccountGroupPromptOverrideClient
 	// Announcement is the client for interacting with the Announcement builders.
 	Announcement *AnnouncementClient
 	// AnnouncementRead is the client for interacting with the AnnouncementRead builders.
@@ -98,6 +106,8 @@ type Client struct {
 	ErrorPassthroughRule *ErrorPassthroughRuleClient
 	// Group is the client for interacting with the Group builders.
 	Group *GroupClient
+	// GroupPromptBinding is the client for interacting with the GroupPromptBinding builders.
+	GroupPromptBinding *GroupPromptBindingClient
 	// IdempotencyRecord is the client for interacting with the IdempotencyRecord builders.
 	IdempotencyRecord *IdempotencyRecordClient
 	// IdentityAdoptionDecision is the client for interacting with the IdentityAdoptionDecision builders.
@@ -114,6 +124,14 @@ type Client struct {
 	PromoCode *PromoCodeClient
 	// PromoCodeUsage is the client for interacting with the PromoCodeUsage builders.
 	PromoCodeUsage *PromoCodeUsageClient
+	// PromptAdminEvent is the client for interacting with the PromptAdminEvent builders.
+	PromptAdminEvent *PromptAdminEventClient
+	// PromptTemplate is the client for interacting with the PromptTemplate builders.
+	PromptTemplate *PromptTemplateClient
+	// PromptTemplateDraft is the client for interacting with the PromptTemplateDraft builders.
+	PromptTemplateDraft *PromptTemplateDraftClient
+	// PromptTemplateVersion is the client for interacting with the PromptTemplateVersion builders.
+	PromptTemplateVersion *PromptTemplateVersionClient
 	// Proxy is the client for interacting with the Proxy builders.
 	Proxy *ProxyClient
 	// RedeemCode is the client for interacting with the RedeemCode builders.
@@ -158,6 +176,7 @@ func (c *Client) init() {
 	c.APIKey = NewAPIKeyClient(c.config)
 	c.Account = NewAccountClient(c.config)
 	c.AccountGroup = NewAccountGroupClient(c.config)
+	c.AccountGroupPromptOverride = NewAccountGroupPromptOverrideClient(c.config)
 	c.Announcement = NewAnnouncementClient(c.config)
 	c.AnnouncementRead = NewAnnouncementReadClient(c.config)
 	c.AuthIdentity = NewAuthIdentityClient(c.config)
@@ -172,6 +191,7 @@ func (c *Client) init() {
 	c.CompositeModelRoute = NewCompositeModelRouteClient(c.config)
 	c.ErrorPassthroughRule = NewErrorPassthroughRuleClient(c.config)
 	c.Group = NewGroupClient(c.config)
+	c.GroupPromptBinding = NewGroupPromptBindingClient(c.config)
 	c.IdempotencyRecord = NewIdempotencyRecordClient(c.config)
 	c.IdentityAdoptionDecision = NewIdentityAdoptionDecisionClient(c.config)
 	c.PaymentAuditLog = NewPaymentAuditLogClient(c.config)
@@ -180,6 +200,10 @@ func (c *Client) init() {
 	c.PendingAuthSession = NewPendingAuthSessionClient(c.config)
 	c.PromoCode = NewPromoCodeClient(c.config)
 	c.PromoCodeUsage = NewPromoCodeUsageClient(c.config)
+	c.PromptAdminEvent = NewPromptAdminEventClient(c.config)
+	c.PromptTemplate = NewPromptTemplateClient(c.config)
+	c.PromptTemplateDraft = NewPromptTemplateDraftClient(c.config)
+	c.PromptTemplateVersion = NewPromptTemplateVersionClient(c.config)
 	c.Proxy = NewProxyClient(c.config)
 	c.RedeemCode = NewRedeemCodeClient(c.config)
 	c.SecuritySecret = NewSecuritySecretClient(c.config)
@@ -290,6 +314,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		APIKey:                        NewAPIKeyClient(cfg),
 		Account:                       NewAccountClient(cfg),
 		AccountGroup:                  NewAccountGroupClient(cfg),
+		AccountGroupPromptOverride:    NewAccountGroupPromptOverrideClient(cfg),
 		Announcement:                  NewAnnouncementClient(cfg),
 		AnnouncementRead:              NewAnnouncementReadClient(cfg),
 		AuthIdentity:                  NewAuthIdentityClient(cfg),
@@ -304,6 +329,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		CompositeModelRoute:           NewCompositeModelRouteClient(cfg),
 		ErrorPassthroughRule:          NewErrorPassthroughRuleClient(cfg),
 		Group:                         NewGroupClient(cfg),
+		GroupPromptBinding:            NewGroupPromptBindingClient(cfg),
 		IdempotencyRecord:             NewIdempotencyRecordClient(cfg),
 		IdentityAdoptionDecision:      NewIdentityAdoptionDecisionClient(cfg),
 		PaymentAuditLog:               NewPaymentAuditLogClient(cfg),
@@ -312,6 +338,10 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		PendingAuthSession:            NewPendingAuthSessionClient(cfg),
 		PromoCode:                     NewPromoCodeClient(cfg),
 		PromoCodeUsage:                NewPromoCodeUsageClient(cfg),
+		PromptAdminEvent:              NewPromptAdminEventClient(cfg),
+		PromptTemplate:                NewPromptTemplateClient(cfg),
+		PromptTemplateDraft:           NewPromptTemplateDraftClient(cfg),
+		PromptTemplateVersion:         NewPromptTemplateVersionClient(cfg),
 		Proxy:                         NewProxyClient(cfg),
 		RedeemCode:                    NewRedeemCodeClient(cfg),
 		SecuritySecret:                NewSecuritySecretClient(cfg),
@@ -349,6 +379,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		APIKey:                        NewAPIKeyClient(cfg),
 		Account:                       NewAccountClient(cfg),
 		AccountGroup:                  NewAccountGroupClient(cfg),
+		AccountGroupPromptOverride:    NewAccountGroupPromptOverrideClient(cfg),
 		Announcement:                  NewAnnouncementClient(cfg),
 		AnnouncementRead:              NewAnnouncementReadClient(cfg),
 		AuthIdentity:                  NewAuthIdentityClient(cfg),
@@ -363,6 +394,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		CompositeModelRoute:           NewCompositeModelRouteClient(cfg),
 		ErrorPassthroughRule:          NewErrorPassthroughRuleClient(cfg),
 		Group:                         NewGroupClient(cfg),
+		GroupPromptBinding:            NewGroupPromptBindingClient(cfg),
 		IdempotencyRecord:             NewIdempotencyRecordClient(cfg),
 		IdentityAdoptionDecision:      NewIdentityAdoptionDecisionClient(cfg),
 		PaymentAuditLog:               NewPaymentAuditLogClient(cfg),
@@ -371,6 +403,10 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		PendingAuthSession:            NewPendingAuthSessionClient(cfg),
 		PromoCode:                     NewPromoCodeClient(cfg),
 		PromoCodeUsage:                NewPromoCodeUsageClient(cfg),
+		PromptAdminEvent:              NewPromptAdminEventClient(cfg),
+		PromptTemplate:                NewPromptTemplateClient(cfg),
+		PromptTemplateDraft:           NewPromptTemplateDraftClient(cfg),
+		PromptTemplateVersion:         NewPromptTemplateVersionClient(cfg),
 		Proxy:                         NewProxyClient(cfg),
 		RedeemCode:                    NewRedeemCodeClient(cfg),
 		SecuritySecret:                NewSecuritySecretClient(cfg),
@@ -415,14 +451,16 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
-		c.APIKey, c.Account, c.AccountGroup, c.Announcement, c.AnnouncementRead,
-		c.AuthIdentity, c.AuthIdentityChannel, c.BatchImageEvent, c.BatchImageItem,
-		c.BatchImageJob, c.ChannelMonitor, c.ChannelMonitorDailyRollup,
-		c.ChannelMonitorHistory, c.ChannelMonitorRequestTemplate,
-		c.CompositeModelRoute, c.ErrorPassthroughRule, c.Group, c.IdempotencyRecord,
-		c.IdentityAdoptionDecision, c.PaymentAuditLog, c.PaymentOrder,
-		c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage,
-		c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting, c.StudentVerification,
+		c.APIKey, c.Account, c.AccountGroup, c.AccountGroupPromptOverride,
+		c.Announcement, c.AnnouncementRead, c.AuthIdentity, c.AuthIdentityChannel,
+		c.BatchImageEvent, c.BatchImageItem, c.BatchImageJob, c.ChannelMonitor,
+		c.ChannelMonitorDailyRollup, c.ChannelMonitorHistory,
+		c.ChannelMonitorRequestTemplate, c.CompositeModelRoute, c.ErrorPassthroughRule,
+		c.Group, c.GroupPromptBinding, c.IdempotencyRecord, c.IdentityAdoptionDecision,
+		c.PaymentAuditLog, c.PaymentOrder, c.PaymentProviderInstance,
+		c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage, c.PromptAdminEvent,
+		c.PromptTemplate, c.PromptTemplateDraft, c.PromptTemplateVersion, c.Proxy,
+		c.RedeemCode, c.SecuritySecret, c.Setting, c.StudentVerification,
 		c.SubscriptionPlan, c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog,
 		c.User, c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
 		c.UserPlatformQuota, c.UserSubscription,
@@ -435,14 +473,16 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
-		c.APIKey, c.Account, c.AccountGroup, c.Announcement, c.AnnouncementRead,
-		c.AuthIdentity, c.AuthIdentityChannel, c.BatchImageEvent, c.BatchImageItem,
-		c.BatchImageJob, c.ChannelMonitor, c.ChannelMonitorDailyRollup,
-		c.ChannelMonitorHistory, c.ChannelMonitorRequestTemplate,
-		c.CompositeModelRoute, c.ErrorPassthroughRule, c.Group, c.IdempotencyRecord,
-		c.IdentityAdoptionDecision, c.PaymentAuditLog, c.PaymentOrder,
-		c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage,
-		c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting, c.StudentVerification,
+		c.APIKey, c.Account, c.AccountGroup, c.AccountGroupPromptOverride,
+		c.Announcement, c.AnnouncementRead, c.AuthIdentity, c.AuthIdentityChannel,
+		c.BatchImageEvent, c.BatchImageItem, c.BatchImageJob, c.ChannelMonitor,
+		c.ChannelMonitorDailyRollup, c.ChannelMonitorHistory,
+		c.ChannelMonitorRequestTemplate, c.CompositeModelRoute, c.ErrorPassthroughRule,
+		c.Group, c.GroupPromptBinding, c.IdempotencyRecord, c.IdentityAdoptionDecision,
+		c.PaymentAuditLog, c.PaymentOrder, c.PaymentProviderInstance,
+		c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage, c.PromptAdminEvent,
+		c.PromptTemplate, c.PromptTemplateDraft, c.PromptTemplateVersion, c.Proxy,
+		c.RedeemCode, c.SecuritySecret, c.Setting, c.StudentVerification,
 		c.SubscriptionPlan, c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog,
 		c.User, c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
 		c.UserPlatformQuota, c.UserSubscription,
@@ -460,6 +500,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.Account.mutate(ctx, m)
 	case *AccountGroupMutation:
 		return c.AccountGroup.mutate(ctx, m)
+	case *AccountGroupPromptOverrideMutation:
+		return c.AccountGroupPromptOverride.mutate(ctx, m)
 	case *AnnouncementMutation:
 		return c.Announcement.mutate(ctx, m)
 	case *AnnouncementReadMutation:
@@ -488,6 +530,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.ErrorPassthroughRule.mutate(ctx, m)
 	case *GroupMutation:
 		return c.Group.mutate(ctx, m)
+	case *GroupPromptBindingMutation:
+		return c.GroupPromptBinding.mutate(ctx, m)
 	case *IdempotencyRecordMutation:
 		return c.IdempotencyRecord.mutate(ctx, m)
 	case *IdentityAdoptionDecisionMutation:
@@ -504,6 +548,14 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.PromoCode.mutate(ctx, m)
 	case *PromoCodeUsageMutation:
 		return c.PromoCodeUsage.mutate(ctx, m)
+	case *PromptAdminEventMutation:
+		return c.PromptAdminEvent.mutate(ctx, m)
+	case *PromptTemplateMutation:
+		return c.PromptTemplate.mutate(ctx, m)
+	case *PromptTemplateDraftMutation:
+		return c.PromptTemplateDraft.mutate(ctx, m)
+	case *PromptTemplateVersionMutation:
+		return c.PromptTemplateVersion.mutate(ctx, m)
 	case *ProxyMutation:
 		return c.Proxy.mutate(ctx, m)
 	case *RedeemCodeMutation:
@@ -1066,6 +1118,139 @@ func (c *AccountGroupClient) mutate(ctx context.Context, m *AccountGroupMutation
 		return (&AccountGroupDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown AccountGroup mutation op: %q", m.Op())
+	}
+}
+
+// AccountGroupPromptOverrideClient is a client for the AccountGroupPromptOverride schema.
+type AccountGroupPromptOverrideClient struct {
+	config
+}
+
+// NewAccountGroupPromptOverrideClient returns a client for the AccountGroupPromptOverride from the given config.
+func NewAccountGroupPromptOverrideClient(c config) *AccountGroupPromptOverrideClient {
+	return &AccountGroupPromptOverrideClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `accountgrouppromptoverride.Hooks(f(g(h())))`.
+func (c *AccountGroupPromptOverrideClient) Use(hooks ...Hook) {
+	c.hooks.AccountGroupPromptOverride = append(c.hooks.AccountGroupPromptOverride, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `accountgrouppromptoverride.Intercept(f(g(h())))`.
+func (c *AccountGroupPromptOverrideClient) Intercept(interceptors ...Interceptor) {
+	c.inters.AccountGroupPromptOverride = append(c.inters.AccountGroupPromptOverride, interceptors...)
+}
+
+// Create returns a builder for creating a AccountGroupPromptOverride entity.
+func (c *AccountGroupPromptOverrideClient) Create() *AccountGroupPromptOverrideCreate {
+	mutation := newAccountGroupPromptOverrideMutation(c.config, OpCreate)
+	return &AccountGroupPromptOverrideCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of AccountGroupPromptOverride entities.
+func (c *AccountGroupPromptOverrideClient) CreateBulk(builders ...*AccountGroupPromptOverrideCreate) *AccountGroupPromptOverrideCreateBulk {
+	return &AccountGroupPromptOverrideCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *AccountGroupPromptOverrideClient) MapCreateBulk(slice any, setFunc func(*AccountGroupPromptOverrideCreate, int)) *AccountGroupPromptOverrideCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &AccountGroupPromptOverrideCreateBulk{err: fmt.Errorf("calling to AccountGroupPromptOverrideClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*AccountGroupPromptOverrideCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &AccountGroupPromptOverrideCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for AccountGroupPromptOverride.
+func (c *AccountGroupPromptOverrideClient) Update() *AccountGroupPromptOverrideUpdate {
+	mutation := newAccountGroupPromptOverrideMutation(c.config, OpUpdate)
+	return &AccountGroupPromptOverrideUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *AccountGroupPromptOverrideClient) UpdateOne(_m *AccountGroupPromptOverride) *AccountGroupPromptOverrideUpdateOne {
+	mutation := newAccountGroupPromptOverrideMutation(c.config, OpUpdateOne, withAccountGroupPromptOverride(_m))
+	return &AccountGroupPromptOverrideUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *AccountGroupPromptOverrideClient) UpdateOneID(id int64) *AccountGroupPromptOverrideUpdateOne {
+	mutation := newAccountGroupPromptOverrideMutation(c.config, OpUpdateOne, withAccountGroupPromptOverrideID(id))
+	return &AccountGroupPromptOverrideUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for AccountGroupPromptOverride.
+func (c *AccountGroupPromptOverrideClient) Delete() *AccountGroupPromptOverrideDelete {
+	mutation := newAccountGroupPromptOverrideMutation(c.config, OpDelete)
+	return &AccountGroupPromptOverrideDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *AccountGroupPromptOverrideClient) DeleteOne(_m *AccountGroupPromptOverride) *AccountGroupPromptOverrideDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *AccountGroupPromptOverrideClient) DeleteOneID(id int64) *AccountGroupPromptOverrideDeleteOne {
+	builder := c.Delete().Where(accountgrouppromptoverride.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &AccountGroupPromptOverrideDeleteOne{builder}
+}
+
+// Query returns a query builder for AccountGroupPromptOverride.
+func (c *AccountGroupPromptOverrideClient) Query() *AccountGroupPromptOverrideQuery {
+	return &AccountGroupPromptOverrideQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAccountGroupPromptOverride},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a AccountGroupPromptOverride entity by its id.
+func (c *AccountGroupPromptOverrideClient) Get(ctx context.Context, id int64) (*AccountGroupPromptOverride, error) {
+	return c.Query().Where(accountgrouppromptoverride.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *AccountGroupPromptOverrideClient) GetX(ctx context.Context, id int64) *AccountGroupPromptOverride {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *AccountGroupPromptOverrideClient) Hooks() []Hook {
+	return c.hooks.AccountGroupPromptOverride
+}
+
+// Interceptors returns the client interceptors.
+func (c *AccountGroupPromptOverrideClient) Interceptors() []Interceptor {
+	return c.inters.AccountGroupPromptOverride
+}
+
+func (c *AccountGroupPromptOverrideClient) mutate(ctx context.Context, m *AccountGroupPromptOverrideMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&AccountGroupPromptOverrideCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&AccountGroupPromptOverrideUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&AccountGroupPromptOverrideUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&AccountGroupPromptOverrideDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown AccountGroupPromptOverride mutation op: %q", m.Op())
 	}
 }
 
@@ -3287,6 +3472,139 @@ func (c *GroupClient) mutate(ctx context.Context, m *GroupMutation) (Value, erro
 	}
 }
 
+// GroupPromptBindingClient is a client for the GroupPromptBinding schema.
+type GroupPromptBindingClient struct {
+	config
+}
+
+// NewGroupPromptBindingClient returns a client for the GroupPromptBinding from the given config.
+func NewGroupPromptBindingClient(c config) *GroupPromptBindingClient {
+	return &GroupPromptBindingClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `grouppromptbinding.Hooks(f(g(h())))`.
+func (c *GroupPromptBindingClient) Use(hooks ...Hook) {
+	c.hooks.GroupPromptBinding = append(c.hooks.GroupPromptBinding, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `grouppromptbinding.Intercept(f(g(h())))`.
+func (c *GroupPromptBindingClient) Intercept(interceptors ...Interceptor) {
+	c.inters.GroupPromptBinding = append(c.inters.GroupPromptBinding, interceptors...)
+}
+
+// Create returns a builder for creating a GroupPromptBinding entity.
+func (c *GroupPromptBindingClient) Create() *GroupPromptBindingCreate {
+	mutation := newGroupPromptBindingMutation(c.config, OpCreate)
+	return &GroupPromptBindingCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of GroupPromptBinding entities.
+func (c *GroupPromptBindingClient) CreateBulk(builders ...*GroupPromptBindingCreate) *GroupPromptBindingCreateBulk {
+	return &GroupPromptBindingCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *GroupPromptBindingClient) MapCreateBulk(slice any, setFunc func(*GroupPromptBindingCreate, int)) *GroupPromptBindingCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &GroupPromptBindingCreateBulk{err: fmt.Errorf("calling to GroupPromptBindingClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*GroupPromptBindingCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &GroupPromptBindingCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for GroupPromptBinding.
+func (c *GroupPromptBindingClient) Update() *GroupPromptBindingUpdate {
+	mutation := newGroupPromptBindingMutation(c.config, OpUpdate)
+	return &GroupPromptBindingUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *GroupPromptBindingClient) UpdateOne(_m *GroupPromptBinding) *GroupPromptBindingUpdateOne {
+	mutation := newGroupPromptBindingMutation(c.config, OpUpdateOne, withGroupPromptBinding(_m))
+	return &GroupPromptBindingUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *GroupPromptBindingClient) UpdateOneID(id int64) *GroupPromptBindingUpdateOne {
+	mutation := newGroupPromptBindingMutation(c.config, OpUpdateOne, withGroupPromptBindingID(id))
+	return &GroupPromptBindingUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for GroupPromptBinding.
+func (c *GroupPromptBindingClient) Delete() *GroupPromptBindingDelete {
+	mutation := newGroupPromptBindingMutation(c.config, OpDelete)
+	return &GroupPromptBindingDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *GroupPromptBindingClient) DeleteOne(_m *GroupPromptBinding) *GroupPromptBindingDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *GroupPromptBindingClient) DeleteOneID(id int64) *GroupPromptBindingDeleteOne {
+	builder := c.Delete().Where(grouppromptbinding.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &GroupPromptBindingDeleteOne{builder}
+}
+
+// Query returns a query builder for GroupPromptBinding.
+func (c *GroupPromptBindingClient) Query() *GroupPromptBindingQuery {
+	return &GroupPromptBindingQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeGroupPromptBinding},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a GroupPromptBinding entity by its id.
+func (c *GroupPromptBindingClient) Get(ctx context.Context, id int64) (*GroupPromptBinding, error) {
+	return c.Query().Where(grouppromptbinding.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *GroupPromptBindingClient) GetX(ctx context.Context, id int64) *GroupPromptBinding {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *GroupPromptBindingClient) Hooks() []Hook {
+	return c.hooks.GroupPromptBinding
+}
+
+// Interceptors returns the client interceptors.
+func (c *GroupPromptBindingClient) Interceptors() []Interceptor {
+	return c.inters.GroupPromptBinding
+}
+
+func (c *GroupPromptBindingClient) mutate(ctx context.Context, m *GroupPromptBindingMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&GroupPromptBindingCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&GroupPromptBindingUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&GroupPromptBindingUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&GroupPromptBindingDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown GroupPromptBinding mutation op: %q", m.Op())
+	}
+}
+
 // IdempotencyRecordClient is a client for the IdempotencyRecord schema.
 type IdempotencyRecordClient struct {
 	config
@@ -4476,6 +4794,538 @@ func (c *PromoCodeUsageClient) mutate(ctx context.Context, m *PromoCodeUsageMuta
 		return (&PromoCodeUsageDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown PromoCodeUsage mutation op: %q", m.Op())
+	}
+}
+
+// PromptAdminEventClient is a client for the PromptAdminEvent schema.
+type PromptAdminEventClient struct {
+	config
+}
+
+// NewPromptAdminEventClient returns a client for the PromptAdminEvent from the given config.
+func NewPromptAdminEventClient(c config) *PromptAdminEventClient {
+	return &PromptAdminEventClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `promptadminevent.Hooks(f(g(h())))`.
+func (c *PromptAdminEventClient) Use(hooks ...Hook) {
+	c.hooks.PromptAdminEvent = append(c.hooks.PromptAdminEvent, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `promptadminevent.Intercept(f(g(h())))`.
+func (c *PromptAdminEventClient) Intercept(interceptors ...Interceptor) {
+	c.inters.PromptAdminEvent = append(c.inters.PromptAdminEvent, interceptors...)
+}
+
+// Create returns a builder for creating a PromptAdminEvent entity.
+func (c *PromptAdminEventClient) Create() *PromptAdminEventCreate {
+	mutation := newPromptAdminEventMutation(c.config, OpCreate)
+	return &PromptAdminEventCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of PromptAdminEvent entities.
+func (c *PromptAdminEventClient) CreateBulk(builders ...*PromptAdminEventCreate) *PromptAdminEventCreateBulk {
+	return &PromptAdminEventCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *PromptAdminEventClient) MapCreateBulk(slice any, setFunc func(*PromptAdminEventCreate, int)) *PromptAdminEventCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &PromptAdminEventCreateBulk{err: fmt.Errorf("calling to PromptAdminEventClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*PromptAdminEventCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &PromptAdminEventCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for PromptAdminEvent.
+func (c *PromptAdminEventClient) Update() *PromptAdminEventUpdate {
+	mutation := newPromptAdminEventMutation(c.config, OpUpdate)
+	return &PromptAdminEventUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *PromptAdminEventClient) UpdateOne(_m *PromptAdminEvent) *PromptAdminEventUpdateOne {
+	mutation := newPromptAdminEventMutation(c.config, OpUpdateOne, withPromptAdminEvent(_m))
+	return &PromptAdminEventUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *PromptAdminEventClient) UpdateOneID(id int64) *PromptAdminEventUpdateOne {
+	mutation := newPromptAdminEventMutation(c.config, OpUpdateOne, withPromptAdminEventID(id))
+	return &PromptAdminEventUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for PromptAdminEvent.
+func (c *PromptAdminEventClient) Delete() *PromptAdminEventDelete {
+	mutation := newPromptAdminEventMutation(c.config, OpDelete)
+	return &PromptAdminEventDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *PromptAdminEventClient) DeleteOne(_m *PromptAdminEvent) *PromptAdminEventDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *PromptAdminEventClient) DeleteOneID(id int64) *PromptAdminEventDeleteOne {
+	builder := c.Delete().Where(promptadminevent.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &PromptAdminEventDeleteOne{builder}
+}
+
+// Query returns a query builder for PromptAdminEvent.
+func (c *PromptAdminEventClient) Query() *PromptAdminEventQuery {
+	return &PromptAdminEventQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypePromptAdminEvent},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a PromptAdminEvent entity by its id.
+func (c *PromptAdminEventClient) Get(ctx context.Context, id int64) (*PromptAdminEvent, error) {
+	return c.Query().Where(promptadminevent.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *PromptAdminEventClient) GetX(ctx context.Context, id int64) *PromptAdminEvent {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *PromptAdminEventClient) Hooks() []Hook {
+	return c.hooks.PromptAdminEvent
+}
+
+// Interceptors returns the client interceptors.
+func (c *PromptAdminEventClient) Interceptors() []Interceptor {
+	return c.inters.PromptAdminEvent
+}
+
+func (c *PromptAdminEventClient) mutate(ctx context.Context, m *PromptAdminEventMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&PromptAdminEventCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&PromptAdminEventUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&PromptAdminEventUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&PromptAdminEventDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown PromptAdminEvent mutation op: %q", m.Op())
+	}
+}
+
+// PromptTemplateClient is a client for the PromptTemplate schema.
+type PromptTemplateClient struct {
+	config
+}
+
+// NewPromptTemplateClient returns a client for the PromptTemplate from the given config.
+func NewPromptTemplateClient(c config) *PromptTemplateClient {
+	return &PromptTemplateClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `prompttemplate.Hooks(f(g(h())))`.
+func (c *PromptTemplateClient) Use(hooks ...Hook) {
+	c.hooks.PromptTemplate = append(c.hooks.PromptTemplate, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `prompttemplate.Intercept(f(g(h())))`.
+func (c *PromptTemplateClient) Intercept(interceptors ...Interceptor) {
+	c.inters.PromptTemplate = append(c.inters.PromptTemplate, interceptors...)
+}
+
+// Create returns a builder for creating a PromptTemplate entity.
+func (c *PromptTemplateClient) Create() *PromptTemplateCreate {
+	mutation := newPromptTemplateMutation(c.config, OpCreate)
+	return &PromptTemplateCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of PromptTemplate entities.
+func (c *PromptTemplateClient) CreateBulk(builders ...*PromptTemplateCreate) *PromptTemplateCreateBulk {
+	return &PromptTemplateCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *PromptTemplateClient) MapCreateBulk(slice any, setFunc func(*PromptTemplateCreate, int)) *PromptTemplateCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &PromptTemplateCreateBulk{err: fmt.Errorf("calling to PromptTemplateClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*PromptTemplateCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &PromptTemplateCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for PromptTemplate.
+func (c *PromptTemplateClient) Update() *PromptTemplateUpdate {
+	mutation := newPromptTemplateMutation(c.config, OpUpdate)
+	return &PromptTemplateUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *PromptTemplateClient) UpdateOne(_m *PromptTemplate) *PromptTemplateUpdateOne {
+	mutation := newPromptTemplateMutation(c.config, OpUpdateOne, withPromptTemplate(_m))
+	return &PromptTemplateUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *PromptTemplateClient) UpdateOneID(id int64) *PromptTemplateUpdateOne {
+	mutation := newPromptTemplateMutation(c.config, OpUpdateOne, withPromptTemplateID(id))
+	return &PromptTemplateUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for PromptTemplate.
+func (c *PromptTemplateClient) Delete() *PromptTemplateDelete {
+	mutation := newPromptTemplateMutation(c.config, OpDelete)
+	return &PromptTemplateDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *PromptTemplateClient) DeleteOne(_m *PromptTemplate) *PromptTemplateDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *PromptTemplateClient) DeleteOneID(id int64) *PromptTemplateDeleteOne {
+	builder := c.Delete().Where(prompttemplate.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &PromptTemplateDeleteOne{builder}
+}
+
+// Query returns a query builder for PromptTemplate.
+func (c *PromptTemplateClient) Query() *PromptTemplateQuery {
+	return &PromptTemplateQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypePromptTemplate},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a PromptTemplate entity by its id.
+func (c *PromptTemplateClient) Get(ctx context.Context, id int64) (*PromptTemplate, error) {
+	return c.Query().Where(prompttemplate.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *PromptTemplateClient) GetX(ctx context.Context, id int64) *PromptTemplate {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *PromptTemplateClient) Hooks() []Hook {
+	return c.hooks.PromptTemplate
+}
+
+// Interceptors returns the client interceptors.
+func (c *PromptTemplateClient) Interceptors() []Interceptor {
+	return c.inters.PromptTemplate
+}
+
+func (c *PromptTemplateClient) mutate(ctx context.Context, m *PromptTemplateMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&PromptTemplateCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&PromptTemplateUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&PromptTemplateUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&PromptTemplateDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown PromptTemplate mutation op: %q", m.Op())
+	}
+}
+
+// PromptTemplateDraftClient is a client for the PromptTemplateDraft schema.
+type PromptTemplateDraftClient struct {
+	config
+}
+
+// NewPromptTemplateDraftClient returns a client for the PromptTemplateDraft from the given config.
+func NewPromptTemplateDraftClient(c config) *PromptTemplateDraftClient {
+	return &PromptTemplateDraftClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `prompttemplatedraft.Hooks(f(g(h())))`.
+func (c *PromptTemplateDraftClient) Use(hooks ...Hook) {
+	c.hooks.PromptTemplateDraft = append(c.hooks.PromptTemplateDraft, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `prompttemplatedraft.Intercept(f(g(h())))`.
+func (c *PromptTemplateDraftClient) Intercept(interceptors ...Interceptor) {
+	c.inters.PromptTemplateDraft = append(c.inters.PromptTemplateDraft, interceptors...)
+}
+
+// Create returns a builder for creating a PromptTemplateDraft entity.
+func (c *PromptTemplateDraftClient) Create() *PromptTemplateDraftCreate {
+	mutation := newPromptTemplateDraftMutation(c.config, OpCreate)
+	return &PromptTemplateDraftCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of PromptTemplateDraft entities.
+func (c *PromptTemplateDraftClient) CreateBulk(builders ...*PromptTemplateDraftCreate) *PromptTemplateDraftCreateBulk {
+	return &PromptTemplateDraftCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *PromptTemplateDraftClient) MapCreateBulk(slice any, setFunc func(*PromptTemplateDraftCreate, int)) *PromptTemplateDraftCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &PromptTemplateDraftCreateBulk{err: fmt.Errorf("calling to PromptTemplateDraftClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*PromptTemplateDraftCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &PromptTemplateDraftCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for PromptTemplateDraft.
+func (c *PromptTemplateDraftClient) Update() *PromptTemplateDraftUpdate {
+	mutation := newPromptTemplateDraftMutation(c.config, OpUpdate)
+	return &PromptTemplateDraftUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *PromptTemplateDraftClient) UpdateOne(_m *PromptTemplateDraft) *PromptTemplateDraftUpdateOne {
+	mutation := newPromptTemplateDraftMutation(c.config, OpUpdateOne, withPromptTemplateDraft(_m))
+	return &PromptTemplateDraftUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *PromptTemplateDraftClient) UpdateOneID(id int64) *PromptTemplateDraftUpdateOne {
+	mutation := newPromptTemplateDraftMutation(c.config, OpUpdateOne, withPromptTemplateDraftID(id))
+	return &PromptTemplateDraftUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for PromptTemplateDraft.
+func (c *PromptTemplateDraftClient) Delete() *PromptTemplateDraftDelete {
+	mutation := newPromptTemplateDraftMutation(c.config, OpDelete)
+	return &PromptTemplateDraftDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *PromptTemplateDraftClient) DeleteOne(_m *PromptTemplateDraft) *PromptTemplateDraftDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *PromptTemplateDraftClient) DeleteOneID(id int64) *PromptTemplateDraftDeleteOne {
+	builder := c.Delete().Where(prompttemplatedraft.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &PromptTemplateDraftDeleteOne{builder}
+}
+
+// Query returns a query builder for PromptTemplateDraft.
+func (c *PromptTemplateDraftClient) Query() *PromptTemplateDraftQuery {
+	return &PromptTemplateDraftQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypePromptTemplateDraft},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a PromptTemplateDraft entity by its id.
+func (c *PromptTemplateDraftClient) Get(ctx context.Context, id int64) (*PromptTemplateDraft, error) {
+	return c.Query().Where(prompttemplatedraft.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *PromptTemplateDraftClient) GetX(ctx context.Context, id int64) *PromptTemplateDraft {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *PromptTemplateDraftClient) Hooks() []Hook {
+	return c.hooks.PromptTemplateDraft
+}
+
+// Interceptors returns the client interceptors.
+func (c *PromptTemplateDraftClient) Interceptors() []Interceptor {
+	return c.inters.PromptTemplateDraft
+}
+
+func (c *PromptTemplateDraftClient) mutate(ctx context.Context, m *PromptTemplateDraftMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&PromptTemplateDraftCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&PromptTemplateDraftUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&PromptTemplateDraftUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&PromptTemplateDraftDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown PromptTemplateDraft mutation op: %q", m.Op())
+	}
+}
+
+// PromptTemplateVersionClient is a client for the PromptTemplateVersion schema.
+type PromptTemplateVersionClient struct {
+	config
+}
+
+// NewPromptTemplateVersionClient returns a client for the PromptTemplateVersion from the given config.
+func NewPromptTemplateVersionClient(c config) *PromptTemplateVersionClient {
+	return &PromptTemplateVersionClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `prompttemplateversion.Hooks(f(g(h())))`.
+func (c *PromptTemplateVersionClient) Use(hooks ...Hook) {
+	c.hooks.PromptTemplateVersion = append(c.hooks.PromptTemplateVersion, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `prompttemplateversion.Intercept(f(g(h())))`.
+func (c *PromptTemplateVersionClient) Intercept(interceptors ...Interceptor) {
+	c.inters.PromptTemplateVersion = append(c.inters.PromptTemplateVersion, interceptors...)
+}
+
+// Create returns a builder for creating a PromptTemplateVersion entity.
+func (c *PromptTemplateVersionClient) Create() *PromptTemplateVersionCreate {
+	mutation := newPromptTemplateVersionMutation(c.config, OpCreate)
+	return &PromptTemplateVersionCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of PromptTemplateVersion entities.
+func (c *PromptTemplateVersionClient) CreateBulk(builders ...*PromptTemplateVersionCreate) *PromptTemplateVersionCreateBulk {
+	return &PromptTemplateVersionCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *PromptTemplateVersionClient) MapCreateBulk(slice any, setFunc func(*PromptTemplateVersionCreate, int)) *PromptTemplateVersionCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &PromptTemplateVersionCreateBulk{err: fmt.Errorf("calling to PromptTemplateVersionClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*PromptTemplateVersionCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &PromptTemplateVersionCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for PromptTemplateVersion.
+func (c *PromptTemplateVersionClient) Update() *PromptTemplateVersionUpdate {
+	mutation := newPromptTemplateVersionMutation(c.config, OpUpdate)
+	return &PromptTemplateVersionUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *PromptTemplateVersionClient) UpdateOne(_m *PromptTemplateVersion) *PromptTemplateVersionUpdateOne {
+	mutation := newPromptTemplateVersionMutation(c.config, OpUpdateOne, withPromptTemplateVersion(_m))
+	return &PromptTemplateVersionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *PromptTemplateVersionClient) UpdateOneID(id int64) *PromptTemplateVersionUpdateOne {
+	mutation := newPromptTemplateVersionMutation(c.config, OpUpdateOne, withPromptTemplateVersionID(id))
+	return &PromptTemplateVersionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for PromptTemplateVersion.
+func (c *PromptTemplateVersionClient) Delete() *PromptTemplateVersionDelete {
+	mutation := newPromptTemplateVersionMutation(c.config, OpDelete)
+	return &PromptTemplateVersionDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *PromptTemplateVersionClient) DeleteOne(_m *PromptTemplateVersion) *PromptTemplateVersionDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *PromptTemplateVersionClient) DeleteOneID(id int64) *PromptTemplateVersionDeleteOne {
+	builder := c.Delete().Where(prompttemplateversion.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &PromptTemplateVersionDeleteOne{builder}
+}
+
+// Query returns a query builder for PromptTemplateVersion.
+func (c *PromptTemplateVersionClient) Query() *PromptTemplateVersionQuery {
+	return &PromptTemplateVersionQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypePromptTemplateVersion},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a PromptTemplateVersion entity by its id.
+func (c *PromptTemplateVersionClient) Get(ctx context.Context, id int64) (*PromptTemplateVersion, error) {
+	return c.Query().Where(prompttemplateversion.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *PromptTemplateVersionClient) GetX(ctx context.Context, id int64) *PromptTemplateVersion {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *PromptTemplateVersionClient) Hooks() []Hook {
+	return c.hooks.PromptTemplateVersion
+}
+
+// Interceptors returns the client interceptors.
+func (c *PromptTemplateVersionClient) Interceptors() []Interceptor {
+	return c.inters.PromptTemplateVersion
+}
+
+func (c *PromptTemplateVersionClient) mutate(ctx context.Context, m *PromptTemplateVersionMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&PromptTemplateVersionCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&PromptTemplateVersionUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&PromptTemplateVersionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&PromptTemplateVersionDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown PromptTemplateVersion mutation op: %q", m.Op())
 	}
 }
 
@@ -7014,27 +7864,31 @@ func (c *UserSubscriptionClient) mutate(ctx context.Context, m *UserSubscription
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		APIKey, Account, AccountGroup, Announcement, AnnouncementRead, AuthIdentity,
-		AuthIdentityChannel, BatchImageEvent, BatchImageItem, BatchImageJob,
-		ChannelMonitor, ChannelMonitorDailyRollup, ChannelMonitorHistory,
-		ChannelMonitorRequestTemplate, CompositeModelRoute, ErrorPassthroughRule,
-		Group, IdempotencyRecord, IdentityAdoptionDecision, PaymentAuditLog,
-		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
-		PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting,
-		StudentVerification, SubscriptionPlan, TLSFingerprintProfile, UsageCleanupTask,
-		UsageLog, User, UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
+		APIKey, Account, AccountGroup, AccountGroupPromptOverride, Announcement,
+		AnnouncementRead, AuthIdentity, AuthIdentityChannel, BatchImageEvent,
+		BatchImageItem, BatchImageJob, ChannelMonitor, ChannelMonitorDailyRollup,
+		ChannelMonitorHistory, ChannelMonitorRequestTemplate, CompositeModelRoute,
+		ErrorPassthroughRule, Group, GroupPromptBinding, IdempotencyRecord,
+		IdentityAdoptionDecision, PaymentAuditLog, PaymentOrder,
+		PaymentProviderInstance, PendingAuthSession, PromoCode, PromoCodeUsage,
+		PromptAdminEvent, PromptTemplate, PromptTemplateDraft, PromptTemplateVersion,
+		Proxy, RedeemCode, SecuritySecret, Setting, StudentVerification,
+		SubscriptionPlan, TLSFingerprintProfile, UsageCleanupTask, UsageLog, User,
+		UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
 		UserPlatformQuota, UserSubscription []ent.Hook
 	}
 	inters struct {
-		APIKey, Account, AccountGroup, Announcement, AnnouncementRead, AuthIdentity,
-		AuthIdentityChannel, BatchImageEvent, BatchImageItem, BatchImageJob,
-		ChannelMonitor, ChannelMonitorDailyRollup, ChannelMonitorHistory,
-		ChannelMonitorRequestTemplate, CompositeModelRoute, ErrorPassthroughRule,
-		Group, IdempotencyRecord, IdentityAdoptionDecision, PaymentAuditLog,
-		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
-		PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting,
-		StudentVerification, SubscriptionPlan, TLSFingerprintProfile, UsageCleanupTask,
-		UsageLog, User, UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
+		APIKey, Account, AccountGroup, AccountGroupPromptOverride, Announcement,
+		AnnouncementRead, AuthIdentity, AuthIdentityChannel, BatchImageEvent,
+		BatchImageItem, BatchImageJob, ChannelMonitor, ChannelMonitorDailyRollup,
+		ChannelMonitorHistory, ChannelMonitorRequestTemplate, CompositeModelRoute,
+		ErrorPassthroughRule, Group, GroupPromptBinding, IdempotencyRecord,
+		IdentityAdoptionDecision, PaymentAuditLog, PaymentOrder,
+		PaymentProviderInstance, PendingAuthSession, PromoCode, PromoCodeUsage,
+		PromptAdminEvent, PromptTemplate, PromptTemplateDraft, PromptTemplateVersion,
+		Proxy, RedeemCode, SecuritySecret, Setting, StudentVerification,
+		SubscriptionPlan, TLSFingerprintProfile, UsageCleanupTask, UsageLog, User,
+		UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
 		UserPlatformQuota, UserSubscription []ent.Interceptor
 	}
 )

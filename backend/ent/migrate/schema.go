@@ -259,6 +259,41 @@ var (
 			},
 		},
 	}
+	// AccountGroupPromptOverridesColumns holds the columns for the "account_group_prompt_overrides" table.
+	AccountGroupPromptOverridesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "account_id", Type: field.TypeInt64},
+		{Name: "group_id", Type: field.TypeInt64},
+		{Name: "mode", Type: field.TypeString, Size: 20, Default: "inherit"},
+		{Name: "version_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "revision", Type: field.TypeInt, Default: 1},
+		{Name: "updated_by", Type: field.TypeInt64, Nullable: true},
+	}
+	// AccountGroupPromptOverridesTable holds the schema information for the "account_group_prompt_overrides" table.
+	AccountGroupPromptOverridesTable = &schema.Table{
+		Name:       "account_group_prompt_overrides",
+		Columns:    AccountGroupPromptOverridesColumns,
+		PrimaryKey: []*schema.Column{AccountGroupPromptOverridesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "accountgrouppromptoverride_account_id_group_id",
+				Unique:  true,
+				Columns: []*schema.Column{AccountGroupPromptOverridesColumns[3], AccountGroupPromptOverridesColumns[4]},
+			},
+			{
+				Name:    "accountgrouppromptoverride_group_id",
+				Unique:  false,
+				Columns: []*schema.Column{AccountGroupPromptOverridesColumns[4]},
+			},
+			{
+				Name:    "accountgrouppromptoverride_version_id",
+				Unique:  false,
+				Columns: []*schema.Column{AccountGroupPromptOverridesColumns[6]},
+			},
+		},
+	}
 	// AnnouncementsColumns holds the columns for the "announcements" table.
 	AnnouncementsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -1016,6 +1051,35 @@ var (
 			},
 		},
 	}
+	// GroupPromptBindingsColumns holds the columns for the "group_prompt_bindings" table.
+	GroupPromptBindingsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "group_id", Type: field.TypeInt64},
+		{Name: "mode", Type: field.TypeString, Size: 20, Default: "disabled"},
+		{Name: "version_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "revision", Type: field.TypeInt, Default: 1},
+		{Name: "updated_by", Type: field.TypeInt64, Nullable: true},
+	}
+	// GroupPromptBindingsTable holds the schema information for the "group_prompt_bindings" table.
+	GroupPromptBindingsTable = &schema.Table{
+		Name:       "group_prompt_bindings",
+		Columns:    GroupPromptBindingsColumns,
+		PrimaryKey: []*schema.Column{GroupPromptBindingsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "grouppromptbinding_group_id",
+				Unique:  true,
+				Columns: []*schema.Column{GroupPromptBindingsColumns[3]},
+			},
+			{
+				Name:    "grouppromptbinding_version_id",
+				Unique:  false,
+				Columns: []*schema.Column{GroupPromptBindingsColumns[5]},
+			},
+		},
+	}
 	// IdempotencyRecordsColumns holds the columns for the "idempotency_records" table.
 	IdempotencyRecordsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -1395,6 +1459,152 @@ var (
 				Name:    "promocodeusage_promo_code_id_user_id",
 				Unique:  true,
 				Columns: []*schema.Column{PromoCodeUsagesColumns[3], PromoCodeUsagesColumns[4]},
+			},
+		},
+	}
+	// PromptAdminEventsColumns holds the columns for the "prompt_admin_events" table.
+	PromptAdminEventsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "action", Type: field.TypeString, Size: 40},
+		{Name: "scope", Type: field.TypeString, Size: 20},
+		{Name: "template_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "version_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "group_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "account_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "actor_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "actor_name", Type: field.TypeString, Nullable: true, Size: 100},
+		{Name: "before_state", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "after_state", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "request_id", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "note", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
+	}
+	// PromptAdminEventsTable holds the schema information for the "prompt_admin_events" table.
+	PromptAdminEventsTable = &schema.Table{
+		Name:       "prompt_admin_events",
+		Columns:    PromptAdminEventsColumns,
+		PrimaryKey: []*schema.Column{PromptAdminEventsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "promptadminevent_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{PromptAdminEventsColumns[1]},
+			},
+			{
+				Name:    "promptadminevent_template_id",
+				Unique:  false,
+				Columns: []*schema.Column{PromptAdminEventsColumns[5]},
+			},
+			{
+				Name:    "promptadminevent_group_id",
+				Unique:  false,
+				Columns: []*schema.Column{PromptAdminEventsColumns[7]},
+			},
+			{
+				Name:    "promptadminevent_account_id",
+				Unique:  false,
+				Columns: []*schema.Column{PromptAdminEventsColumns[8]},
+			},
+		},
+	}
+	// PromptTemplatesColumns holds the columns for the "prompt_templates" table.
+	PromptTemplatesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "name", Type: field.TypeString, Size: 100},
+		{Name: "description", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "source_url", Type: field.TypeString, Nullable: true, Size: 500},
+		{Name: "source_note", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "archived_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "revision", Type: field.TypeInt, Default: 1},
+		{Name: "created_by", Type: field.TypeInt64, Nullable: true},
+		{Name: "updated_by", Type: field.TypeInt64, Nullable: true},
+	}
+	// PromptTemplatesTable holds the schema information for the "prompt_templates" table.
+	PromptTemplatesTable = &schema.Table{
+		Name:       "prompt_templates",
+		Columns:    PromptTemplatesColumns,
+		PrimaryKey: []*schema.Column{PromptTemplatesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "prompttemplate_name",
+				Unique:  false,
+				Columns: []*schema.Column{PromptTemplatesColumns[3]},
+			},
+			{
+				Name:    "prompttemplate_archived_at",
+				Unique:  false,
+				Columns: []*schema.Column{PromptTemplatesColumns[7]},
+			},
+		},
+	}
+	// PromptTemplateDraftsColumns holds the columns for the "prompt_template_drafts" table.
+	PromptTemplateDraftsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "template_id", Type: field.TypeInt64},
+		{Name: "body", Type: field.TypeString, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "client_models", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "upstream_models", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "supported_profiles", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "revision", Type: field.TypeInt, Default: 1},
+		{Name: "updated_by", Type: field.TypeInt64, Nullable: true},
+	}
+	// PromptTemplateDraftsTable holds the schema information for the "prompt_template_drafts" table.
+	PromptTemplateDraftsTable = &schema.Table{
+		Name:       "prompt_template_drafts",
+		Columns:    PromptTemplateDraftsColumns,
+		PrimaryKey: []*schema.Column{PromptTemplateDraftsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "prompttemplatedraft_template_id",
+				Unique:  true,
+				Columns: []*schema.Column{PromptTemplateDraftsColumns[3]},
+			},
+		},
+	}
+	// PromptTemplateVersionsColumns holds the columns for the "prompt_template_versions" table.
+	PromptTemplateVersionsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "template_id", Type: field.TypeInt64},
+		{Name: "version_no", Type: field.TypeInt},
+		{Name: "body", Type: field.TypeString, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "body_sha256", Type: field.TypeString, Size: 64},
+		{Name: "body_bytes", Type: field.TypeInt},
+		{Name: "client_models", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "upstream_models", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "supported_profiles", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "manifest_sha256", Type: field.TypeString, Size: 64},
+		{Name: "change_note", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "idempotency_key", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "published_by", Type: field.TypeInt64, Nullable: true},
+		{Name: "published_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+	}
+	// PromptTemplateVersionsTable holds the schema information for the "prompt_template_versions" table.
+	PromptTemplateVersionsTable = &schema.Table{
+		Name:       "prompt_template_versions",
+		Columns:    PromptTemplateVersionsColumns,
+		PrimaryKey: []*schema.Column{PromptTemplateVersionsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "prompttemplateversion_template_id_version_no",
+				Unique:  true,
+				Columns: []*schema.Column{PromptTemplateVersionsColumns[3], PromptTemplateVersionsColumns[4]},
+			},
+			{
+				Name:    "prompttemplateversion_template_id",
+				Unique:  false,
+				Columns: []*schema.Column{PromptTemplateVersionsColumns[3]},
+			},
+			{
+				Name:    "prompttemplateversion_body_sha256",
+				Unique:  false,
+				Columns: []*schema.Column{PromptTemplateVersionsColumns[6]},
 			},
 		},
 	}
@@ -2141,6 +2351,7 @@ var (
 		APIKeysTable,
 		AccountsTable,
 		AccountGroupsTable,
+		AccountGroupPromptOverridesTable,
 		AnnouncementsTable,
 		AnnouncementReadsTable,
 		AuthIdentitiesTable,
@@ -2155,6 +2366,7 @@ var (
 		CompositeModelRoutesTable,
 		ErrorPassthroughRulesTable,
 		GroupsTable,
+		GroupPromptBindingsTable,
 		IdempotencyRecordsTable,
 		IdentityAdoptionDecisionsTable,
 		PaymentAuditLogsTable,
@@ -2163,6 +2375,10 @@ var (
 		PendingAuthSessionsTable,
 		PromoCodesTable,
 		PromoCodeUsagesTable,
+		PromptAdminEventsTable,
+		PromptTemplatesTable,
+		PromptTemplateDraftsTable,
+		PromptTemplateVersionsTable,
 		ProxiesTable,
 		RedeemCodesTable,
 		SecuritySecretsTable,
@@ -2196,6 +2412,9 @@ func init() {
 	AccountGroupsTable.ForeignKeys[1].RefTable = GroupsTable
 	AccountGroupsTable.Annotation = &entsql.Annotation{
 		Table: "account_groups",
+	}
+	AccountGroupPromptOverridesTable.Annotation = &entsql.Annotation{
+		Table: "account_group_prompt_overrides",
 	}
 	AnnouncementsTable.Annotation = &entsql.Annotation{
 		Table: "announcements",
@@ -2247,6 +2466,9 @@ func init() {
 	GroupsTable.Annotation = &entsql.Annotation{
 		Table: "groups",
 	}
+	GroupPromptBindingsTable.Annotation = &entsql.Annotation{
+		Table: "group_prompt_bindings",
+	}
 	IdempotencyRecordsTable.Annotation = &entsql.Annotation{
 		Table: "idempotency_records",
 	}
@@ -2276,6 +2498,18 @@ func init() {
 	PromoCodeUsagesTable.ForeignKeys[1].RefTable = UsersTable
 	PromoCodeUsagesTable.Annotation = &entsql.Annotation{
 		Table: "promo_code_usages",
+	}
+	PromptAdminEventsTable.Annotation = &entsql.Annotation{
+		Table: "prompt_admin_events",
+	}
+	PromptTemplatesTable.Annotation = &entsql.Annotation{
+		Table: "prompt_templates",
+	}
+	PromptTemplateDraftsTable.Annotation = &entsql.Annotation{
+		Table: "prompt_template_drafts",
+	}
+	PromptTemplateVersionsTable.Annotation = &entsql.Annotation{
+		Table: "prompt_template_versions",
 	}
 	ProxiesTable.ForeignKeys[0].RefTable = ProxiesTable
 	ProxiesTable.Annotation = &entsql.Annotation{

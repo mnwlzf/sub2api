@@ -7,6 +7,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/ent/account"
 	"github.com/Wei-Shaw/sub2api/ent/accountgroup"
+	"github.com/Wei-Shaw/sub2api/ent/accountgrouppromptoverride"
 	"github.com/Wei-Shaw/sub2api/ent/announcement"
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
@@ -22,6 +23,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/compositemodelroute"
 	"github.com/Wei-Shaw/sub2api/ent/errorpassthroughrule"
 	"github.com/Wei-Shaw/sub2api/ent/group"
+	"github.com/Wei-Shaw/sub2api/ent/grouppromptbinding"
 	"github.com/Wei-Shaw/sub2api/ent/idempotencyrecord"
 	"github.com/Wei-Shaw/sub2api/ent/identityadoptiondecision"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
@@ -30,6 +32,10 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/pendingauthsession"
 	"github.com/Wei-Shaw/sub2api/ent/promocode"
 	"github.com/Wei-Shaw/sub2api/ent/promocodeusage"
+	"github.com/Wei-Shaw/sub2api/ent/promptadminevent"
+	"github.com/Wei-Shaw/sub2api/ent/prompttemplate"
+	"github.com/Wei-Shaw/sub2api/ent/prompttemplatedraft"
+	"github.com/Wei-Shaw/sub2api/ent/prompttemplateversion"
 	"github.com/Wei-Shaw/sub2api/ent/proxy"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
 	"github.com/Wei-Shaw/sub2api/ent/schema"
@@ -267,6 +273,46 @@ func init() {
 	accountgroupDescCreatedAt := accountgroupFields[3].Descriptor()
 	// accountgroup.DefaultCreatedAt holds the default value on creation for the created_at field.
 	accountgroup.DefaultCreatedAt = accountgroupDescCreatedAt.Default.(func() time.Time)
+	accountgrouppromptoverrideMixin := schema.AccountGroupPromptOverride{}.Mixin()
+	accountgrouppromptoverrideMixinFields0 := accountgrouppromptoverrideMixin[0].Fields()
+	_ = accountgrouppromptoverrideMixinFields0
+	accountgrouppromptoverrideFields := schema.AccountGroupPromptOverride{}.Fields()
+	_ = accountgrouppromptoverrideFields
+	// accountgrouppromptoverrideDescCreatedAt is the schema descriptor for created_at field.
+	accountgrouppromptoverrideDescCreatedAt := accountgrouppromptoverrideMixinFields0[0].Descriptor()
+	// accountgrouppromptoverride.DefaultCreatedAt holds the default value on creation for the created_at field.
+	accountgrouppromptoverride.DefaultCreatedAt = accountgrouppromptoverrideDescCreatedAt.Default.(func() time.Time)
+	// accountgrouppromptoverrideDescUpdatedAt is the schema descriptor for updated_at field.
+	accountgrouppromptoverrideDescUpdatedAt := accountgrouppromptoverrideMixinFields0[1].Descriptor()
+	// accountgrouppromptoverride.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	accountgrouppromptoverride.DefaultUpdatedAt = accountgrouppromptoverrideDescUpdatedAt.Default.(func() time.Time)
+	// accountgrouppromptoverride.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	accountgrouppromptoverride.UpdateDefaultUpdatedAt = accountgrouppromptoverrideDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// accountgrouppromptoverrideDescMode is the schema descriptor for mode field.
+	accountgrouppromptoverrideDescMode := accountgrouppromptoverrideFields[2].Descriptor()
+	// accountgrouppromptoverride.DefaultMode holds the default value on creation for the mode field.
+	accountgrouppromptoverride.DefaultMode = accountgrouppromptoverrideDescMode.Default.(string)
+	// accountgrouppromptoverride.ModeValidator is a validator for the "mode" field. It is called by the builders before save.
+	accountgrouppromptoverride.ModeValidator = func() func(string) error {
+		validators := accountgrouppromptoverrideDescMode.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+			validators[2].(func(string) error),
+		}
+		return func(mode string) error {
+			for _, fn := range fns {
+				if err := fn(mode); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// accountgrouppromptoverrideDescRevision is the schema descriptor for revision field.
+	accountgrouppromptoverrideDescRevision := accountgrouppromptoverrideFields[4].Descriptor()
+	// accountgrouppromptoverride.DefaultRevision holds the default value on creation for the revision field.
+	accountgrouppromptoverride.DefaultRevision = accountgrouppromptoverrideDescRevision.Default.(int)
 	announcementFields := schema.Announcement{}.Fields()
 	_ = announcementFields
 	// announcementDescTitle is the schema descriptor for title field.
@@ -1224,6 +1270,46 @@ func init() {
 	groupDescProfitSafetyBuffer := groupFields[62].Descriptor()
 	// group.DefaultProfitSafetyBuffer holds the default value on creation for the profit_safety_buffer field.
 	group.DefaultProfitSafetyBuffer = groupDescProfitSafetyBuffer.Default.(float64)
+	grouppromptbindingMixin := schema.GroupPromptBinding{}.Mixin()
+	grouppromptbindingMixinFields0 := grouppromptbindingMixin[0].Fields()
+	_ = grouppromptbindingMixinFields0
+	grouppromptbindingFields := schema.GroupPromptBinding{}.Fields()
+	_ = grouppromptbindingFields
+	// grouppromptbindingDescCreatedAt is the schema descriptor for created_at field.
+	grouppromptbindingDescCreatedAt := grouppromptbindingMixinFields0[0].Descriptor()
+	// grouppromptbinding.DefaultCreatedAt holds the default value on creation for the created_at field.
+	grouppromptbinding.DefaultCreatedAt = grouppromptbindingDescCreatedAt.Default.(func() time.Time)
+	// grouppromptbindingDescUpdatedAt is the schema descriptor for updated_at field.
+	grouppromptbindingDescUpdatedAt := grouppromptbindingMixinFields0[1].Descriptor()
+	// grouppromptbinding.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	grouppromptbinding.DefaultUpdatedAt = grouppromptbindingDescUpdatedAt.Default.(func() time.Time)
+	// grouppromptbinding.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	grouppromptbinding.UpdateDefaultUpdatedAt = grouppromptbindingDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// grouppromptbindingDescMode is the schema descriptor for mode field.
+	grouppromptbindingDescMode := grouppromptbindingFields[1].Descriptor()
+	// grouppromptbinding.DefaultMode holds the default value on creation for the mode field.
+	grouppromptbinding.DefaultMode = grouppromptbindingDescMode.Default.(string)
+	// grouppromptbinding.ModeValidator is a validator for the "mode" field. It is called by the builders before save.
+	grouppromptbinding.ModeValidator = func() func(string) error {
+		validators := grouppromptbindingDescMode.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+			validators[2].(func(string) error),
+		}
+		return func(mode string) error {
+			for _, fn := range fns {
+				if err := fn(mode); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// grouppromptbindingDescRevision is the schema descriptor for revision field.
+	grouppromptbindingDescRevision := grouppromptbindingFields[3].Descriptor()
+	// grouppromptbinding.DefaultRevision holds the default value on creation for the revision field.
+	grouppromptbinding.DefaultRevision = grouppromptbindingDescRevision.Default.(int)
 	idempotencyrecordMixin := schema.IdempotencyRecord{}.Mixin()
 	idempotencyrecordMixinFields0 := idempotencyrecordMixin[0].Fields()
 	_ = idempotencyrecordMixinFields0
@@ -1625,6 +1711,241 @@ func init() {
 	promocodeusageDescUsedAt := promocodeusageFields[3].Descriptor()
 	// promocodeusage.DefaultUsedAt holds the default value on creation for the used_at field.
 	promocodeusage.DefaultUsedAt = promocodeusageDescUsedAt.Default.(func() time.Time)
+	promptadmineventMixin := schema.PromptAdminEvent{}.Mixin()
+	promptadmineventMixinFields0 := promptadmineventMixin[0].Fields()
+	_ = promptadmineventMixinFields0
+	promptadmineventFields := schema.PromptAdminEvent{}.Fields()
+	_ = promptadmineventFields
+	// promptadmineventDescCreatedAt is the schema descriptor for created_at field.
+	promptadmineventDescCreatedAt := promptadmineventMixinFields0[0].Descriptor()
+	// promptadminevent.DefaultCreatedAt holds the default value on creation for the created_at field.
+	promptadminevent.DefaultCreatedAt = promptadmineventDescCreatedAt.Default.(func() time.Time)
+	// promptadmineventDescUpdatedAt is the schema descriptor for updated_at field.
+	promptadmineventDescUpdatedAt := promptadmineventMixinFields0[1].Descriptor()
+	// promptadminevent.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	promptadminevent.DefaultUpdatedAt = promptadmineventDescUpdatedAt.Default.(func() time.Time)
+	// promptadminevent.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	promptadminevent.UpdateDefaultUpdatedAt = promptadmineventDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// promptadmineventDescAction is the schema descriptor for action field.
+	promptadmineventDescAction := promptadmineventFields[0].Descriptor()
+	// promptadminevent.ActionValidator is a validator for the "action" field. It is called by the builders before save.
+	promptadminevent.ActionValidator = func() func(string) error {
+		validators := promptadmineventDescAction.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(action string) error {
+			for _, fn := range fns {
+				if err := fn(action); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// promptadmineventDescScope is the schema descriptor for scope field.
+	promptadmineventDescScope := promptadmineventFields[1].Descriptor()
+	// promptadminevent.ScopeValidator is a validator for the "scope" field. It is called by the builders before save.
+	promptadminevent.ScopeValidator = func() func(string) error {
+		validators := promptadmineventDescScope.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+			validators[2].(func(string) error),
+		}
+		return func(scope string) error {
+			for _, fn := range fns {
+				if err := fn(scope); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// promptadmineventDescActorName is the schema descriptor for actor_name field.
+	promptadmineventDescActorName := promptadmineventFields[7].Descriptor()
+	// promptadminevent.ActorNameValidator is a validator for the "actor_name" field. It is called by the builders before save.
+	promptadminevent.ActorNameValidator = promptadmineventDescActorName.Validators[0].(func(string) error)
+	// promptadmineventDescRequestID is the schema descriptor for request_id field.
+	promptadmineventDescRequestID := promptadmineventFields[10].Descriptor()
+	// promptadminevent.RequestIDValidator is a validator for the "request_id" field. It is called by the builders before save.
+	promptadminevent.RequestIDValidator = promptadmineventDescRequestID.Validators[0].(func(string) error)
+	prompttemplateMixin := schema.PromptTemplate{}.Mixin()
+	prompttemplateMixinFields0 := prompttemplateMixin[0].Fields()
+	_ = prompttemplateMixinFields0
+	prompttemplateFields := schema.PromptTemplate{}.Fields()
+	_ = prompttemplateFields
+	// prompttemplateDescCreatedAt is the schema descriptor for created_at field.
+	prompttemplateDescCreatedAt := prompttemplateMixinFields0[0].Descriptor()
+	// prompttemplate.DefaultCreatedAt holds the default value on creation for the created_at field.
+	prompttemplate.DefaultCreatedAt = prompttemplateDescCreatedAt.Default.(func() time.Time)
+	// prompttemplateDescUpdatedAt is the schema descriptor for updated_at field.
+	prompttemplateDescUpdatedAt := prompttemplateMixinFields0[1].Descriptor()
+	// prompttemplate.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	prompttemplate.DefaultUpdatedAt = prompttemplateDescUpdatedAt.Default.(func() time.Time)
+	// prompttemplate.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	prompttemplate.UpdateDefaultUpdatedAt = prompttemplateDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// prompttemplateDescName is the schema descriptor for name field.
+	prompttemplateDescName := prompttemplateFields[0].Descriptor()
+	// prompttemplate.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	prompttemplate.NameValidator = func() func(string) error {
+		validators := prompttemplateDescName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(name string) error {
+			for _, fn := range fns {
+				if err := fn(name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// prompttemplateDescSourceURL is the schema descriptor for source_url field.
+	prompttemplateDescSourceURL := prompttemplateFields[2].Descriptor()
+	// prompttemplate.SourceURLValidator is a validator for the "source_url" field. It is called by the builders before save.
+	prompttemplate.SourceURLValidator = prompttemplateDescSourceURL.Validators[0].(func(string) error)
+	// prompttemplateDescRevision is the schema descriptor for revision field.
+	prompttemplateDescRevision := prompttemplateFields[5].Descriptor()
+	// prompttemplate.DefaultRevision holds the default value on creation for the revision field.
+	prompttemplate.DefaultRevision = prompttemplateDescRevision.Default.(int)
+	prompttemplatedraftMixin := schema.PromptTemplateDraft{}.Mixin()
+	prompttemplatedraftMixinFields0 := prompttemplatedraftMixin[0].Fields()
+	_ = prompttemplatedraftMixinFields0
+	prompttemplatedraftFields := schema.PromptTemplateDraft{}.Fields()
+	_ = prompttemplatedraftFields
+	// prompttemplatedraftDescCreatedAt is the schema descriptor for created_at field.
+	prompttemplatedraftDescCreatedAt := prompttemplatedraftMixinFields0[0].Descriptor()
+	// prompttemplatedraft.DefaultCreatedAt holds the default value on creation for the created_at field.
+	prompttemplatedraft.DefaultCreatedAt = prompttemplatedraftDescCreatedAt.Default.(func() time.Time)
+	// prompttemplatedraftDescUpdatedAt is the schema descriptor for updated_at field.
+	prompttemplatedraftDescUpdatedAt := prompttemplatedraftMixinFields0[1].Descriptor()
+	// prompttemplatedraft.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	prompttemplatedraft.DefaultUpdatedAt = prompttemplatedraftDescUpdatedAt.Default.(func() time.Time)
+	// prompttemplatedraft.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	prompttemplatedraft.UpdateDefaultUpdatedAt = prompttemplatedraftDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// prompttemplatedraftDescBody is the schema descriptor for body field.
+	prompttemplatedraftDescBody := prompttemplatedraftFields[1].Descriptor()
+	// prompttemplatedraft.BodyValidator is a validator for the "body" field. It is called by the builders before save.
+	prompttemplatedraft.BodyValidator = func() func(string) error {
+		validators := prompttemplatedraftDescBody.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(body string) error {
+			for _, fn := range fns {
+				if err := fn(body); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// prompttemplatedraftDescClientModels is the schema descriptor for client_models field.
+	prompttemplatedraftDescClientModels := prompttemplatedraftFields[2].Descriptor()
+	// prompttemplatedraft.DefaultClientModels holds the default value on creation for the client_models field.
+	prompttemplatedraft.DefaultClientModels = prompttemplatedraftDescClientModels.Default.(func() []string)
+	// prompttemplatedraftDescUpstreamModels is the schema descriptor for upstream_models field.
+	prompttemplatedraftDescUpstreamModels := prompttemplatedraftFields[3].Descriptor()
+	// prompttemplatedraft.DefaultUpstreamModels holds the default value on creation for the upstream_models field.
+	prompttemplatedraft.DefaultUpstreamModels = prompttemplatedraftDescUpstreamModels.Default.(func() []string)
+	// prompttemplatedraftDescSupportedProfiles is the schema descriptor for supported_profiles field.
+	prompttemplatedraftDescSupportedProfiles := prompttemplatedraftFields[4].Descriptor()
+	// prompttemplatedraft.DefaultSupportedProfiles holds the default value on creation for the supported_profiles field.
+	prompttemplatedraft.DefaultSupportedProfiles = prompttemplatedraftDescSupportedProfiles.Default.(func() []string)
+	// prompttemplatedraftDescRevision is the schema descriptor for revision field.
+	prompttemplatedraftDescRevision := prompttemplatedraftFields[5].Descriptor()
+	// prompttemplatedraft.DefaultRevision holds the default value on creation for the revision field.
+	prompttemplatedraft.DefaultRevision = prompttemplatedraftDescRevision.Default.(int)
+	prompttemplateversionMixin := schema.PromptTemplateVersion{}.Mixin()
+	prompttemplateversionMixinFields0 := prompttemplateversionMixin[0].Fields()
+	_ = prompttemplateversionMixinFields0
+	prompttemplateversionFields := schema.PromptTemplateVersion{}.Fields()
+	_ = prompttemplateversionFields
+	// prompttemplateversionDescCreatedAt is the schema descriptor for created_at field.
+	prompttemplateversionDescCreatedAt := prompttemplateversionMixinFields0[0].Descriptor()
+	// prompttemplateversion.DefaultCreatedAt holds the default value on creation for the created_at field.
+	prompttemplateversion.DefaultCreatedAt = prompttemplateversionDescCreatedAt.Default.(func() time.Time)
+	// prompttemplateversionDescUpdatedAt is the schema descriptor for updated_at field.
+	prompttemplateversionDescUpdatedAt := prompttemplateversionMixinFields0[1].Descriptor()
+	// prompttemplateversion.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	prompttemplateversion.DefaultUpdatedAt = prompttemplateversionDescUpdatedAt.Default.(func() time.Time)
+	// prompttemplateversion.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	prompttemplateversion.UpdateDefaultUpdatedAt = prompttemplateversionDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// prompttemplateversionDescBody is the schema descriptor for body field.
+	prompttemplateversionDescBody := prompttemplateversionFields[2].Descriptor()
+	// prompttemplateversion.BodyValidator is a validator for the "body" field. It is called by the builders before save.
+	prompttemplateversion.BodyValidator = func() func(string) error {
+		validators := prompttemplateversionDescBody.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(body string) error {
+			for _, fn := range fns {
+				if err := fn(body); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// prompttemplateversionDescBodySha256 is the schema descriptor for body_sha256 field.
+	prompttemplateversionDescBodySha256 := prompttemplateversionFields[3].Descriptor()
+	// prompttemplateversion.BodySha256Validator is a validator for the "body_sha256" field. It is called by the builders before save.
+	prompttemplateversion.BodySha256Validator = func() func(string) error {
+		validators := prompttemplateversionDescBodySha256.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(body_sha256 string) error {
+			for _, fn := range fns {
+				if err := fn(body_sha256); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// prompttemplateversionDescClientModels is the schema descriptor for client_models field.
+	prompttemplateversionDescClientModels := prompttemplateversionFields[5].Descriptor()
+	// prompttemplateversion.DefaultClientModels holds the default value on creation for the client_models field.
+	prompttemplateversion.DefaultClientModels = prompttemplateversionDescClientModels.Default.(func() []string)
+	// prompttemplateversionDescUpstreamModels is the schema descriptor for upstream_models field.
+	prompttemplateversionDescUpstreamModels := prompttemplateversionFields[6].Descriptor()
+	// prompttemplateversion.DefaultUpstreamModels holds the default value on creation for the upstream_models field.
+	prompttemplateversion.DefaultUpstreamModels = prompttemplateversionDescUpstreamModels.Default.(func() []string)
+	// prompttemplateversionDescSupportedProfiles is the schema descriptor for supported_profiles field.
+	prompttemplateversionDescSupportedProfiles := prompttemplateversionFields[7].Descriptor()
+	// prompttemplateversion.DefaultSupportedProfiles holds the default value on creation for the supported_profiles field.
+	prompttemplateversion.DefaultSupportedProfiles = prompttemplateversionDescSupportedProfiles.Default.(func() []string)
+	// prompttemplateversionDescManifestSha256 is the schema descriptor for manifest_sha256 field.
+	prompttemplateversionDescManifestSha256 := prompttemplateversionFields[8].Descriptor()
+	// prompttemplateversion.ManifestSha256Validator is a validator for the "manifest_sha256" field. It is called by the builders before save.
+	prompttemplateversion.ManifestSha256Validator = func() func(string) error {
+		validators := prompttemplateversionDescManifestSha256.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(manifest_sha256 string) error {
+			for _, fn := range fns {
+				if err := fn(manifest_sha256); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// prompttemplateversionDescIdempotencyKey is the schema descriptor for idempotency_key field.
+	prompttemplateversionDescIdempotencyKey := prompttemplateversionFields[10].Descriptor()
+	// prompttemplateversion.IdempotencyKeyValidator is a validator for the "idempotency_key" field. It is called by the builders before save.
+	prompttemplateversion.IdempotencyKeyValidator = prompttemplateversionDescIdempotencyKey.Validators[0].(func(string) error)
 	proxyMixin := schema.Proxy{}.Mixin()
 	proxyMixinHooks1 := proxyMixin[1].Hooks()
 	proxy.Hooks[0] = proxyMixinHooks1[0]

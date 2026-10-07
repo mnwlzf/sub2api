@@ -16,6 +16,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/gjson"
 	"go.uber.org/zap"
 )
 
@@ -181,7 +182,16 @@ func (s *OpenAIGatewayService) sendCCUpstreamRequest(
 	bearerToken string,
 	userAgent string,
 	grokCacheIdentity string,
+	promptProfile string,
 ) (*http.Response, error) {
+	// 文本提示词注入必须位于本函数所有 body 改写之前：注入是最终出站正文的一部分，
+	// 后续的 reasoning_content 占位与免费层门禁都只做局部手术，不会重建 messages，
+	// 因此放在这里可以保证“注入后不再有语义改写”，并让签名/缓存键基于最终 body 计算。
+	// promptProfile 为空表示该出站路径不在本功能支持范围内（原样返回）。
+	body, _, err := s.ApplyFrozenPromptInjection(c, promptProfile, gjson.GetBytes(body, "model").String(), body)
+	if err != nil {
+		return nil, err
+	}
 	// DeepSeek thinking mode 要求历史 assistant 回传 reasoning_content。
 	// Responses→CC 回退在加密-only / 缺 reasoning item 且缓存未命中时会漏掉该
 	// 字段，上游 400 "The `reasoning_content` in the thinking mode must be
@@ -189,7 +199,7 @@ func (s *OpenAIGatewayService) sendCCUpstreamRequest(
 	body = ensureDeepSeekChatReasoningPlaceholders(account, body)
 	// 免费层门禁：强制 stream:true 并补齐 bash / read 工具。仅对启用门禁的
 	// OpenCode 账号生效（默认只作用于 -free 模型），其余账号原样返回。
-	body, err := applyOpenCodeFreeTierGateBody(account, body, openCodeGateDialectChat)
+	body, err = applyOpenCodeFreeTierGateBody(account, body, openCodeGateDialectChat)
 	if err != nil {
 		return nil, err
 	}

@@ -45,6 +45,18 @@ func (f AccountGroupFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AccountGroupMutation", m)
 }
 
+// The AccountGroupPromptOverrideFunc type is an adapter to allow the use of ordinary
+// function as AccountGroupPromptOverride mutator.
+type AccountGroupPromptOverrideFunc func(context.Context, *ent.AccountGroupPromptOverrideMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AccountGroupPromptOverrideFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AccountGroupPromptOverrideMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AccountGroupPromptOverrideMutation", m)
+}
+
 // The AnnouncementFunc type is an adapter to allow the use of ordinary
 // function as Announcement mutator.
 type AnnouncementFunc func(context.Context, *ent.AnnouncementMutation) (ent.Value, error)
@@ -213,6 +225,18 @@ func (f GroupFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.GroupMutation", m)
 }
 
+// The GroupPromptBindingFunc type is an adapter to allow the use of ordinary
+// function as GroupPromptBinding mutator.
+type GroupPromptBindingFunc func(context.Context, *ent.GroupPromptBindingMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f GroupPromptBindingFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.GroupPromptBindingMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.GroupPromptBindingMutation", m)
+}
+
 // The IdempotencyRecordFunc type is an adapter to allow the use of ordinary
 // function as IdempotencyRecord mutator.
 type IdempotencyRecordFunc func(context.Context, *ent.IdempotencyRecordMutation) (ent.Value, error)
@@ -307,6 +331,54 @@ func (f PromoCodeUsageFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Val
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.PromoCodeUsageMutation", m)
+}
+
+// The PromptAdminEventFunc type is an adapter to allow the use of ordinary
+// function as PromptAdminEvent mutator.
+type PromptAdminEventFunc func(context.Context, *ent.PromptAdminEventMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f PromptAdminEventFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.PromptAdminEventMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.PromptAdminEventMutation", m)
+}
+
+// The PromptTemplateFunc type is an adapter to allow the use of ordinary
+// function as PromptTemplate mutator.
+type PromptTemplateFunc func(context.Context, *ent.PromptTemplateMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f PromptTemplateFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.PromptTemplateMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.PromptTemplateMutation", m)
+}
+
+// The PromptTemplateDraftFunc type is an adapter to allow the use of ordinary
+// function as PromptTemplateDraft mutator.
+type PromptTemplateDraftFunc func(context.Context, *ent.PromptTemplateDraftMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f PromptTemplateDraftFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.PromptTemplateDraftMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.PromptTemplateDraftMutation", m)
+}
+
+// The PromptTemplateVersionFunc type is an adapter to allow the use of ordinary
+// function as PromptTemplateVersion mutator.
+type PromptTemplateVersionFunc func(context.Context, *ent.PromptTemplateVersionMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f PromptTemplateVersionFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.PromptTemplateVersionMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.PromptTemplateVersionMutation", m)
 }
 
 // The ProxyFunc type is an adapter to allow the use of ordinary

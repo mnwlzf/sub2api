@@ -1025,6 +1025,13 @@ type GatewayConfig struct {
 	// CodexImageGenerationBridgeEnabled: 是否为 Codex `/v1/responses` 自动注入 image_generation 工具和桥接指令。
 	// 默认关闭，避免纯文本 Codex 请求被意外改写；显式携带 image_generation 工具的请求仍按分组能力转发。
 	CodexImageGenerationBridgeEnabled bool `mapstructure:"codex_image_generation_bridge_enabled"`
+	// TextPromptInjectionEnabled: 是否启用“文本提示词管理”功能（分组绑定固定版本的
+	// 系统提示词注入）。
+	//
+	// 默认关闭（零值即 false，无需在 Load 中赋默认值）：关闭时热路径直接返回原始
+	// body，不读取任何提示词配置表，因此新功能不会给既有请求引入数据库依赖。
+	// 开启后仍需在分组上显式绑定版本才会真正注入；发布模板本身不会改变现有绑定。
+	TextPromptInjectionEnabled bool `mapstructure:"text_prompt_injection_enabled"`
 	// ForcedCodexInstructionsTemplateFile: 服务端强制附加到 Codex 顶层 instructions 的模板文件路径。
 	// 模板渲染后会直接覆盖最终 instructions；若需要保留客户端 system 转换结果，请在模板中显式引用 {{ .ExistingInstructions }}。
 	ForcedCodexInstructionsTemplateFile string `mapstructure:"forced_codex_instructions_template_file"`

@@ -15,6 +15,9 @@ type Account func(*sql.Selector)
 // AccountGroup is the predicate function for accountgroup builders.
 type AccountGroup func(*sql.Selector)
 
+// AccountGroupPromptOverride is the predicate function for accountgrouppromptoverride builders.
+type AccountGroupPromptOverride func(*sql.Selector)
+
 // Announcement is the predicate function for announcement builders.
 type Announcement func(*sql.Selector)
 
@@ -57,6 +60,9 @@ type ErrorPassthroughRule func(*sql.Selector)
 // Group is the predicate function for group builders.
 type Group func(*sql.Selector)
 
+// GroupPromptBinding is the predicate function for grouppromptbinding builders.
+type GroupPromptBinding func(*sql.Selector)
+
 // IdempotencyRecord is the predicate function for idempotencyrecord builders.
 type IdempotencyRecord func(*sql.Selector)
 
@@ -80,6 +86,18 @@ type PromoCode func(*sql.Selector)
 
 // PromoCodeUsage is the predicate function for promocodeusage builders.
 type PromoCodeUsage func(*sql.Selector)
+
+// PromptAdminEvent is the predicate function for promptadminevent builders.
+type PromptAdminEvent func(*sql.Selector)
+
+// PromptTemplate is the predicate function for prompttemplate builders.
+type PromptTemplate func(*sql.Selector)
+
+// PromptTemplateDraft is the predicate function for prompttemplatedraft builders.
+type PromptTemplateDraft func(*sql.Selector)
+
+// PromptTemplateVersion is the predicate function for prompttemplateversion builders.
+type PromptTemplateVersion func(*sql.Selector)
 
 // Proxy is the predicate function for proxy builders.
 type Proxy func(*sql.Selector)
