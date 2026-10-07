@@ -250,6 +250,10 @@ type PromptTemplateRepository interface {
 	CreateAdminEvent(ctx context.Context, e *PromptAdminEvent) error
 	ListAdminEvents(ctx context.Context, templateID *int64, groupID *int64, limit int) ([]PromptAdminEvent, error)
 
+	// 运行期记录（尽力而为）
+	CreateRequestEvent(ctx context.Context, e *PromptRequestEvent) error
+	ListRequestEvents(ctx context.Context, filter PromptRequestEventFilter) ([]PromptRequestEvent, error)
+
 	// WithTx 在同一个数据库事务内执行 fn。fn 内部的仓储调用会自动复用该事务，
 	// 因此“配置修改 + 管理审计”可以原子提交，不会出现改了配置却没有审计记录
 	// （或反之）的中间状态。嵌套调用会复用已存在的事务。

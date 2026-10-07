@@ -70,6 +70,8 @@ type Tx struct {
 	PromoCodeUsage *PromoCodeUsageClient
 	// PromptAdminEvent is the client for interacting with the PromptAdminEvent builders.
 	PromptAdminEvent *PromptAdminEventClient
+	// PromptRequestEvent is the client for interacting with the PromptRequestEvent builders.
+	PromptRequestEvent *PromptRequestEventClient
 	// PromptTemplate is the client for interacting with the PromptTemplate builders.
 	PromptTemplate *PromptTemplateClient
 	// PromptTemplateDraft is the client for interacting with the PromptTemplateDraft builders.
@@ -265,6 +267,7 @@ func (tx *Tx) init() {
 	tx.PromoCode = NewPromoCodeClient(tx.config)
 	tx.PromoCodeUsage = NewPromoCodeUsageClient(tx.config)
 	tx.PromptAdminEvent = NewPromptAdminEventClient(tx.config)
+	tx.PromptRequestEvent = NewPromptRequestEventClient(tx.config)
 	tx.PromptTemplate = NewPromptTemplateClient(tx.config)
 	tx.PromptTemplateDraft = NewPromptTemplateDraftClient(tx.config)
 	tx.PromptTemplateVersion = NewPromptTemplateVersionClient(tx.config)

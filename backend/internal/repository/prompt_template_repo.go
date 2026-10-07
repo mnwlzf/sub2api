@@ -9,9 +9,11 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/accountgrouppromptoverride"
 	"github.com/Wei-Shaw/sub2api/ent/grouppromptbinding"
 	"github.com/Wei-Shaw/sub2api/ent/promptadminevent"
+	"github.com/Wei-Shaw/sub2api/ent/promptrequestevent"
 	"github.com/Wei-Shaw/sub2api/ent/prompttemplate"
 	"github.com/Wei-Shaw/sub2api/ent/prompttemplatedraft"
 	"github.com/Wei-Shaw/sub2api/ent/prompttemplateversion"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
@@ -25,6 +27,14 @@ type promptTemplateRepository struct {
 
 // NewPromptTemplateRepository 构造文本提示词配置仓储。
 func NewPromptTemplateRepository(client *dbent.Client) service.PromptTemplateRepository {
+	return &promptTemplateRepository{client: client}
+}
+
+// NewPromptRequestEventRecorder 单独暴露运行期记录端口。
+//
+// 与配置仓储共用同一实现（无状态，只是包了同一个 ent client），但以独立接口类型
+// 提供给网关服务，避免为了注入一个可选记录器而改动 NewOpenAIGatewayService 的长签名。
+func NewPromptRequestEventRecorder(client *dbent.Client) service.PromptRequestEventRecorder {
 	return &promptTemplateRepository{client: client}
 }
 
@@ -650,4 +660,110 @@ func nilIfEmpty(value string) *string {
 		return nil
 	}
 	return &value
+}
+
+// ---------------------------------------------------------------- 运行期记录
+
+// CreateRequestEvent 写入一条运行期策略记录。
+func (r *promptTemplateRepository) CreateRequestEvent(ctx context.Context, e *service.PromptRequestEvent) error {
+	if e == nil {
+		return nil
+	}
+	reason := e.Reason
+	if reason == "" {
+		reason = service.PromptReasonDisabled
+	}
+	builder := clientFromContext(ctx, r.client).PromptRequestEvent.Create().
+		SetAttemptNo(max(e.AttemptNo, 1)).
+		SetApplied(e.Applied).
+		SetReason(reason).
+		SetAddedBytes(max(e.AddedBytes, 0)).
+		SetApplyDurationMs(max(e.ApplyDurationMs, 0)).
+		SetNillableGroupID(e.GroupID).
+		SetNillableAccountID(e.AccountID).
+		SetNillableVersionID(e.VersionID)
+	if e.RequestID != "" {
+		builder = builder.SetRequestID(e.RequestID)
+	}
+	if e.ClientModel != "" {
+		builder = builder.SetClientModel(e.ClientModel)
+	}
+	if e.UpstreamModel != "" {
+		builder = builder.SetUpstreamModel(e.UpstreamModel)
+	}
+	if e.OutboundProfile != "" {
+		builder = builder.SetOutboundProfile(e.OutboundProfile)
+	}
+	if e.BindingSource != "" {
+		builder = builder.SetBindingSource(e.BindingSource)
+	}
+	if e.ManifestSHA256 != "" {
+		builder = builder.SetManifestSha256(e.ManifestSHA256)
+	}
+	_, err := builder.Save(ctx)
+	return err
+}
+
+// RecordPromptRequestEvent 实现 service.PromptRequestEventRecorder。
+//
+// 尽力而为：该调用位于出站热路径，写入失败只记日志，绝不返回错误 ——
+// 上游请求可能已经成功，不能因为审计写入失败而重试或失败。
+func (r *promptTemplateRepository) RecordPromptRequestEvent(ctx context.Context, event service.PromptRequestEvent) {
+	// 使用独立的短超时上下文：客户端可能已经断开，但记录仍应完成。
+	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+	defer cancel()
+	if err := r.CreateRequestEvent(writeCtx, &event); err != nil {
+		logger.LegacyPrintf("repository.prompt_request_event",
+			"[PromptRequestEvent] record failed: request_id=%s version_id=%v applied=%v reason=%s err=%v",
+			event.RequestID, event.VersionID, event.Applied, event.Reason, err)
+	}
+}
+
+// ListRequestEvents 按条件查询运行期记录（新到旧）。
+func (r *promptTemplateRepository) ListRequestEvents(ctx context.Context, filter service.PromptRequestEventFilter) ([]service.PromptRequestEvent, error) {
+	limit := filter.Limit
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	q := clientFromContext(ctx, r.client).PromptRequestEvent.Query().
+		Order(dbent.Desc(promptrequestevent.FieldID)).
+		Limit(limit)
+	if filter.RequestID != nil {
+		q = q.Where(promptrequestevent.RequestIDEQ(*filter.RequestID))
+	}
+	if filter.GroupID != nil {
+		q = q.Where(promptrequestevent.GroupIDEQ(*filter.GroupID))
+	}
+	if filter.VersionID != nil {
+		q = q.Where(promptrequestevent.VersionIDEQ(*filter.VersionID))
+	}
+	if filter.Applied != nil {
+		q = q.Where(promptrequestevent.AppliedEQ(*filter.Applied))
+	}
+	rows, err := q.All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]service.PromptRequestEvent, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, service.PromptRequestEvent{
+			ID:              row.ID,
+			RequestID:       derefString(row.RequestID),
+			AttemptNo:       row.AttemptNo,
+			GroupID:         row.GroupID,
+			AccountID:       row.AccountID,
+			ClientModel:     derefString(row.ClientModel),
+			UpstreamModel:   derefString(row.UpstreamModel),
+			OutboundProfile: derefString(row.OutboundProfile),
+			BindingSource:   derefString(row.BindingSource),
+			VersionID:       row.VersionID,
+			ManifestSHA256:  derefString(row.ManifestSha256),
+			Applied:         row.Applied,
+			Reason:          row.Reason,
+			AddedBytes:      row.AddedBytes,
+			ApplyDurationMs: row.ApplyDurationMs,
+			CreatedAt:       row.CreatedAt,
+		})
+	}
+	return out, nil
 }

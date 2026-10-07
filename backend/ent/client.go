@@ -43,6 +43,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/promocode"
 	"github.com/Wei-Shaw/sub2api/ent/promocodeusage"
 	"github.com/Wei-Shaw/sub2api/ent/promptadminevent"
+	"github.com/Wei-Shaw/sub2api/ent/promptrequestevent"
 	"github.com/Wei-Shaw/sub2api/ent/prompttemplate"
 	"github.com/Wei-Shaw/sub2api/ent/prompttemplatedraft"
 	"github.com/Wei-Shaw/sub2api/ent/prompttemplateversion"
@@ -126,6 +127,8 @@ type Client struct {
 	PromoCodeUsage *PromoCodeUsageClient
 	// PromptAdminEvent is the client for interacting with the PromptAdminEvent builders.
 	PromptAdminEvent *PromptAdminEventClient
+	// PromptRequestEvent is the client for interacting with the PromptRequestEvent builders.
+	PromptRequestEvent *PromptRequestEventClient
 	// PromptTemplate is the client for interacting with the PromptTemplate builders.
 	PromptTemplate *PromptTemplateClient
 	// PromptTemplateDraft is the client for interacting with the PromptTemplateDraft builders.
@@ -201,6 +204,7 @@ func (c *Client) init() {
 	c.PromoCode = NewPromoCodeClient(c.config)
 	c.PromoCodeUsage = NewPromoCodeUsageClient(c.config)
 	c.PromptAdminEvent = NewPromptAdminEventClient(c.config)
+	c.PromptRequestEvent = NewPromptRequestEventClient(c.config)
 	c.PromptTemplate = NewPromptTemplateClient(c.config)
 	c.PromptTemplateDraft = NewPromptTemplateDraftClient(c.config)
 	c.PromptTemplateVersion = NewPromptTemplateVersionClient(c.config)
@@ -339,6 +343,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		PromoCode:                     NewPromoCodeClient(cfg),
 		PromoCodeUsage:                NewPromoCodeUsageClient(cfg),
 		PromptAdminEvent:              NewPromptAdminEventClient(cfg),
+		PromptRequestEvent:            NewPromptRequestEventClient(cfg),
 		PromptTemplate:                NewPromptTemplateClient(cfg),
 		PromptTemplateDraft:           NewPromptTemplateDraftClient(cfg),
 		PromptTemplateVersion:         NewPromptTemplateVersionClient(cfg),
@@ -404,6 +409,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		PromoCode:                     NewPromoCodeClient(cfg),
 		PromoCodeUsage:                NewPromoCodeUsageClient(cfg),
 		PromptAdminEvent:              NewPromptAdminEventClient(cfg),
+		PromptRequestEvent:            NewPromptRequestEventClient(cfg),
 		PromptTemplate:                NewPromptTemplateClient(cfg),
 		PromptTemplateDraft:           NewPromptTemplateDraftClient(cfg),
 		PromptTemplateVersion:         NewPromptTemplateVersionClient(cfg),
@@ -459,11 +465,12 @@ func (c *Client) Use(hooks ...Hook) {
 		c.Group, c.GroupPromptBinding, c.IdempotencyRecord, c.IdentityAdoptionDecision,
 		c.PaymentAuditLog, c.PaymentOrder, c.PaymentProviderInstance,
 		c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage, c.PromptAdminEvent,
-		c.PromptTemplate, c.PromptTemplateDraft, c.PromptTemplateVersion, c.Proxy,
-		c.RedeemCode, c.SecuritySecret, c.Setting, c.StudentVerification,
-		c.SubscriptionPlan, c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog,
-		c.User, c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
-		c.UserPlatformQuota, c.UserSubscription,
+		c.PromptRequestEvent, c.PromptTemplate, c.PromptTemplateDraft,
+		c.PromptTemplateVersion, c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting,
+		c.StudentVerification, c.SubscriptionPlan, c.TLSFingerprintProfile,
+		c.UsageCleanupTask, c.UsageLog, c.User, c.UserAllowedGroup,
+		c.UserAttributeDefinition, c.UserAttributeValue, c.UserPlatformQuota,
+		c.UserSubscription,
 	} {
 		n.Use(hooks...)
 	}
@@ -481,11 +488,12 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.Group, c.GroupPromptBinding, c.IdempotencyRecord, c.IdentityAdoptionDecision,
 		c.PaymentAuditLog, c.PaymentOrder, c.PaymentProviderInstance,
 		c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage, c.PromptAdminEvent,
-		c.PromptTemplate, c.PromptTemplateDraft, c.PromptTemplateVersion, c.Proxy,
-		c.RedeemCode, c.SecuritySecret, c.Setting, c.StudentVerification,
-		c.SubscriptionPlan, c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog,
-		c.User, c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
-		c.UserPlatformQuota, c.UserSubscription,
+		c.PromptRequestEvent, c.PromptTemplate, c.PromptTemplateDraft,
+		c.PromptTemplateVersion, c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting,
+		c.StudentVerification, c.SubscriptionPlan, c.TLSFingerprintProfile,
+		c.UsageCleanupTask, c.UsageLog, c.User, c.UserAllowedGroup,
+		c.UserAttributeDefinition, c.UserAttributeValue, c.UserPlatformQuota,
+		c.UserSubscription,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -550,6 +558,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.PromoCodeUsage.mutate(ctx, m)
 	case *PromptAdminEventMutation:
 		return c.PromptAdminEvent.mutate(ctx, m)
+	case *PromptRequestEventMutation:
+		return c.PromptRequestEvent.mutate(ctx, m)
 	case *PromptTemplateMutation:
 		return c.PromptTemplate.mutate(ctx, m)
 	case *PromptTemplateDraftMutation:
@@ -4930,6 +4940,139 @@ func (c *PromptAdminEventClient) mutate(ctx context.Context, m *PromptAdminEvent
 	}
 }
 
+// PromptRequestEventClient is a client for the PromptRequestEvent schema.
+type PromptRequestEventClient struct {
+	config
+}
+
+// NewPromptRequestEventClient returns a client for the PromptRequestEvent from the given config.
+func NewPromptRequestEventClient(c config) *PromptRequestEventClient {
+	return &PromptRequestEventClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `promptrequestevent.Hooks(f(g(h())))`.
+func (c *PromptRequestEventClient) Use(hooks ...Hook) {
+	c.hooks.PromptRequestEvent = append(c.hooks.PromptRequestEvent, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `promptrequestevent.Intercept(f(g(h())))`.
+func (c *PromptRequestEventClient) Intercept(interceptors ...Interceptor) {
+	c.inters.PromptRequestEvent = append(c.inters.PromptRequestEvent, interceptors...)
+}
+
+// Create returns a builder for creating a PromptRequestEvent entity.
+func (c *PromptRequestEventClient) Create() *PromptRequestEventCreate {
+	mutation := newPromptRequestEventMutation(c.config, OpCreate)
+	return &PromptRequestEventCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of PromptRequestEvent entities.
+func (c *PromptRequestEventClient) CreateBulk(builders ...*PromptRequestEventCreate) *PromptRequestEventCreateBulk {
+	return &PromptRequestEventCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *PromptRequestEventClient) MapCreateBulk(slice any, setFunc func(*PromptRequestEventCreate, int)) *PromptRequestEventCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &PromptRequestEventCreateBulk{err: fmt.Errorf("calling to PromptRequestEventClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*PromptRequestEventCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &PromptRequestEventCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for PromptRequestEvent.
+func (c *PromptRequestEventClient) Update() *PromptRequestEventUpdate {
+	mutation := newPromptRequestEventMutation(c.config, OpUpdate)
+	return &PromptRequestEventUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *PromptRequestEventClient) UpdateOne(_m *PromptRequestEvent) *PromptRequestEventUpdateOne {
+	mutation := newPromptRequestEventMutation(c.config, OpUpdateOne, withPromptRequestEvent(_m))
+	return &PromptRequestEventUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *PromptRequestEventClient) UpdateOneID(id int64) *PromptRequestEventUpdateOne {
+	mutation := newPromptRequestEventMutation(c.config, OpUpdateOne, withPromptRequestEventID(id))
+	return &PromptRequestEventUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for PromptRequestEvent.
+func (c *PromptRequestEventClient) Delete() *PromptRequestEventDelete {
+	mutation := newPromptRequestEventMutation(c.config, OpDelete)
+	return &PromptRequestEventDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *PromptRequestEventClient) DeleteOne(_m *PromptRequestEvent) *PromptRequestEventDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *PromptRequestEventClient) DeleteOneID(id int64) *PromptRequestEventDeleteOne {
+	builder := c.Delete().Where(promptrequestevent.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &PromptRequestEventDeleteOne{builder}
+}
+
+// Query returns a query builder for PromptRequestEvent.
+func (c *PromptRequestEventClient) Query() *PromptRequestEventQuery {
+	return &PromptRequestEventQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypePromptRequestEvent},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a PromptRequestEvent entity by its id.
+func (c *PromptRequestEventClient) Get(ctx context.Context, id int64) (*PromptRequestEvent, error) {
+	return c.Query().Where(promptrequestevent.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *PromptRequestEventClient) GetX(ctx context.Context, id int64) *PromptRequestEvent {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *PromptRequestEventClient) Hooks() []Hook {
+	return c.hooks.PromptRequestEvent
+}
+
+// Interceptors returns the client interceptors.
+func (c *PromptRequestEventClient) Interceptors() []Interceptor {
+	return c.inters.PromptRequestEvent
+}
+
+func (c *PromptRequestEventClient) mutate(ctx context.Context, m *PromptRequestEventMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&PromptRequestEventCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&PromptRequestEventUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&PromptRequestEventUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&PromptRequestEventDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown PromptRequestEvent mutation op: %q", m.Op())
+	}
+}
+
 // PromptTemplateClient is a client for the PromptTemplate schema.
 type PromptTemplateClient struct {
 	config
@@ -7871,10 +8014,10 @@ type (
 		ErrorPassthroughRule, Group, GroupPromptBinding, IdempotencyRecord,
 		IdentityAdoptionDecision, PaymentAuditLog, PaymentOrder,
 		PaymentProviderInstance, PendingAuthSession, PromoCode, PromoCodeUsage,
-		PromptAdminEvent, PromptTemplate, PromptTemplateDraft, PromptTemplateVersion,
-		Proxy, RedeemCode, SecuritySecret, Setting, StudentVerification,
-		SubscriptionPlan, TLSFingerprintProfile, UsageCleanupTask, UsageLog, User,
-		UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
+		PromptAdminEvent, PromptRequestEvent, PromptTemplate, PromptTemplateDraft,
+		PromptTemplateVersion, Proxy, RedeemCode, SecuritySecret, Setting,
+		StudentVerification, SubscriptionPlan, TLSFingerprintProfile, UsageCleanupTask,
+		UsageLog, User, UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
 		UserPlatformQuota, UserSubscription []ent.Hook
 	}
 	inters struct {
@@ -7885,10 +8028,10 @@ type (
 		ErrorPassthroughRule, Group, GroupPromptBinding, IdempotencyRecord,
 		IdentityAdoptionDecision, PaymentAuditLog, PaymentOrder,
 		PaymentProviderInstance, PendingAuthSession, PromoCode, PromoCodeUsage,
-		PromptAdminEvent, PromptTemplate, PromptTemplateDraft, PromptTemplateVersion,
-		Proxy, RedeemCode, SecuritySecret, Setting, StudentVerification,
-		SubscriptionPlan, TLSFingerprintProfile, UsageCleanupTask, UsageLog, User,
-		UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
+		PromptAdminEvent, PromptRequestEvent, PromptTemplate, PromptTemplateDraft,
+		PromptTemplateVersion, Proxy, RedeemCode, SecuritySecret, Setting,
+		StudentVerification, SubscriptionPlan, TLSFingerprintProfile, UsageCleanupTask,
+		UsageLog, User, UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
 		UserPlatformQuota, UserSubscription []ent.Interceptor
 	}
 )

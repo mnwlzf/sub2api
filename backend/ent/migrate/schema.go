@@ -1508,6 +1508,59 @@ var (
 			},
 		},
 	}
+	// PromptRequestEventsColumns holds the columns for the "prompt_request_events" table.
+	PromptRequestEventsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "request_id", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "attempt_no", Type: field.TypeInt, Default: 1},
+		{Name: "group_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "account_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "client_model", Type: field.TypeString, Nullable: true, Size: 120},
+		{Name: "upstream_model", Type: field.TypeString, Nullable: true, Size: 120},
+		{Name: "outbound_profile", Type: field.TypeString, Nullable: true, Size: 40},
+		{Name: "binding_source", Type: field.TypeString, Nullable: true, Size: 20},
+		{Name: "version_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "manifest_sha256", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "applied", Type: field.TypeBool, Default: false},
+		{Name: "reason", Type: field.TypeString, Size: 40},
+		{Name: "added_bytes", Type: field.TypeInt, Default: 0},
+		{Name: "apply_duration_ms", Type: field.TypeInt, Default: 0},
+	}
+	// PromptRequestEventsTable holds the schema information for the "prompt_request_events" table.
+	PromptRequestEventsTable = &schema.Table{
+		Name:       "prompt_request_events",
+		Columns:    PromptRequestEventsColumns,
+		PrimaryKey: []*schema.Column{PromptRequestEventsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "promptrequestevent_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{PromptRequestEventsColumns[1]},
+			},
+			{
+				Name:    "promptrequestevent_request_id",
+				Unique:  false,
+				Columns: []*schema.Column{PromptRequestEventsColumns[3]},
+			},
+			{
+				Name:    "promptrequestevent_group_id",
+				Unique:  false,
+				Columns: []*schema.Column{PromptRequestEventsColumns[5]},
+			},
+			{
+				Name:    "promptrequestevent_version_id",
+				Unique:  false,
+				Columns: []*schema.Column{PromptRequestEventsColumns[11]},
+			},
+			{
+				Name:    "promptrequestevent_applied",
+				Unique:  false,
+				Columns: []*schema.Column{PromptRequestEventsColumns[13]},
+			},
+		},
+	}
 	// PromptTemplatesColumns holds the columns for the "prompt_templates" table.
 	PromptTemplatesColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -2376,6 +2429,7 @@ var (
 		PromoCodesTable,
 		PromoCodeUsagesTable,
 		PromptAdminEventsTable,
+		PromptRequestEventsTable,
 		PromptTemplatesTable,
 		PromptTemplateDraftsTable,
 		PromptTemplateVersionsTable,
@@ -2501,6 +2555,9 @@ func init() {
 	}
 	PromptAdminEventsTable.Annotation = &entsql.Annotation{
 		Table: "prompt_admin_events",
+	}
+	PromptRequestEventsTable.Annotation = &entsql.Annotation{
+		Table: "prompt_request_events",
 	}
 	PromptTemplatesTable.Annotation = &entsql.Annotation{
 		Table: "prompt_templates",

@@ -262,6 +262,10 @@ func (f *fakePromptRepo) CreateAdminEvent(context.Context, *PromptAdminEvent) er
 func (f *fakePromptRepo) ListAdminEvents(context.Context, *int64, *int64, int) ([]PromptAdminEvent, error) {
 	return nil, nil
 }
+func (f *fakePromptRepo) CreateRequestEvent(context.Context, *PromptRequestEvent) error { return nil }
+func (f *fakePromptRepo) ListRequestEvents(context.Context, PromptRequestEventFilter) ([]PromptRequestEvent, error) {
+	return nil, nil
+}
 func (f *fakePromptRepo) WithTx(ctx context.Context, fn func(context.Context) error) error {
 	return fn(ctx)
 }
@@ -542,4 +546,128 @@ func TestPromptPolicySummary_DoesNotLeakBody(t *testing.T) {
 	summary := PromptPolicySummary(policy)
 	require.NotContains(t, summary, "secret-body")
 	require.Contains(t, summary, "version_id=7")
+}
+
+// ---------------------------------------------------------------- 运行期记录
+
+type fakePromptEventRecorder struct {
+	events []PromptRequestEvent
+}
+
+func (f *fakePromptEventRecorder) RecordPromptRequestEvent(_ context.Context, event PromptRequestEvent) {
+	f.events = append(f.events, event)
+}
+
+func TestApplyFrozenPromptInjection_RecordsAppliedEvent(t *testing.T) {
+	recorder := &fakePromptEventRecorder{}
+	svc := newPromptTestService(true)
+	svc.SetPromptEventRecorder(recorder)
+	c := newPromptTestGinContext(t)
+	WithFrozenPromptPolicy(c, &FrozenPromptPolicy{
+		Enabled:           true,
+		VersionID:         7,
+		GroupID:           11,
+		AccountID:         22,
+		BindingSource:     PromptBindingSourceGroup,
+		Body:              "server-prompt",
+		SupportedProfiles: []string{PromptProfileChatHTTP},
+	})
+
+	body := []byte(`{"model":"m","messages":[{"role":"user","content":"hi"}]}`)
+	_, changed, err := svc.ApplyFrozenPromptInjection(c, PromptProfileChatHTTP, "m", body)
+	require.NoError(t, err)
+	require.True(t, changed)
+
+	require.Len(t, recorder.events, 1)
+	event := recorder.events[0]
+	require.True(t, event.Applied)
+	require.Equal(t, PromptReasonApplied, event.Reason)
+	require.Equal(t, 1, event.AttemptNo)
+	require.Equal(t, PromptProfileChatHTTP, event.OutboundProfile)
+	require.NotNil(t, event.VersionID)
+	require.Equal(t, int64(7), *event.VersionID)
+	require.Greater(t, event.AddedBytes, 0)
+	// 记录里不得出现提示词正文。
+	require.NotContains(t, event.Reason, "server-prompt")
+}
+
+func TestApplyFrozenPromptInjection_RecordsSkipReasons(t *testing.T) {
+	cases := []struct {
+		name    string
+		profile string
+		body    []byte
+		policy  *FrozenPromptPolicy
+		reason  string
+	}{
+		{
+			name:    "unsupported profile",
+			profile: "",
+			body:    []byte(`{"model":"m","messages":[{"role":"user","content":"hi"}]}`),
+			policy:  &FrozenPromptPolicy{Enabled: true, VersionID: 7, Body: "p", SupportedProfiles: []string{PromptProfileChatHTTP}},
+			reason:  PromptReasonUnsupportedProfile,
+		},
+		{
+			name:    "non text task",
+			profile: PromptProfileResponsesHTTP,
+			body:    []byte(`{"model":"m","tools":[{"type":"image_generation"}],"input":[]}`),
+			policy:  &FrozenPromptPolicy{Enabled: true, VersionID: 7, Body: "p", SupportedProfiles: []string{PromptProfileResponsesHTTP}},
+			reason:  PromptReasonSkippedNonTextTask,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			recorder := &fakePromptEventRecorder{}
+			svc := newPromptTestService(true)
+			svc.SetPromptEventRecorder(recorder)
+			c := newPromptTestGinContext(t)
+			WithFrozenPromptPolicy(c, tc.policy)
+
+			_, changed, err := svc.ApplyFrozenPromptInjection(c, tc.profile, "m", tc.body)
+			require.NoError(t, err)
+			require.False(t, changed)
+			require.Len(t, recorder.events, 1)
+			require.False(t, recorder.events[0].Applied)
+			require.Equal(t, tc.reason, recorder.events[0].Reason)
+			require.Zero(t, recorder.events[0].AddedBytes)
+		})
+	}
+}
+
+func TestApplyFrozenPromptInjection_AttemptNoIncrementsPerAttempt(t *testing.T) {
+	// 同一个逻辑请求内每次上游尝试调用一次，序号必须递增，便于后台看出重试次数。
+	recorder := &fakePromptEventRecorder{}
+	svc := newPromptTestService(true)
+	svc.SetPromptEventRecorder(recorder)
+	c := newPromptTestGinContext(t)
+	WithFrozenPromptPolicy(c, &FrozenPromptPolicy{
+		Enabled:           true,
+		VersionID:         7,
+		Body:              "server-prompt",
+		SupportedProfiles: []string{PromptProfileChatHTTP},
+	})
+
+	body := []byte(`{"model":"m","messages":[{"role":"user","content":"hi"}]}`)
+	for i := 0; i < 3; i++ {
+		_, _, err := svc.ApplyFrozenPromptInjection(c, PromptProfileChatHTTP, "m", body)
+		require.NoError(t, err)
+	}
+	require.Len(t, recorder.events, 3)
+	require.Equal(t, []int{1, 2, 3}, []int{recorder.events[0].AttemptNo, recorder.events[1].AttemptNo, recorder.events[2].AttemptNo})
+}
+
+func TestApplyFrozenPromptInjection_NoRecorderIsSafe(t *testing.T) {
+	// 未注入记录器时不得 panic，注入行为不受影响。
+	svc := newPromptTestService(true)
+	c := newPromptTestGinContext(t)
+	WithFrozenPromptPolicy(c, &FrozenPromptPolicy{
+		Enabled:           true,
+		VersionID:         7,
+		Body:              "server-prompt",
+		SupportedProfiles: []string{PromptProfileChatHTTP},
+	})
+	body := []byte(`{"model":"m","messages":[{"role":"user","content":"hi"}]}`)
+	out, changed, err := svc.ApplyFrozenPromptInjection(c, PromptProfileChatHTTP, "m", body)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Equal(t, "server-prompt", gjson.GetBytes(out, "messages.0.content").String())
 }

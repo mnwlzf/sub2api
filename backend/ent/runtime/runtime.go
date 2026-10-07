@@ -33,6 +33,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/promocode"
 	"github.com/Wei-Shaw/sub2api/ent/promocodeusage"
 	"github.com/Wei-Shaw/sub2api/ent/promptadminevent"
+	"github.com/Wei-Shaw/sub2api/ent/promptrequestevent"
 	"github.com/Wei-Shaw/sub2api/ent/prompttemplate"
 	"github.com/Wei-Shaw/sub2api/ent/prompttemplatedraft"
 	"github.com/Wei-Shaw/sub2api/ent/prompttemplateversion"
@@ -1771,6 +1772,79 @@ func init() {
 	promptadmineventDescRequestID := promptadmineventFields[10].Descriptor()
 	// promptadminevent.RequestIDValidator is a validator for the "request_id" field. It is called by the builders before save.
 	promptadminevent.RequestIDValidator = promptadmineventDescRequestID.Validators[0].(func(string) error)
+	promptrequesteventMixin := schema.PromptRequestEvent{}.Mixin()
+	promptrequesteventMixinFields0 := promptrequesteventMixin[0].Fields()
+	_ = promptrequesteventMixinFields0
+	promptrequesteventFields := schema.PromptRequestEvent{}.Fields()
+	_ = promptrequesteventFields
+	// promptrequesteventDescCreatedAt is the schema descriptor for created_at field.
+	promptrequesteventDescCreatedAt := promptrequesteventMixinFields0[0].Descriptor()
+	// promptrequestevent.DefaultCreatedAt holds the default value on creation for the created_at field.
+	promptrequestevent.DefaultCreatedAt = promptrequesteventDescCreatedAt.Default.(func() time.Time)
+	// promptrequesteventDescUpdatedAt is the schema descriptor for updated_at field.
+	promptrequesteventDescUpdatedAt := promptrequesteventMixinFields0[1].Descriptor()
+	// promptrequestevent.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	promptrequestevent.DefaultUpdatedAt = promptrequesteventDescUpdatedAt.Default.(func() time.Time)
+	// promptrequestevent.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	promptrequestevent.UpdateDefaultUpdatedAt = promptrequesteventDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// promptrequesteventDescRequestID is the schema descriptor for request_id field.
+	promptrequesteventDescRequestID := promptrequesteventFields[0].Descriptor()
+	// promptrequestevent.RequestIDValidator is a validator for the "request_id" field. It is called by the builders before save.
+	promptrequestevent.RequestIDValidator = promptrequesteventDescRequestID.Validators[0].(func(string) error)
+	// promptrequesteventDescAttemptNo is the schema descriptor for attempt_no field.
+	promptrequesteventDescAttemptNo := promptrequesteventFields[1].Descriptor()
+	// promptrequestevent.DefaultAttemptNo holds the default value on creation for the attempt_no field.
+	promptrequestevent.DefaultAttemptNo = promptrequesteventDescAttemptNo.Default.(int)
+	// promptrequesteventDescClientModel is the schema descriptor for client_model field.
+	promptrequesteventDescClientModel := promptrequesteventFields[4].Descriptor()
+	// promptrequestevent.ClientModelValidator is a validator for the "client_model" field. It is called by the builders before save.
+	promptrequestevent.ClientModelValidator = promptrequesteventDescClientModel.Validators[0].(func(string) error)
+	// promptrequesteventDescUpstreamModel is the schema descriptor for upstream_model field.
+	promptrequesteventDescUpstreamModel := promptrequesteventFields[5].Descriptor()
+	// promptrequestevent.UpstreamModelValidator is a validator for the "upstream_model" field. It is called by the builders before save.
+	promptrequestevent.UpstreamModelValidator = promptrequesteventDescUpstreamModel.Validators[0].(func(string) error)
+	// promptrequesteventDescOutboundProfile is the schema descriptor for outbound_profile field.
+	promptrequesteventDescOutboundProfile := promptrequesteventFields[6].Descriptor()
+	// promptrequestevent.OutboundProfileValidator is a validator for the "outbound_profile" field. It is called by the builders before save.
+	promptrequestevent.OutboundProfileValidator = promptrequesteventDescOutboundProfile.Validators[0].(func(string) error)
+	// promptrequesteventDescBindingSource is the schema descriptor for binding_source field.
+	promptrequesteventDescBindingSource := promptrequesteventFields[7].Descriptor()
+	// promptrequestevent.BindingSourceValidator is a validator for the "binding_source" field. It is called by the builders before save.
+	promptrequestevent.BindingSourceValidator = promptrequesteventDescBindingSource.Validators[0].(func(string) error)
+	// promptrequesteventDescManifestSha256 is the schema descriptor for manifest_sha256 field.
+	promptrequesteventDescManifestSha256 := promptrequesteventFields[9].Descriptor()
+	// promptrequestevent.ManifestSha256Validator is a validator for the "manifest_sha256" field. It is called by the builders before save.
+	promptrequestevent.ManifestSha256Validator = promptrequesteventDescManifestSha256.Validators[0].(func(string) error)
+	// promptrequesteventDescApplied is the schema descriptor for applied field.
+	promptrequesteventDescApplied := promptrequesteventFields[10].Descriptor()
+	// promptrequestevent.DefaultApplied holds the default value on creation for the applied field.
+	promptrequestevent.DefaultApplied = promptrequesteventDescApplied.Default.(bool)
+	// promptrequesteventDescReason is the schema descriptor for reason field.
+	promptrequesteventDescReason := promptrequesteventFields[11].Descriptor()
+	// promptrequestevent.ReasonValidator is a validator for the "reason" field. It is called by the builders before save.
+	promptrequestevent.ReasonValidator = func() func(string) error {
+		validators := promptrequesteventDescReason.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(reason string) error {
+			for _, fn := range fns {
+				if err := fn(reason); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// promptrequesteventDescAddedBytes is the schema descriptor for added_bytes field.
+	promptrequesteventDescAddedBytes := promptrequesteventFields[12].Descriptor()
+	// promptrequestevent.DefaultAddedBytes holds the default value on creation for the added_bytes field.
+	promptrequestevent.DefaultAddedBytes = promptrequesteventDescAddedBytes.Default.(int)
+	// promptrequesteventDescApplyDurationMs is the schema descriptor for apply_duration_ms field.
+	promptrequesteventDescApplyDurationMs := promptrequesteventFields[13].Descriptor()
+	// promptrequestevent.DefaultApplyDurationMs holds the default value on creation for the apply_duration_ms field.
+	promptrequestevent.DefaultApplyDurationMs = promptrequesteventDescApplyDurationMs.Default.(int)
 	prompttemplateMixin := schema.PromptTemplate{}.Mixin()
 	prompttemplateMixinFields0 := prompttemplateMixin[0].Fields()
 	_ = prompttemplateMixinFields0

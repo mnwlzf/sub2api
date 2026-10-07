@@ -140,8 +140,10 @@ func ProvideOpenAIGatewayHandler(
 	coordinator *securityaudit.Coordinator,
 	compositeResolver *service.CompositeRouteResolver,
 	promptPolicyResolver *service.PromptPolicyResolver,
+	promptEventRecorder service.PromptRequestEventRecorder,
 ) *OpenAIGatewayHandler {
 	gatewayService.SetPluginManager(pluginManager)
+	gatewayService.SetPromptEventRecorder(promptEventRecorder)
 	h := NewOpenAIGatewayHandler(gatewayService, concurrencyService, billingCacheService, apiKeyService,
 		usageRecordWorkerPool, errorPassthroughService, contentModerationService, opsService, promptPolicyResolver, cfg)
 	h.compositeResolver = compositeResolver

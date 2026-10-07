@@ -37,6 +37,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/promocode"
 	"github.com/Wei-Shaw/sub2api/ent/promocodeusage"
 	"github.com/Wei-Shaw/sub2api/ent/promptadminevent"
+	"github.com/Wei-Shaw/sub2api/ent/promptrequestevent"
 	"github.com/Wei-Shaw/sub2api/ent/prompttemplate"
 	"github.com/Wei-Shaw/sub2api/ent/prompttemplatedraft"
 	"github.com/Wei-Shaw/sub2api/ent/prompttemplateversion"
@@ -869,6 +870,33 @@ func (f TraversePromptAdminEvent) Traverse(ctx context.Context, q ent.Query) err
 	return fmt.Errorf("unexpected query type %T. expect *ent.PromptAdminEventQuery", q)
 }
 
+// The PromptRequestEventFunc type is an adapter to allow the use of ordinary function as a Querier.
+type PromptRequestEventFunc func(context.Context, *ent.PromptRequestEventQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f PromptRequestEventFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.PromptRequestEventQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.PromptRequestEventQuery", q)
+}
+
+// The TraversePromptRequestEvent type is an adapter to allow the use of ordinary function as Traverser.
+type TraversePromptRequestEvent func(context.Context, *ent.PromptRequestEventQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraversePromptRequestEvent) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraversePromptRequestEvent) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.PromptRequestEventQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.PromptRequestEventQuery", q)
+}
+
 // The PromptTemplateFunc type is an adapter to allow the use of ordinary function as a Querier.
 type PromptTemplateFunc func(context.Context, *ent.PromptTemplateQuery) (ent.Value, error)
 
@@ -1414,6 +1442,8 @@ func NewQuery(q ent.Query) (Query, error) {
 		return &query[*ent.PromoCodeUsageQuery, predicate.PromoCodeUsage, promocodeusage.OrderOption]{typ: ent.TypePromoCodeUsage, tq: q}, nil
 	case *ent.PromptAdminEventQuery:
 		return &query[*ent.PromptAdminEventQuery, predicate.PromptAdminEvent, promptadminevent.OrderOption]{typ: ent.TypePromptAdminEvent, tq: q}, nil
+	case *ent.PromptRequestEventQuery:
+		return &query[*ent.PromptRequestEventQuery, predicate.PromptRequestEvent, promptrequestevent.OrderOption]{typ: ent.TypePromptRequestEvent, tq: q}, nil
 	case *ent.PromptTemplateQuery:
 		return &query[*ent.PromptTemplateQuery, predicate.PromptTemplate, prompttemplate.OrderOption]{typ: ent.TypePromptTemplate, tq: q}, nil
 	case *ent.PromptTemplateDraftQuery:

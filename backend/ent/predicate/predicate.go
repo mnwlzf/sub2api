@@ -90,6 +90,9 @@ type PromoCodeUsage func(*sql.Selector)
 // PromptAdminEvent is the predicate function for promptadminevent builders.
 type PromptAdminEvent func(*sql.Selector)
 
+// PromptRequestEvent is the predicate function for promptrequestevent builders.
+type PromptRequestEvent func(*sql.Selector)
+
 // PromptTemplate is the predicate function for prompttemplate builders.
 type PromptTemplate func(*sql.Selector)
 

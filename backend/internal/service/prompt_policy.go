@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/gin-gonic/gin"
@@ -198,26 +199,38 @@ func (s *OpenAIGatewayService) ApplyFrozenPromptInjection(c *gin.Context, profil
 	if policy == nil || !policy.Enabled {
 		return body, false, nil
 	}
+	// 记录本次尝试的策略决策（尽力而为，失败不影响请求）。
+	attemptNo := nextPromptAttemptNo(c)
+	started := time.Now()
+	record := func(applied bool, reason string, addedBytes int) {
+		s.recordPromptRequestEvent(c, policy, profile, upstreamModel, attemptNo, applied, reason, addedBytes, time.Since(started))
+	}
 	// 该出站路径本身不在本功能的支持范围内（例如 Anthropic Messages→Chat 回退）：
 	// 保留既有行为并记录跳过原因。管理员无法在版本里声明一个不存在的 profile，
 	// 因此这里报错只会打断与该配置无关的流量。
 	if !IsKnownPromptProfile(profile) {
+		record(false, PromptReasonUnsupportedProfile, 0)
 		return body, false, nil
 	}
 	if !PromptContainsFold(policy.SupportedProfiles, profile) {
+		record(false, PromptReasonUnsupportedProfile, 0)
 		return nil, false, fmt.Errorf("%w: version %d does not allow profile %s", ErrPromptProfileUnsupported, policy.VersionID, profile)
 	}
 	if len(policy.UpstreamModels) > 0 && !PromptContainsFold(policy.UpstreamModels, upstreamModel) {
+		record(false, PromptReasonSkippedModelScope, 0)
 		return nil, false, fmt.Errorf("%w: version %d does not apply to upstream model %s", ErrPromptUpstreamUnsupported, policy.VersionID, upstreamModel)
 	}
 	if PromptBodyTargetsImageGeneration(body) {
 		// 非纯文本任务：按设计跳过，而不是注入后改变图片工具行为。
+		record(false, PromptReasonSkippedNonTextTask, 0)
 		return body, false, nil
 	}
 	next, err := ApplyPromptForProfile(profile, body, policy.Body)
 	if err != nil {
+		record(false, PromptReasonAdapterError, 0)
 		return nil, false, fmt.Errorf("%w: %v", ErrPromptAdapterFailed, err)
 	}
+	record(true, PromptReasonApplied, len(next)-len(body))
 	return next, true, nil
 }
 

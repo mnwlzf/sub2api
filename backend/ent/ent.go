@@ -40,6 +40,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/promocode"
 	"github.com/Wei-Shaw/sub2api/ent/promocodeusage"
 	"github.com/Wei-Shaw/sub2api/ent/promptadminevent"
+	"github.com/Wei-Shaw/sub2api/ent/promptrequestevent"
 	"github.com/Wei-Shaw/sub2api/ent/prompttemplate"
 	"github.com/Wei-Shaw/sub2api/ent/prompttemplatedraft"
 	"github.com/Wei-Shaw/sub2api/ent/prompttemplateversion"
@@ -146,6 +147,7 @@ func checkColumn(t, c string) error {
 			promocode.Table:                     promocode.ValidColumn,
 			promocodeusage.Table:                promocodeusage.ValidColumn,
 			promptadminevent.Table:              promptadminevent.ValidColumn,
+			promptrequestevent.Table:            promptrequestevent.ValidColumn,
 			prompttemplate.Table:                prompttemplate.ValidColumn,
 			prompttemplatedraft.Table:           prompttemplatedraft.ValidColumn,
 			prompttemplateversion.Table:         prompttemplateversion.ValidColumn,
