@@ -34,6 +34,7 @@ export default {
         actions: 'Actions',
       },
       latestVersionNone: 'Not published',
+      latestVersionUnavailable: 'Unavailable',
       archived: 'Archived',
       active: 'Active',
       openDetail: 'Open',
@@ -132,6 +133,16 @@ export default {
       supportedProfiles: 'Supported profiles',
       loadFailed: 'Failed to load the validation report.',
       publishRequiresValid: 'Fix the validation errors before publishing.',
+      // The backend returns raw validation error strings; known reason codes are
+      // translated here, anything else is shown verbatim.
+      reason: {
+        PROMPT_BODY_EMPTY: 'The prompt body must not be empty.',
+        PROMPT_BODY_INVALID_UTF8: 'The prompt body must be valid UTF-8.',
+        PROMPT_BODY_TOO_LARGE: 'The prompt body exceeds the maximum size.',
+        PROMPT_SCOPE_EMPTY_MODELS: 'At least one client model must be declared.',
+        PROMPT_SCOPE_EMPTY_PROFILES: 'At least one supported profile must be declared.',
+        PROMPT_UNKNOWN_PROFILE: 'The version declares an unknown protocol profile.',
+      },
     },
     versions: {
       title: 'Version history',
@@ -208,6 +219,9 @@ export default {
       mode: 'Mode',
       disabled: 'Disabled',
       version: 'Bound to a fixed version',
+      selectTemplate: 'Template',
+      selectTemplatePlaceholder: 'Select a template',
+      noTemplates: 'No prompt template exists yet.',
       selectVersion: 'Version',
       selectVersionPlaceholder: 'Select a published version',
       noVersions: 'No published version is available for this template.',
@@ -258,6 +272,11 @@ export default {
         clearFailed: 'Failed to remove the override.',
         accountCount: '{count} accounts in this group',
         searchPlaceholder: 'Search accounts',
+        addOverride: 'Add account override',
+        accountPlaceholder: 'Select an account in this group',
+        removeConfirmTitle: 'Remove this account override?',
+        removeConfirmMessage:
+          'The account stops overriding and inherits the group binding again.',
         accountsLoadFailed: 'Failed to load the accounts of this group.',
         dialogTitle: 'Prompt override for {account}',
         dialogDescription:

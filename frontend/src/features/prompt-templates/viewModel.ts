@@ -127,6 +127,18 @@ export function validationErrors(report: PromptValidationReport | null): string[
   return report?.errors ?? []
 }
 
+/**
+ * 从后端原始校验错误字符串里提取 reason code。
+ *
+ * 后端把 `infraerrors.BadRequest(...)` 的 `Error()` 直接放进 errors 数组，
+ * 形如 `error: code=400 reason="PROMPT_SCOPE_EMPTY_MODELS" message="..."`，
+ * 因此这里只抽取 reason 用于 i18n 映射，取不到就回退展示原文。
+ */
+export function validationReasonCode(error: string): string | null {
+  const match = /reason="([A-Za-z0-9_]+)"/.exec(error)
+  return match ? match[1] : null
+}
+
 export interface VersionDiff {
   bodyChanged: boolean
   addedLines: string[]

@@ -397,6 +397,43 @@ func newPromptTestGinContext(t *testing.T) *gin.Context {
 	return c
 }
 
+// ---------------------------------------------------------------- 乐观锁回归
+
+func TestSetGroupBinding_StaleEmptyRevisionConflicts(t *testing.T) {
+	// 回归：页面读到“还没有绑定”（revision 0），随后另一个管理员创建了绑定
+	// （revision 1）。此时用 revision 0 提交必须报冲突，而不是静默覆盖对方。
+	repo := &fakePromptRepo{binding: versionBinding(), version: enabledVersion()}
+	svc := NewPromptTemplateService(repo)
+
+	_, err := svc.SetGroupBinding(context.Background(), 11, 0,
+		PromptBindingInput{Mode: PromptBindingModeDisabled}, PromptActor{})
+	require.ErrorIs(t, err, ErrPromptRevisionConflict)
+}
+
+func TestSetGroupBinding_MatchingRevisionSucceeds(t *testing.T) {
+	binding := versionBinding() // revision 2
+	repo := &fakePromptRepo{binding: binding, version: enabledVersion()}
+	svc := NewPromptTemplateService(repo)
+
+	saved, err := svc.SetGroupBinding(context.Background(), 11, binding.Revision,
+		PromptBindingInput{Mode: PromptBindingModeDisabled}, PromptActor{})
+	require.NoError(t, err)
+	require.Equal(t, PromptBindingModeDisabled, saved.Mode)
+}
+
+func TestSetAccountOverride_StaleEmptyRevisionConflicts(t *testing.T) {
+	repo := &fakePromptRepo{
+		binding:  versionBinding(),
+		version:  enabledVersion(),
+		override: &AccountGroupPromptOverride{AccountID: 22, GroupID: 11, Mode: PromptOverrideModeInherit, Revision: 3},
+	}
+	svc := NewPromptTemplateService(repo)
+
+	_, err := svc.SetAccountOverride(context.Background(), 22, 11, 0,
+		PromptOverrideInput{Mode: PromptOverrideModeDisabled}, PromptActor{})
+	require.ErrorIs(t, err, ErrPromptRevisionConflict)
+}
+
 func TestApplyFrozenPromptInjection_FeatureOffIsNoop(t *testing.T) {
 	svc := newPromptTestService(false)
 	c := newPromptTestGinContext(t)

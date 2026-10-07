@@ -255,7 +255,10 @@ func (s *PromptTemplateService) UpdateDraft(ctx context.Context, templateID int6
 		current, getErr := s.repo.GetDraft(txCtx, templateID)
 		switch {
 		case getErr == nil && current != nil:
-			if expectedRevision > 0 && current.Revision != expectedRevision {
+			// 行已存在时必须匹配 revision。expectedRevision<=0 意味着调用方以为
+			// “还没有配置”（例如页面加载时读到空），属于过期副本 —— 此时另一个
+			// 管理员可能刚创建或改过，必须报冲突而不是静默覆盖对方。
+			if current.Revision != expectedRevision {
 				return ErrPromptRevisionConflict
 			}
 			if err := s.repo.UpsertDraft(txCtx, draft, current.Revision, false); err != nil {
@@ -442,7 +445,10 @@ func (s *PromptTemplateService) SetGroupBinding(ctx context.Context, groupID int
 		current, getErr := s.repo.GetGroupBinding(txCtx, groupID)
 		switch {
 		case getErr == nil && current != nil:
-			if expectedRevision > 0 && current.Revision != expectedRevision {
+			// 行已存在时必须匹配 revision。expectedRevision<=0 意味着调用方以为
+			// “还没有配置”（例如页面加载时读到空），属于过期副本 —— 此时另一个
+			// 管理员可能刚创建或改过，必须报冲突而不是静默覆盖对方。
+			if current.Revision != expectedRevision {
 				return ErrPromptRevisionConflict
 			}
 			if err := s.repo.UpsertGroupBinding(txCtx, binding, current.Revision, false); err != nil {
@@ -534,7 +540,10 @@ func (s *PromptTemplateService) SetAccountOverride(ctx context.Context, accountI
 		current, getErr := s.repo.GetAccountOverride(txCtx, accountID, groupID)
 		switch {
 		case getErr == nil && current != nil:
-			if expectedRevision > 0 && current.Revision != expectedRevision {
+			// 行已存在时必须匹配 revision。expectedRevision<=0 意味着调用方以为
+			// “还没有配置”（例如页面加载时读到空），属于过期副本 —— 此时另一个
+			// 管理员可能刚创建或改过，必须报冲突而不是静默覆盖对方。
+			if current.Revision != expectedRevision {
 				return ErrPromptRevisionConflict
 			}
 			if err := s.repo.UpsertAccountOverride(txCtx, override, current.Revision, false); err != nil {
