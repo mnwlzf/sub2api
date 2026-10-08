@@ -37,7 +37,7 @@ export const PROMPT_REASONS: PromptReason[] = [
 ]
 
 /** 正文上限（与后端 PromptBodyMaxBytes 一致），仅用于前端提示。 */
-export const PROMPT_BODY_MAX_BYTES = 32 * 1024
+export const PROMPT_BODY_MAX_BYTES = 64 * 1024
 
 /** 把多行/逗号分隔的输入解析成去重后的字符串数组。 */
 export function parseStringList(input: string): string[] {
