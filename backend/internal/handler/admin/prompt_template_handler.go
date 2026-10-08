@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -46,7 +47,12 @@ func parsePromptID(c *gin.Context, name string) (int64, bool) {
 }
 
 // ListRequestEvents 查询运行期策略记录（不含提示词正文）。
+//
 // GET /api/v1/admin/prompt-request-events?request_id=&group_id=&version_id=&applied=
+//
+// 两种响应形态，保证历史调用方不受影响：
+//   - 只传 limit（旧调用方式）→ 直接返回事件数组；
+//   - 传 page / page_size → 返回分页信封 {items,total,page,page_size,pages}。
 func (h *PromptTemplateHandler) ListRequestEvents(c *gin.Context) {
 	filter := service.PromptRequestEventFilter{}
 	if v := strings.TrimSpace(c.Query("request_id")); v != "" {
@@ -62,15 +68,27 @@ func (h *PromptTemplateHandler) ListRequestEvents(c *gin.Context) {
 		applied := strings.EqualFold(v, "true")
 		filter.Applied = &applied
 	}
-	if limit, err := strconv.Atoi(c.DefaultQuery("limit", "100")); err == nil {
+	// 只有显式给了 page / page_size 才走分页信封；只给 limit 时保持旧的数组契约。
+	paged := strings.TrimSpace(c.Query("page")) != "" || strings.TrimSpace(c.Query("page_size")) != ""
+	if paged {
+		page, pageSize := response.ParsePagination(c)
+		filter.Pagination = pagination.PaginationParams{Page: page, PageSize: pageSize}
+	} else if limit, err := strconv.Atoi(c.DefaultQuery("limit", "100")); err == nil {
 		filter.Limit = limit
 	}
-	events, err := h.service.ListRequestEvents(c.Request.Context(), filter)
+	events, pageResult, err := h.service.ListRequestEvents(c.Request.Context(), filter)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
-	response.Success(c, events)
+	if !paged {
+		response.Success(c, events)
+		return
+	}
+	if pageResult == nil {
+		pageResult = &pagination.PaginationResult{Total: int64(len(events)), Page: filter.Pagination.Page, PageSize: filter.Pagination.PageSize}
+	}
+	response.Paginated(c, events, pageResult.Total, pageResult.Page, pageResult.PageSize)
 }
 
 // parsePromptQueryID 解析可选的正整数查询参数。

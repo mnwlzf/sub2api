@@ -3,17 +3,20 @@ package repository
 import (
 	"context"
 	"fmt"
+	"math"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/accountgrouppromptoverride"
 	"github.com/Wei-Shaw/sub2api/ent/grouppromptbinding"
+	"github.com/Wei-Shaw/sub2api/ent/predicate"
 	"github.com/Wei-Shaw/sub2api/ent/promptadminevent"
 	"github.com/Wei-Shaw/sub2api/ent/promptrequestevent"
 	"github.com/Wei-Shaw/sub2api/ent/prompttemplate"
 	"github.com/Wei-Shaw/sub2api/ent/prompttemplatedraft"
 	"github.com/Wei-Shaw/sub2api/ent/prompttemplateversion"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
@@ -719,30 +722,29 @@ func (r *promptTemplateRepository) RecordPromptRequestEvent(ctx context.Context,
 	}
 }
 
-// ListRequestEvents 按条件查询运行期记录（新到旧）。
-func (r *promptTemplateRepository) ListRequestEvents(ctx context.Context, filter service.PromptRequestEventFilter) ([]service.PromptRequestEvent, error) {
-	limit := filter.Limit
-	if limit <= 0 || limit > 500 {
-		limit = 100
-	}
-	q := clientFromContext(ctx, r.client).PromptRequestEvent.Query().
-		Order(dbent.Desc(promptrequestevent.FieldID)).
-		Limit(limit)
-	if filter.RequestID != nil {
-		q = q.Where(promptrequestevent.RequestIDEQ(*filter.RequestID))
-	}
-	if filter.GroupID != nil {
-		q = q.Where(promptrequestevent.GroupIDEQ(*filter.GroupID))
-	}
-	if filter.VersionID != nil {
-		q = q.Where(promptrequestevent.VersionIDEQ(*filter.VersionID))
-	}
-	if filter.Applied != nil {
-		q = q.Where(promptrequestevent.AppliedEQ(*filter.Applied))
-	}
-	rows, err := q.All(ctx)
+// ListRequestEvents 按条件分页查询运行期记录（新到旧）。
+//
+// 两种调用方式共存，保证历史调用方不受影响：
+//   - 只给 filter.Limit：沿用旧语义（默认 100、上限 500），从最新一条开始取；
+//   - 给 filter.Pagination（page/page_size）：按页取，Pagination 优先。
+func (r *promptTemplateRepository) ListRequestEvents(ctx context.Context, filter service.PromptRequestEventFilter) ([]service.PromptRequestEvent, *pagination.PaginationResult, error) {
+	limit, offset := promptRequestEventWindow(filter)
+	preds := promptRequestEventPredicates(filter)
+
+	client := clientFromContext(ctx, r.client)
+	total, err := client.PromptRequestEvent.Query().Where(preds...).Count(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+
+	rows, err := client.PromptRequestEvent.Query().
+		Where(preds...).
+		Order(dbent.Desc(promptrequestevent.FieldID)).
+		Limit(limit).
+		Offset(offset).
+		All(ctx)
+	if err != nil {
+		return nil, nil, err
 	}
 	out := make([]service.PromptRequestEvent, 0, len(rows))
 	for _, row := range rows {
@@ -765,5 +767,65 @@ func (r *promptTemplateRepository) ListRequestEvents(ctx context.Context, filter
 			CreatedAt:       row.CreatedAt,
 		})
 	}
-	return out, nil
+	return out, promptRequestEventPaginationResult(int64(total), filter, limit), nil
+}
+
+// 运行期记录列表的条数约束（沿用旧实现的默认值与上限）。
+const (
+	promptRequestEventDefaultLimit = 100
+	promptRequestEventMaxLimit     = 500
+)
+
+// promptRequestEventWindow 计算本次查询的 limit/offset。
+//
+// 抽成纯函数（不触碰数据库），因此 limit/offset 的换算可以在 unit 测试里直接断言。
+func promptRequestEventWindow(filter service.PromptRequestEventFilter) (limit, offset int) {
+	if filter.Pagination.Page > 0 || filter.Pagination.PageSize > 0 {
+		return filter.Pagination.Limit(), filter.Pagination.Offset()
+	}
+	limit = filter.Limit
+	if limit <= 0 || limit > promptRequestEventMaxLimit {
+		limit = promptRequestEventDefaultLimit
+	}
+	return limit, 0
+}
+
+// promptRequestEventPredicates 把过滤条件翻译成 ent 谓词。
+//
+// 同样是纯函数：不依赖数据库，可用 sql.Selector 直接断言生成的 WHERE 子句。
+func promptRequestEventPredicates(filter service.PromptRequestEventFilter) []predicate.PromptRequestEvent {
+	preds := make([]predicate.PromptRequestEvent, 0, 4)
+	if filter.RequestID != nil {
+		preds = append(preds, promptrequestevent.RequestIDEQ(*filter.RequestID))
+	}
+	if filter.GroupID != nil {
+		preds = append(preds, promptrequestevent.GroupIDEQ(*filter.GroupID))
+	}
+	if filter.VersionID != nil {
+		preds = append(preds, promptrequestevent.VersionIDEQ(*filter.VersionID))
+	}
+	if filter.Applied != nil {
+		preds = append(preds, promptrequestevent.AppliedEQ(*filter.Applied))
+	}
+	return preds
+}
+
+// promptRequestEventPaginationResult 组装分页元信息。
+//
+// limit 一定 >= 1（见 promptRequestEventWindow），因此不会出现除零。
+func promptRequestEventPaginationResult(total int64, filter service.PromptRequestEventFilter, limit int) *pagination.PaginationResult {
+	page := filter.Pagination.Page
+	if page < 1 {
+		page = 1
+	}
+	pages := int(math.Ceil(float64(total) / float64(limit)))
+	if pages < 1 {
+		pages = 1
+	}
+	return &pagination.PaginationResult{
+		Total:    total,
+		Page:     page,
+		PageSize: limit,
+		Pages:    pages,
+	}
 }

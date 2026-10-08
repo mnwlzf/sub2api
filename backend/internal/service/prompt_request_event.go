@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/gin-gonic/gin"
 )
 
@@ -47,7 +48,11 @@ type PromptRequestEventFilter struct {
 	GroupID   *int64
 	VersionID *int64
 	Applied   *bool
-	Limit     int
+	// Limit 是历史（只传 limit）调用方式下的条数上限：默认 100、上限 500。
+	// 需要翻页时改用 Pagination；两者同时给出时 Pagination 优先。
+	Limit int
+	// Pagination 是 page/page_size 分页窗口（PageSize 为 0 时由仓储取默认值）。
+	Pagination pagination.PaginationParams
 }
 
 // SetPromptEventRecorder 注入运行期记录器。

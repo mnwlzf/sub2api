@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -263,8 +264,8 @@ func (f *fakePromptRepo) ListAdminEvents(context.Context, *int64, *int64, int) (
 	return nil, nil
 }
 func (f *fakePromptRepo) CreateRequestEvent(context.Context, *PromptRequestEvent) error { return nil }
-func (f *fakePromptRepo) ListRequestEvents(context.Context, PromptRequestEventFilter) ([]PromptRequestEvent, error) {
-	return nil, nil
+func (f *fakePromptRepo) ListRequestEvents(context.Context, PromptRequestEventFilter) ([]PromptRequestEvent, *pagination.PaginationResult, error) {
+	return nil, nil, nil
 }
 func (f *fakePromptRepo) WithTx(ctx context.Context, fn func(context.Context) error) error {
 	return fn(ctx)

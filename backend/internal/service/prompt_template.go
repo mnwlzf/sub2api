@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 )
 
 // 文本提示词管理（prompt_* 表）的领域定义。
@@ -252,7 +253,7 @@ type PromptTemplateRepository interface {
 
 	// 运行期记录（尽力而为）
 	CreateRequestEvent(ctx context.Context, e *PromptRequestEvent) error
-	ListRequestEvents(ctx context.Context, filter PromptRequestEventFilter) ([]PromptRequestEvent, error)
+	ListRequestEvents(ctx context.Context, filter PromptRequestEventFilter) ([]PromptRequestEvent, *pagination.PaginationResult, error)
 
 	// WithTx 在同一个数据库事务内执行 fn。fn 内部的仓储调用会自动复用该事务，
 	// 因此“配置修改 + 管理审计”可以原子提交，不会出现改了配置却没有审计记录

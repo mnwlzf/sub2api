@@ -7,6 +7,7 @@ import (
 	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/tidwall/gjson"
 )
 
@@ -600,7 +601,8 @@ func (s *PromptTemplateService) ListAdminEvents(ctx context.Context, templateID,
 // ListRequestEvents 查询运行期策略记录。
 //
 // 用于回答“这个请求注入了没有、为什么没注入、重试时是否沿用同一版本”。
-func (s *PromptTemplateService) ListRequestEvents(ctx context.Context, filter PromptRequestEventFilter) ([]PromptRequestEvent, error) {
+// 第二个返回值始终给出本次查询的总数/页码，历史（只传 limit）调用方可以忽略。
+func (s *PromptTemplateService) ListRequestEvents(ctx context.Context, filter PromptRequestEventFilter) ([]PromptRequestEvent, *pagination.PaginationResult, error) {
 	return s.repo.ListRequestEvents(ctx, filter)
 }
 

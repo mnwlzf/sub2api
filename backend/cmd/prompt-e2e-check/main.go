@@ -137,7 +137,7 @@ func main() {
 		Reason: service.PromptReasonApplied, AddedBytes: 42,
 	})
 	time.Sleep(200 * time.Millisecond)
-	events, err := svc.ListRequestEvents(ctx, service.PromptRequestEventFilter{RequestID: strPtr(requestID)})
+	events, _, err := svc.ListRequestEvents(ctx, service.PromptRequestEventFilter{RequestID: strPtr(requestID)})
 	if err != nil {
 		fmt.Println("ListRequestEvents:", err)
 		os.Exit(1)
