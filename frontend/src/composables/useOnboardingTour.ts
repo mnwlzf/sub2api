@@ -150,7 +150,15 @@ export function useOnboardingTour(options: OnboardingOptions) {
           driverInstance?.moveNext()
         }
       },
-      onPrevClick: () => {
+      onPrevClick: (_element, _step, { state }) => {
+        // 欢迎步骤借「上一页」按钮承载「跳过」文案（prevBtnText），但第一步没有上一页，
+        // 原先点它没有任何反应。这里显式结束引导并记为已看过，让按钮名实相符。
+        if ((state.activeIndex ?? 0) === 0) {
+          markAsSeen()
+          driverInstance?.destroy()
+          onboardingStore.setDriverInstance(null)
+          return
+        }
         driverInstance?.movePrevious()
       },
       onCloseClick: () => {
