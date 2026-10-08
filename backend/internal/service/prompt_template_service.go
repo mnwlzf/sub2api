@@ -727,12 +727,3 @@ func (s *PromptTemplateService) ValidateDraft(ctx context.Context, templateID in
 func gjsonString(body []byte, path string) string {
 	return gjson.GetBytes(body, path).String()
 }
-
-// promptErrorIsNotFound 便于 handler 判定 404。
-func promptErrorIsNotFound(err error) bool {
-	return errors.Is(err, ErrPromptTemplateNotFound) ||
-		errors.Is(err, ErrPromptVersionNotFound) ||
-		errors.Is(err, ErrPromptDraftNotFound) ||
-		errors.Is(err, ErrPromptBindingNotFound) ||
-		errors.Is(err, ErrPromptOverrideNotFound)
-}

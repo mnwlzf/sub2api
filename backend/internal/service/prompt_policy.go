@@ -30,18 +30,18 @@ const (
 // FrozenPromptPolicy 是一次逻辑请求内不可变的提示词策略。
 type FrozenPromptPolicy struct {
 	// Enabled 为 false 时 Reason 说明为什么没有注入。
-	Enabled            bool     `json:"enabled"`
-	Reason             string   `json:"reason"`
-	TemplateID         int64    `json:"template_id,omitempty"`
-	VersionID          int64    `json:"version_id,omitempty"`
-	ManifestSHA256     string   `json:"manifest_sha256,omitempty"`
-	Body               string   `json:"-"`
-	SupportedProfiles  []string `json:"supported_profiles,omitempty"`
-	ClientModels       []string `json:"client_models,omitempty"`
-	UpstreamModels     []string `json:"upstream_models,omitempty"`
-	GroupID            int64    `json:"group_id,omitempty"`
-	AccountID          int64    `json:"account_id,omitempty"`
-	BindingSource      string   `json:"binding_source,omitempty"`
+	Enabled           bool     `json:"enabled"`
+	Reason            string   `json:"reason"`
+	TemplateID        int64    `json:"template_id,omitempty"`
+	VersionID         int64    `json:"version_id,omitempty"`
+	ManifestSHA256    string   `json:"manifest_sha256,omitempty"`
+	Body              string   `json:"-"`
+	SupportedProfiles []string `json:"supported_profiles,omitempty"`
+	ClientModels      []string `json:"client_models,omitempty"`
+	UpstreamModels    []string `json:"upstream_models,omitempty"`
+	GroupID           int64    `json:"group_id,omitempty"`
+	AccountID         int64    `json:"account_id,omitempty"`
+	BindingSource     string   `json:"binding_source,omitempty"`
 }
 
 // disabledPromptPolicy 构造一个“不注入”的策略，并带上原因。

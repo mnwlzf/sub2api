@@ -49,18 +49,18 @@ const (
 
 // 请求记录中的固定原因枚举。运行时只使用这些值，便于统计与告警。
 const (
-	PromptReasonDisabled              = "disabled"
-	PromptReasonGroupDisabled         = "group_disabled"
-	PromptReasonAccountDisabled       = "account_disabled"
-	PromptReasonSkippedModelScope     = "skipped_model_scope"
-	PromptReasonSkippedNonTextTask    = "skipped_non_text_task"
-	PromptReasonApplied               = "applied"
-	PromptReasonUnsupportedProfile    = "unsupported_profile"
-	PromptReasonUnsupportedHistory    = "unsupported_history_mode"
-	PromptReasonNoCompatibleAccount   = "no_compatible_account"
-	PromptReasonConfigUnavailable     = "config_unavailable"
-	PromptReasonInvalidConfig         = "invalid_config"
-	PromptReasonAdapterError          = "adapter_error"
+	PromptReasonDisabled            = "disabled"
+	PromptReasonGroupDisabled       = "group_disabled"
+	PromptReasonAccountDisabled     = "account_disabled"
+	PromptReasonSkippedModelScope   = "skipped_model_scope"
+	PromptReasonSkippedNonTextTask  = "skipped_non_text_task"
+	PromptReasonApplied             = "applied"
+	PromptReasonUnsupportedProfile  = "unsupported_profile"
+	PromptReasonUnsupportedHistory  = "unsupported_history_mode"
+	PromptReasonNoCompatibleAccount = "no_compatible_account"
+	PromptReasonConfigUnavailable   = "config_unavailable"
+	PromptReasonInvalidConfig       = "invalid_config"
+	PromptReasonAdapterError        = "adapter_error"
 )
 
 // 管理事件作用域。
@@ -73,15 +73,15 @@ const (
 
 // 管理动作。
 const (
-	PromptActionCreate         = "create_template"
-	PromptActionUpdate         = "update_template"
-	PromptActionArchive        = "archive_template"
-	PromptActionUpdateDraft    = "update_draft"
-	PromptActionPublish        = "publish_version"
-	PromptActionBind           = "set_binding"
-	PromptActionUnbind         = "clear_binding"
-	PromptActionSetOverride    = "set_override"
-	PromptActionClearOverride  = "clear_override"
+	PromptActionCreate        = "create_template"
+	PromptActionUpdate        = "update_template"
+	PromptActionArchive       = "archive_template"
+	PromptActionUpdateDraft   = "update_draft"
+	PromptActionPublish       = "publish_version"
+	PromptActionBind          = "set_binding"
+	PromptActionUnbind        = "clear_binding"
+	PromptActionSetOverride   = "set_override"
+	PromptActionClearOverride = "clear_override"
 )
 
 // PromptBodyMaxBytes 是第一阶段正文上限（32 KiB）。
