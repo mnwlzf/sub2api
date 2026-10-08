@@ -84,8 +84,8 @@ const (
 	PromptActionClearOverride = "clear_override"
 )
 
-// PromptBodyMaxBytes 是第一阶段正文上限（32 KiB）。
-const PromptBodyMaxBytes = 32 * 1024
+// PromptBodyMaxBytes 是提示词正文上限（64 KiB），用于容纳基础人格与单个完整 Skill 的静态组合。
+const PromptBodyMaxBytes = 64 * 1024
 
 var (
 	ErrPromptTemplateNotFound   = infraerrors.NotFound("PROMPT_TEMPLATE_NOT_FOUND", "prompt template not found")

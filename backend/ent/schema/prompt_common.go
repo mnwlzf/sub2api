@@ -53,8 +53,8 @@ func validatePromptAdminEventScope(value string) error {
 	return fmt.Errorf("invalid prompt admin event scope %q", value)
 }
 
-// 提示词正文的第一阶段上限（字节）。设计文档约定 32 KiB。
-const promptBodyMaxBytes = 32 * 1024
+// 提示词正文上限（字节）。支持基础人格与单个完整 Skill 的静态组合。
+const promptBodyMaxBytes = 64 * 1024
 
 func validatePromptBodySize(value string) error {
 	if len(value) == 0 {
