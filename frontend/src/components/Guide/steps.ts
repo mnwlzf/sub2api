@@ -15,7 +15,10 @@ export const getAdminSteps = (t: (key: string) => string, isSimpleMode = false):
       description: t('onboarding.admin.welcome.description'),
       align: 'center',
       nextBtnText: t('onboarding.admin.welcome.nextBtn'),
-      prevBtnText: t('onboarding.admin.welcome.prevBtn')
+      prevBtnText: t('onboarding.admin.welcome.prevBtn'),
+      // driver.js 会在第一步强制禁用「上一页」按钮，而本步正是把该按钮复用为「跳过」。
+      // 不禁用，点「跳过」才会走到 useOnboardingTour 的 onPrevClick（结束引导并记为已看过）。
+      disableButtons: []
     }
   },
 
@@ -253,7 +256,9 @@ export const getUserSteps = (t: (key: string) => string): DriveStep[] => [
       description: t('onboarding.user.welcome.description'),
       align: 'center',
       nextBtnText: t('onboarding.user.welcome.nextBtn'),
-      prevBtnText: t('onboarding.user.welcome.prevBtn')
+      prevBtnText: t('onboarding.user.welcome.prevBtn'),
+      // 同管理员引导：第一步的「跳过」复用「上一页」按钮，必须解除 driver.js 的默认禁用。
+      disableButtons: []
     }
   },
   {

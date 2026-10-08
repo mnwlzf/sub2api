@@ -442,7 +442,9 @@ var ErrNoAvailableCompactAccounts = errors.New("no available accounts support /r
 
 // OpenAIGatewayService handles OpenAI API gateway operations
 type OpenAIGatewayService struct {
-	accountRepo           AccountRepository
+	accountRepo AccountRepository
+	// promptEventRecorder 为可选的运行期提示词记录器；未注入时记录被跳过。
+	promptEventRecorder   PromptRequestEventRecorder
 	usageLogRepo          UsageLogRepository
 	usageBillingRepo      UsageBillingRepository
 	userRepo              UserRepository

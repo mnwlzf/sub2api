@@ -103,6 +103,9 @@ func RegisterAdminRoutes(
 		// TLS 指纹模板管理
 		registerTLSFingerprintProfileRoutes(admin, h)
 
+		// 文本提示词管理（模板 / 不可变版本 / 分组绑定 / 分组内账号覆盖）
+		registerPromptTemplateRoutes(admin, h)
+
 		// 本地进程插件管理
 		registerPluginRoutes(admin, h, stepUpAuth)
 
@@ -751,6 +754,50 @@ func registerErrorPassthroughRoutes(admin *gin.RouterGroup, h *handler.Handlers)
 		rules.PUT("/:id", h.Admin.ErrorPassthrough.Update)
 		rules.DELETE("/:id", h.Admin.ErrorPassthrough.Delete)
 	}
+}
+
+// registerPromptTemplateRoutes 注册文本提示词管理路由。
+//
+// 前缀使用 prompt-templates / prompt-versions：/admin/prompt-audit 已被既有的
+// “提示词审计”功能占用。
+func registerPromptTemplateRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	ph := h.Admin.PromptTemplate
+
+	templates := admin.Group("/prompt-templates")
+	{
+		templates.GET("", ph.ListTemplates)
+		templates.POST("", ph.CreateTemplate)
+		templates.GET("/:id", ph.GetTemplate)
+		templates.PUT("/:id", ph.UpdateTemplate)
+		templates.POST("/:id/archive", ph.ArchiveTemplate)
+		templates.GET("/:id/events", ph.ListEvents)
+		// 草稿：可反复编辑，未发布前不影响任何请求。
+		templates.GET("/:id/draft", ph.GetDraft)
+		templates.PUT("/:id/draft", ph.UpdateDraft)
+		// 发布前校验与发布（发布后内容不可变）。
+		templates.GET("/:id/validation", ph.ValidateDraft)
+		templates.GET("/:id/versions", ph.ListVersions)
+		templates.POST("/:id/versions", ph.PublishVersion)
+	}
+
+	versions := admin.Group("/prompt-versions")
+	{
+		versions.GET("/:id", ph.GetVersion)
+		// 结构预览：本地投影，不调用上游、不产生费用。
+		versions.POST("/:id/preview", ph.PreviewVersion)
+	}
+
+	// 运行期策略记录：解释“这个请求注入了没有、为什么没注入”。
+	admin.GET("/prompt-request-events", ph.ListRequestEvents)
+
+	// 分组绑定与分组内账号覆盖挂在既有 groups 分组下，避免另造授权路径。
+	admin.GET("/groups/:id/prompt-binding", ph.GetGroupBinding)
+	admin.PUT("/groups/:id/prompt-binding", ph.SetGroupBinding)
+	admin.DELETE("/groups/:id/prompt-binding", ph.ClearGroupBinding)
+	admin.GET("/groups/:id/prompt-overrides", ph.ListAccountOverrides)
+	admin.GET("/groups/:id/accounts/:accountId/prompt-override", ph.GetAccountOverride)
+	admin.PUT("/groups/:id/accounts/:accountId/prompt-override", ph.SetAccountOverride)
+	admin.DELETE("/groups/:id/accounts/:accountId/prompt-override", ph.ClearAccountOverride)
 }
 
 func registerTLSFingerprintProfileRoutes(admin *gin.RouterGroup, h *handler.Handlers) {

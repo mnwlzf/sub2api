@@ -14,6 +14,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/Wei-Shaw/sub2api/ent/account"
 	"github.com/Wei-Shaw/sub2api/ent/accountgroup"
+	"github.com/Wei-Shaw/sub2api/ent/accountgrouppromptoverride"
 	"github.com/Wei-Shaw/sub2api/ent/announcement"
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
@@ -29,6 +30,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/compositemodelroute"
 	"github.com/Wei-Shaw/sub2api/ent/errorpassthroughrule"
 	"github.com/Wei-Shaw/sub2api/ent/group"
+	"github.com/Wei-Shaw/sub2api/ent/grouppromptbinding"
 	"github.com/Wei-Shaw/sub2api/ent/idempotencyrecord"
 	"github.com/Wei-Shaw/sub2api/ent/identityadoptiondecision"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
@@ -37,6 +39,11 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/pendingauthsession"
 	"github.com/Wei-Shaw/sub2api/ent/promocode"
 	"github.com/Wei-Shaw/sub2api/ent/promocodeusage"
+	"github.com/Wei-Shaw/sub2api/ent/promptadminevent"
+	"github.com/Wei-Shaw/sub2api/ent/promptrequestevent"
+	"github.com/Wei-Shaw/sub2api/ent/prompttemplate"
+	"github.com/Wei-Shaw/sub2api/ent/prompttemplatedraft"
+	"github.com/Wei-Shaw/sub2api/ent/prompttemplateversion"
 	"github.com/Wei-Shaw/sub2api/ent/proxy"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
@@ -115,6 +122,7 @@ func checkColumn(t, c string) error {
 			apikey.Table:                        apikey.ValidColumn,
 			account.Table:                       account.ValidColumn,
 			accountgroup.Table:                  accountgroup.ValidColumn,
+			accountgrouppromptoverride.Table:    accountgrouppromptoverride.ValidColumn,
 			announcement.Table:                  announcement.ValidColumn,
 			announcementread.Table:              announcementread.ValidColumn,
 			authidentity.Table:                  authidentity.ValidColumn,
@@ -129,6 +137,7 @@ func checkColumn(t, c string) error {
 			compositemodelroute.Table:           compositemodelroute.ValidColumn,
 			errorpassthroughrule.Table:          errorpassthroughrule.ValidColumn,
 			group.Table:                         group.ValidColumn,
+			grouppromptbinding.Table:            grouppromptbinding.ValidColumn,
 			idempotencyrecord.Table:             idempotencyrecord.ValidColumn,
 			identityadoptiondecision.Table:      identityadoptiondecision.ValidColumn,
 			paymentauditlog.Table:               paymentauditlog.ValidColumn,
@@ -137,6 +146,11 @@ func checkColumn(t, c string) error {
 			pendingauthsession.Table:            pendingauthsession.ValidColumn,
 			promocode.Table:                     promocode.ValidColumn,
 			promocodeusage.Table:                promocodeusage.ValidColumn,
+			promptadminevent.Table:              promptadminevent.ValidColumn,
+			promptrequestevent.Table:            promptrequestevent.ValidColumn,
+			prompttemplate.Table:                prompttemplate.ValidColumn,
+			prompttemplatedraft.Table:           prompttemplatedraft.ValidColumn,
+			prompttemplateversion.Table:         prompttemplateversion.ValidColumn,
 			proxy.Table:                         proxy.ValidColumn,
 			redeemcode.Table:                    redeemcode.ValidColumn,
 			securitysecret.Table:                securitysecret.ValidColumn,

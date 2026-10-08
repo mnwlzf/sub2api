@@ -858,6 +858,8 @@ var ProviderSet = wire.NewSet(
 	ProvideAuthCacheInvalidationWorker,
 	NewGroupService,
 	NewCompositeRouteResolver,
+	NewPromptTemplateService,
+	NewPromptPolicyResolver,
 	NewAccountService,
 	NewProxyService,
 	NewRedeemService,

@@ -249,6 +249,11 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
 		forwardStart := time.Now()
 
+		// 文本提示词策略：依据首个选中账号冻结一次，后续重试/换号复用同一策略。
+		if !h.freezeTextPromptPolicy(c, apiKey.GroupID, account.ID, forwardModel) {
+			return
+		}
+
 		forwardBody := body
 		if channelMapping.Mapped {
 			forwardBody = h.gatewayService.ReplaceModelInBody(body, channelMapping.MappedModel)

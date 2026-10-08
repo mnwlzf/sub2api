@@ -769,6 +769,16 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			}
 		}
 	}
+	// 文本提示词注入：位于 lineage 会话键派生之后（避免改变 invalid-encrypted-content
+	// 的会话指纹），并位于 buildUpstreamRequest / http.NewRequest 之前，保证注入内容
+	// 是最终出站正文的一部分、只注入一次，且签名与 prompt_cache_key 基于最终 body 计算。
+	if injectedBody, changed, injectErr := s.ApplyFrozenPromptInjection(c, PromptProfileResponsesHTTP, upstreamModel, body); injectErr != nil {
+		return nil, injectErr
+	} else if changed {
+		body = injectedBody
+		requestView = newOpenAIRequestView(body)
+		reqBody = nil
+	}
 	imageBillingModel := ""
 	imageSizeTier := ""
 	imageInputSize := ""

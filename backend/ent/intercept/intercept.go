@@ -10,6 +10,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/account"
 	"github.com/Wei-Shaw/sub2api/ent/accountgroup"
+	"github.com/Wei-Shaw/sub2api/ent/accountgrouppromptoverride"
 	"github.com/Wei-Shaw/sub2api/ent/announcement"
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
@@ -25,6 +26,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/compositemodelroute"
 	"github.com/Wei-Shaw/sub2api/ent/errorpassthroughrule"
 	"github.com/Wei-Shaw/sub2api/ent/group"
+	"github.com/Wei-Shaw/sub2api/ent/grouppromptbinding"
 	"github.com/Wei-Shaw/sub2api/ent/idempotencyrecord"
 	"github.com/Wei-Shaw/sub2api/ent/identityadoptiondecision"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
@@ -34,6 +36,11 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
 	"github.com/Wei-Shaw/sub2api/ent/promocode"
 	"github.com/Wei-Shaw/sub2api/ent/promocodeusage"
+	"github.com/Wei-Shaw/sub2api/ent/promptadminevent"
+	"github.com/Wei-Shaw/sub2api/ent/promptrequestevent"
+	"github.com/Wei-Shaw/sub2api/ent/prompttemplate"
+	"github.com/Wei-Shaw/sub2api/ent/prompttemplatedraft"
+	"github.com/Wei-Shaw/sub2api/ent/prompttemplateversion"
 	"github.com/Wei-Shaw/sub2api/ent/proxy"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
@@ -186,6 +193,33 @@ func (f TraverseAccountGroup) Traverse(ctx context.Context, q ent.Query) error {
 		return f(ctx, q)
 	}
 	return fmt.Errorf("unexpected query type %T. expect *ent.AccountGroupQuery", q)
+}
+
+// The AccountGroupPromptOverrideFunc type is an adapter to allow the use of ordinary function as a Querier.
+type AccountGroupPromptOverrideFunc func(context.Context, *ent.AccountGroupPromptOverrideQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f AccountGroupPromptOverrideFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.AccountGroupPromptOverrideQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.AccountGroupPromptOverrideQuery", q)
+}
+
+// The TraverseAccountGroupPromptOverride type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseAccountGroupPromptOverride func(context.Context, *ent.AccountGroupPromptOverrideQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseAccountGroupPromptOverride) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseAccountGroupPromptOverride) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.AccountGroupPromptOverrideQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.AccountGroupPromptOverrideQuery", q)
 }
 
 // The AnnouncementFunc type is an adapter to allow the use of ordinary function as a Querier.
@@ -566,6 +600,33 @@ func (f TraverseGroup) Traverse(ctx context.Context, q ent.Query) error {
 	return fmt.Errorf("unexpected query type %T. expect *ent.GroupQuery", q)
 }
 
+// The GroupPromptBindingFunc type is an adapter to allow the use of ordinary function as a Querier.
+type GroupPromptBindingFunc func(context.Context, *ent.GroupPromptBindingQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f GroupPromptBindingFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.GroupPromptBindingQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.GroupPromptBindingQuery", q)
+}
+
+// The TraverseGroupPromptBinding type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseGroupPromptBinding func(context.Context, *ent.GroupPromptBindingQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseGroupPromptBinding) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseGroupPromptBinding) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.GroupPromptBindingQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.GroupPromptBindingQuery", q)
+}
+
 // The IdempotencyRecordFunc type is an adapter to allow the use of ordinary function as a Querier.
 type IdempotencyRecordFunc func(context.Context, *ent.IdempotencyRecordQuery) (ent.Value, error)
 
@@ -780,6 +841,141 @@ func (f TraversePromoCodeUsage) Traverse(ctx context.Context, q ent.Query) error
 		return f(ctx, q)
 	}
 	return fmt.Errorf("unexpected query type %T. expect *ent.PromoCodeUsageQuery", q)
+}
+
+// The PromptAdminEventFunc type is an adapter to allow the use of ordinary function as a Querier.
+type PromptAdminEventFunc func(context.Context, *ent.PromptAdminEventQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f PromptAdminEventFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.PromptAdminEventQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.PromptAdminEventQuery", q)
+}
+
+// The TraversePromptAdminEvent type is an adapter to allow the use of ordinary function as Traverser.
+type TraversePromptAdminEvent func(context.Context, *ent.PromptAdminEventQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraversePromptAdminEvent) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraversePromptAdminEvent) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.PromptAdminEventQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.PromptAdminEventQuery", q)
+}
+
+// The PromptRequestEventFunc type is an adapter to allow the use of ordinary function as a Querier.
+type PromptRequestEventFunc func(context.Context, *ent.PromptRequestEventQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f PromptRequestEventFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.PromptRequestEventQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.PromptRequestEventQuery", q)
+}
+
+// The TraversePromptRequestEvent type is an adapter to allow the use of ordinary function as Traverser.
+type TraversePromptRequestEvent func(context.Context, *ent.PromptRequestEventQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraversePromptRequestEvent) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraversePromptRequestEvent) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.PromptRequestEventQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.PromptRequestEventQuery", q)
+}
+
+// The PromptTemplateFunc type is an adapter to allow the use of ordinary function as a Querier.
+type PromptTemplateFunc func(context.Context, *ent.PromptTemplateQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f PromptTemplateFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.PromptTemplateQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.PromptTemplateQuery", q)
+}
+
+// The TraversePromptTemplate type is an adapter to allow the use of ordinary function as Traverser.
+type TraversePromptTemplate func(context.Context, *ent.PromptTemplateQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraversePromptTemplate) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraversePromptTemplate) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.PromptTemplateQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.PromptTemplateQuery", q)
+}
+
+// The PromptTemplateDraftFunc type is an adapter to allow the use of ordinary function as a Querier.
+type PromptTemplateDraftFunc func(context.Context, *ent.PromptTemplateDraftQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f PromptTemplateDraftFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.PromptTemplateDraftQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.PromptTemplateDraftQuery", q)
+}
+
+// The TraversePromptTemplateDraft type is an adapter to allow the use of ordinary function as Traverser.
+type TraversePromptTemplateDraft func(context.Context, *ent.PromptTemplateDraftQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraversePromptTemplateDraft) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraversePromptTemplateDraft) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.PromptTemplateDraftQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.PromptTemplateDraftQuery", q)
+}
+
+// The PromptTemplateVersionFunc type is an adapter to allow the use of ordinary function as a Querier.
+type PromptTemplateVersionFunc func(context.Context, *ent.PromptTemplateVersionQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f PromptTemplateVersionFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.PromptTemplateVersionQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.PromptTemplateVersionQuery", q)
+}
+
+// The TraversePromptTemplateVersion type is an adapter to allow the use of ordinary function as Traverser.
+type TraversePromptTemplateVersion func(context.Context, *ent.PromptTemplateVersionQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraversePromptTemplateVersion) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraversePromptTemplateVersion) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.PromptTemplateVersionQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.PromptTemplateVersionQuery", q)
 }
 
 // The ProxyFunc type is an adapter to allow the use of ordinary function as a Querier.
@@ -1196,6 +1392,8 @@ func NewQuery(q ent.Query) (Query, error) {
 		return &query[*ent.AccountQuery, predicate.Account, account.OrderOption]{typ: ent.TypeAccount, tq: q}, nil
 	case *ent.AccountGroupQuery:
 		return &query[*ent.AccountGroupQuery, predicate.AccountGroup, accountgroup.OrderOption]{typ: ent.TypeAccountGroup, tq: q}, nil
+	case *ent.AccountGroupPromptOverrideQuery:
+		return &query[*ent.AccountGroupPromptOverrideQuery, predicate.AccountGroupPromptOverride, accountgrouppromptoverride.OrderOption]{typ: ent.TypeAccountGroupPromptOverride, tq: q}, nil
 	case *ent.AnnouncementQuery:
 		return &query[*ent.AnnouncementQuery, predicate.Announcement, announcement.OrderOption]{typ: ent.TypeAnnouncement, tq: q}, nil
 	case *ent.AnnouncementReadQuery:
@@ -1224,6 +1422,8 @@ func NewQuery(q ent.Query) (Query, error) {
 		return &query[*ent.ErrorPassthroughRuleQuery, predicate.ErrorPassthroughRule, errorpassthroughrule.OrderOption]{typ: ent.TypeErrorPassthroughRule, tq: q}, nil
 	case *ent.GroupQuery:
 		return &query[*ent.GroupQuery, predicate.Group, group.OrderOption]{typ: ent.TypeGroup, tq: q}, nil
+	case *ent.GroupPromptBindingQuery:
+		return &query[*ent.GroupPromptBindingQuery, predicate.GroupPromptBinding, grouppromptbinding.OrderOption]{typ: ent.TypeGroupPromptBinding, tq: q}, nil
 	case *ent.IdempotencyRecordQuery:
 		return &query[*ent.IdempotencyRecordQuery, predicate.IdempotencyRecord, idempotencyrecord.OrderOption]{typ: ent.TypeIdempotencyRecord, tq: q}, nil
 	case *ent.IdentityAdoptionDecisionQuery:
@@ -1240,6 +1440,16 @@ func NewQuery(q ent.Query) (Query, error) {
 		return &query[*ent.PromoCodeQuery, predicate.PromoCode, promocode.OrderOption]{typ: ent.TypePromoCode, tq: q}, nil
 	case *ent.PromoCodeUsageQuery:
 		return &query[*ent.PromoCodeUsageQuery, predicate.PromoCodeUsage, promocodeusage.OrderOption]{typ: ent.TypePromoCodeUsage, tq: q}, nil
+	case *ent.PromptAdminEventQuery:
+		return &query[*ent.PromptAdminEventQuery, predicate.PromptAdminEvent, promptadminevent.OrderOption]{typ: ent.TypePromptAdminEvent, tq: q}, nil
+	case *ent.PromptRequestEventQuery:
+		return &query[*ent.PromptRequestEventQuery, predicate.PromptRequestEvent, promptrequestevent.OrderOption]{typ: ent.TypePromptRequestEvent, tq: q}, nil
+	case *ent.PromptTemplateQuery:
+		return &query[*ent.PromptTemplateQuery, predicate.PromptTemplate, prompttemplate.OrderOption]{typ: ent.TypePromptTemplate, tq: q}, nil
+	case *ent.PromptTemplateDraftQuery:
+		return &query[*ent.PromptTemplateDraftQuery, predicate.PromptTemplateDraft, prompttemplatedraft.OrderOption]{typ: ent.TypePromptTemplateDraft, tq: q}, nil
+	case *ent.PromptTemplateVersionQuery:
+		return &query[*ent.PromptTemplateVersionQuery, predicate.PromptTemplateVersion, prompttemplateversion.OrderOption]{typ: ent.TypePromptTemplateVersion, tq: q}, nil
 	case *ent.ProxyQuery:
 		return &query[*ent.ProxyQuery, predicate.Proxy, proxy.OrderOption]{typ: ent.TypeProxy, tq: q}, nil
 	case *ent.RedeemCodeQuery:

@@ -120,7 +120,10 @@ func (s *OpenAIGatewayService) forwardAnthropicViaRawChatCompletions(
 	if err != nil {
 		return nil, err
 	}
-	resp, err := s.sendCCUpstreamRequest(ctx, c, account, targetURL, chatBody, clientStream, apiKey, account.GetOpenAIUserAgent(), "")
+	// Anthropic Messages 入站 → Chat 出站：不属于本功能支持的 profile。
+	// 传空 profile 表示保持既有行为（ApplyFrozenPromptInjection 会记录跳过原因），
+	// 避免开启该功能后打断与提示词配置无关的 Messages 流量。
+	resp, err := s.sendCCUpstreamRequest(ctx, c, account, targetURL, chatBody, clientStream, apiKey, account.GetOpenAIUserAgent(), "", "")
 	if err != nil {
 		return nil, err
 	}

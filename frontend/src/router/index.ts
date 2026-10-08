@@ -636,6 +636,42 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/prompt-templates',
+    name: 'AdminPromptTemplates',
+    component: () => import('@/features/prompt-templates/PromptTemplatesView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Text Prompt Management',
+      titleKey: 'admin.promptTemplates.title',
+      descriptionKey: 'admin.promptTemplates.description'
+    }
+  },
+  {
+    path: '/admin/prompt-templates/:id',
+    name: 'AdminPromptTemplateDetail',
+    component: () => import('@/features/prompt-templates/PromptTemplateDetailView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Prompt Template Detail',
+      titleKey: 'admin.promptTemplates.title',
+      descriptionKey: 'admin.promptTemplates.description'
+    }
+  },
+  {
+    path: '/admin/prompt-request-events',
+    name: 'AdminPromptRequestEvents',
+    component: () => import('@/features/prompt-templates/PromptRequestEventsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Prompt Request Records',
+      titleKey: 'admin.promptTemplates.events.title',
+      descriptionKey: 'admin.promptTemplates.events.description'
+    }
+  },
+  {
     path: '/admin/usage',
     name: 'AdminUsage',
     component: () => import('@/views/admin/UsageView.vue'),
