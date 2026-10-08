@@ -24,7 +24,7 @@ type PromptTemplateDraft struct {
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
 	// 所属模板，一个模板最多一个草稿
 	TemplateID int64 `json:"template_id,omitempty"`
-	// 提示词正文，UTF-8，第一阶段上限 32 KiB
+	// 提示词正文，UTF-8，上限 64 KiB
 	Body string `json:"body,omitempty"`
 	// 适用的客户端模型名（精确匹配）；空集合不等于全选
 	ClientModels []string `json:"client_models,omitempty"`

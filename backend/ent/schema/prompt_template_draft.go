@@ -40,7 +40,7 @@ func (PromptTemplateDraft) Fields() []ent.Field {
 			NotEmpty().
 			Validate(validatePromptBodySize).
 			SchemaType(map[string]string{dialect.Postgres: "text"}).
-			Comment("提示词正文，UTF-8，第一阶段上限 32 KiB"),
+			Comment("提示词正文，UTF-8，上限 64 KiB"),
 		field.JSON("client_models", []string{}).
 			Default(func() []string { return []string{} }).
 			SchemaType(map[string]string{dialect.Postgres: "jsonb"}).
