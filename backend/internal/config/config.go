@@ -2707,6 +2707,12 @@ func setEnvReachableDefaults() {
 	viper.SetDefault("dingtalk_connect.sync_corp_email", false)
 	viper.SetDefault("dingtalk_connect.sync_corp_email_attr_key", "")
 	viper.SetDefault("dingtalk_connect.sync_corp_email_attr_name", "")
+
+	// 文本提示词注入的总开关（默认关闭）。它是运维最可能用环境变量打开的开关，
+	// 但没有登记默认值时 GATEWAY_TEXT_PROMPT_INJECTION_ENABLED 会被静默丢弃
+	// （见 env_reachability_test.go 里 image_storage 的教训）。这里登记零值默认，
+	// 让 env 能生效；config.yaml 或 env 里的显式取值仍然优先。
+	viper.SetDefault("gateway.text_prompt_injection_enabled", false)
 }
 
 func (c *Config) Validate() error {
