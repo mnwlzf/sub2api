@@ -7,6 +7,7 @@
  */
 
 import { apiClient } from '@/api/client'
+import type { PaginatedResponse } from '@/types'
 import type {
   AccountGroupPromptOverride,
   CreatePromptTemplatePayload,
@@ -14,6 +15,7 @@ import type {
   PromptAdminEvent,
   PromptPreviewResult,
   PromptRequestEvent,
+  PromptRequestEventPageQuery,
   PromptRequestEventQuery,
   PromptTemplate,
   PromptTemplateDraft,
@@ -112,10 +114,26 @@ export async function previewVersion(id: number): Promise<PromptPreviewResult> {
 
 // ---------------------------------------------------------------- 请求记录
 
-export async function listRequestEvents(query: PromptRequestEventQuery): Promise<PromptRequestEvent[]> {
-  const { data } = await apiClient.get<PromptRequestEvent[]>('/admin/prompt-request-events', {
-    params: query,
-  })
+/**
+ * 查询运行期策略记录。
+ *
+ * 后端对同一端点保留两种契约（见 handler/admin/prompt_template_handler.go）：
+ *   - 只传 limit（历史调用方式）→ 直接返回事件数组；
+ *   - 传 page / page_size → 返回分页信封 { items, total, page, page_size, pages }。
+ *
+ * 这里用重载把两种形态都表达出来，调用方按是否传分页参数得到对应的返回类型。
+ */
+export function listRequestEvents(
+  query: PromptRequestEventPageQuery,
+): Promise<PaginatedResponse<PromptRequestEvent>>
+export function listRequestEvents(query?: PromptRequestEventQuery): Promise<PromptRequestEvent[]>
+export async function listRequestEvents(
+  query: PromptRequestEventQuery | PromptRequestEventPageQuery = {},
+): Promise<PromptRequestEvent[] | PaginatedResponse<PromptRequestEvent>> {
+  const { data } = await apiClient.get<PromptRequestEvent[] | PaginatedResponse<PromptRequestEvent>>(
+    '/admin/prompt-request-events',
+    { params: query },
+  )
   return data
 }
 

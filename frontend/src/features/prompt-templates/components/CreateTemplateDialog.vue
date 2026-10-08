@@ -55,7 +55,7 @@ import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Input from '@/components/common/Input.vue'
 import TextArea from '@/components/common/TextArea.vue'
-import { extractApiErrorMessage } from '@/utils/apiError'
+import { extractI18nErrorMessage } from '@/utils/apiError'
 import { createTemplate } from '../api'
 import type { CreatePromptTemplatePayload, PromptTemplate } from '../types'
 
@@ -110,7 +110,12 @@ async function submit() {
     })
     emit('created', created)
   } catch (error) {
-    submitError.value = extractApiErrorMessage(error, t('admin.promptTemplates.create.failed'))
+    submitError.value = extractI18nErrorMessage(
+      error,
+      t,
+      'admin.promptTemplates.errors',
+      t('admin.promptTemplates.create.failed'),
+    )
   } finally {
     submitting.value = false
   }

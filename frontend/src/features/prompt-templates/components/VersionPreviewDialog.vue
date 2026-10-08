@@ -122,7 +122,7 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
-import { extractApiErrorMessage } from '@/utils/apiError'
+import { extractI18nErrorMessage } from '@/utils/apiError'
 import { promptProfileKey, versionLabel } from '../viewModel'
 import { shortenSha } from '../format'
 import { previewVersion } from '../api'
@@ -159,7 +159,12 @@ async function run(versionId: number) {
   try {
     result.value = await previewVersion(versionId)
   } catch (caught) {
-    error.value = extractApiErrorMessage(caught, t('admin.promptTemplates.preview.loadFailed'))
+    error.value = extractI18nErrorMessage(
+      caught,
+      t,
+      'admin.promptTemplates.errors',
+      t('admin.promptTemplates.preview.loadFailed'),
+    )
   } finally {
     loading.value = false
   }

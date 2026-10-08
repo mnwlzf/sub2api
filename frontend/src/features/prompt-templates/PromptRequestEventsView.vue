@@ -34,7 +34,7 @@
         </button>
       </div>
 
-      <div class="card p-4 sm:p-6">
+      <div v-else class="card p-4 sm:p-6">
         <DataTable
           :columns="columns"
           :data="rows"
@@ -84,6 +84,15 @@
             <EmptyState :title="t('admin.promptTemplates.events.empty')" :description="t('admin.promptTemplates.events.description')" />
           </template>
         </DataTable>
+
+        <Pagination
+          v-if="total > 0"
+          :total="total"
+          :page="page"
+          :page-size="pageSize"
+          @update:page="handlePageChange"
+          @update:page-size="handlePageSizeChange"
+        />
       </div>
     </div>
   </AppLayout>
@@ -95,9 +104,11 @@ import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
+import Pagination from '@/components/common/Pagination.vue'
 import Icon from '@/components/icons/Icon.vue'
 import type { Column } from '@/components/common/types'
-import { extractApiErrorMessage } from '@/utils/apiError'
+import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
+import { extractI18nErrorMessage } from '@/utils/apiError'
 import RequestEventFilterBar from './components/RequestEventFilterBar.vue'
 import { listRequestEvents } from './api'
 import type { PromptRequestEvent, PromptRequestEventQuery } from './types'
@@ -122,7 +133,11 @@ const { t, locale } = useI18n()
 const loading = ref(false)
 const loadError = ref('')
 const events = ref<PromptRequestEvent[]>([])
-const appliedQuery = ref<PromptRequestEventQuery>({ limit: 100 })
+const total = ref(0)
+const page = ref(1)
+const pageSize = ref(getPersistedPageSize())
+/** 只保留筛选条件；分页参数由下方的分页控件单独维护。 */
+const filters = ref<PromptRequestEventQuery>({})
 
 const columns = computed<Column[]>(() => [
   { key: 'requestId', label: t('admin.promptTemplates.events.columns.requestId') },
@@ -165,17 +180,41 @@ async function load() {
   loading.value = true
   loadError.value = ''
   try {
-    events.value = await listRequestEvents(appliedQuery.value)
+    const result = await listRequestEvents({
+      ...filters.value,
+      page: page.value,
+      page_size: pageSize.value,
+    })
+    events.value = result.items
+    total.value = result.total
   } catch (error) {
     events.value = []
-    loadError.value = extractApiErrorMessage(error, t('admin.promptTemplates.events.loadFailed'))
+    total.value = 0
+    loadError.value = extractI18nErrorMessage(
+      error,
+      t,
+      'admin.promptTemplates.errors',
+      t('admin.promptTemplates.events.loadFailed'),
+    )
   } finally {
     loading.value = false
   }
 }
 
 function handleSearch(query: PromptRequestEventQuery) {
-  appliedQuery.value = query
+  filters.value = query
+  page.value = 1
+  void load()
+}
+
+function handlePageChange(next: number) {
+  page.value = next
+  void load()
+}
+
+function handlePageSizeChange(next: number) {
+  pageSize.value = next
+  page.value = 1
   void load()
 }
 

@@ -280,7 +280,7 @@ import { adminAPI } from '@/api/admin'
 import type { AdminGroup } from '@/types'
 import type { SelectOption } from '@/types'
 import { useAppStore } from '@/stores/app'
-import { extractApiErrorCode, extractApiErrorMessage } from '@/utils/apiError'
+import { extractApiErrorCode, extractI18nErrorMessage } from '@/utils/apiError'
 import {
   clearAccountOverride,
   clearGroupBinding,
@@ -477,8 +477,10 @@ async function loadAll() {
       overrides.value = overrideResult.value
     } else {
       overrides.value = []
-      overridesError.value = extractApiErrorMessage(
+      overridesError.value = extractI18nErrorMessage(
         overrideResult.reason,
+        t,
+        'admin.promptTemplates.errors',
         t('admin.promptTemplates.binding.overrides.loadFailed'),
       )
     }
@@ -491,14 +493,21 @@ async function loadAll() {
     } else {
       groupAccounts.value = []
       accountsLoaded.value = false
-      accountsError.value = extractApiErrorMessage(
+      accountsError.value = extractI18nErrorMessage(
         accountResult.reason,
+        t,
+        'admin.promptTemplates.errors',
         t('admin.promptTemplates.binding.overrides.accountsLoadFailed'),
       )
     }
   } catch (error) {
     binding.value = null
-    loadError.value = extractApiErrorMessage(error, t('admin.promptTemplates.binding.loadFailed'))
+    loadError.value = extractI18nErrorMessage(
+      error,
+      t,
+      'admin.promptTemplates.errors',
+      t('admin.promptTemplates.binding.loadFailed'),
+    )
   } finally {
     loading.value = false
   }
@@ -522,7 +531,14 @@ async function saveBinding() {
     if (isConflict(error)) {
       showConflict.value = true
     } else {
-      appStore.showError(extractApiErrorMessage(error, t('admin.promptTemplates.binding.saveFailed')))
+      appStore.showError(
+        extractI18nErrorMessage(
+          error,
+          t,
+          'admin.promptTemplates.errors',
+          t('admin.promptTemplates.binding.saveFailed'),
+        ),
+      )
     }
   } finally {
     savingBinding.value = false
@@ -541,7 +557,14 @@ async function disableBinding() {
     appStore.showSuccess(t('admin.promptTemplates.binding.clearSuccess'))
     emit('success')
   } catch (error) {
-    appStore.showError(extractApiErrorMessage(error, t('admin.promptTemplates.binding.clearFailed')))
+    appStore.showError(
+      extractI18nErrorMessage(
+        error,
+        t,
+        'admin.promptTemplates.errors',
+        t('admin.promptTemplates.binding.clearFailed'),
+      ),
+    )
   } finally {
     savingBinding.value = false
   }
@@ -577,7 +600,14 @@ async function removeOverride() {
     appStore.showSuccess(t('admin.promptTemplates.binding.overrides.clearSuccess'))
     emit('success')
   } catch (error) {
-    appStore.showError(extractApiErrorMessage(error, t('admin.promptTemplates.binding.overrides.clearFailed')))
+    appStore.showError(
+      extractI18nErrorMessage(
+        error,
+        t,
+        'admin.promptTemplates.errors',
+        t('admin.promptTemplates.binding.overrides.clearFailed'),
+      ),
+    )
   }
 }
 

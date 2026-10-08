@@ -239,13 +239,27 @@ export interface SetPromptOverridePayload {
   revision: number
 }
 
-/** 请求记录查询条件。 */
+/**
+ * 请求记录查询条件。
+ *
+ * 只传 limit 时后端返回事件数组（历史契约）；传 page / page_size 时返回分页信封。
+ */
 export interface PromptRequestEventQuery {
   request_id?: string
   group_id?: number
   version_id?: number
   applied?: boolean
   limit?: number
+}
+
+/**
+ * 分页形态的请求记录查询条件。
+ *
+ * 后端只要看到 page 或 page_size 就切换到分页信封，此时 limit 被忽略。
+ */
+export interface PromptRequestEventPageQuery extends PromptRequestEventQuery {
+  page: number
+  page_size: number
 }
 
 /** 列表页用的模板 + 最新发布版本组合（版本由前端按需补充）。 */

@@ -76,6 +76,13 @@
           @view-body="openBody"
           @diff="openDiff"
         />
+
+        <TemplateEventPanel
+          :events="auditEvents"
+          :loading="auditLoading"
+          :error="auditError"
+          @refresh="loadAuditEvents"
+        />
       </div>
     </div>
 
@@ -137,11 +144,12 @@ import AppLayout from '@/components/layout/AppLayout.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { useAppStore } from '@/stores/app'
-import { extractApiErrorCode, extractApiErrorMessage } from '@/utils/apiError'
+import { extractApiErrorCode, extractI18nErrorMessage } from '@/utils/apiError'
 import TemplateMetaPanel from './components/TemplateMetaPanel.vue'
 import DraftEditor from './components/DraftEditor.vue'
 import ValidationPanel from './components/ValidationPanel.vue'
 import VersionHistoryPanel from './components/VersionHistoryPanel.vue'
+import TemplateEventPanel from './components/TemplateEventPanel.vue'
 import PublishVersionDialog from './components/PublishVersionDialog.vue'
 import VersionPreviewDialog from './components/VersionPreviewDialog.vue'
 import VersionBodyDialog from './components/VersionBodyDialog.vue'
@@ -151,12 +159,14 @@ import {
   getDraft,
   getTemplate,
   getValidation,
+  listTemplateEvents,
   listVersions,
   publishVersion,
   updateDraft,
   updateTemplate,
 } from './api'
 import type {
+  PromptAdminEvent,
   PromptTemplate,
   PromptTemplateDraft,
   PromptTemplateVersion,
@@ -181,16 +191,19 @@ const serverDraft = ref<PromptTemplateDraft | null>(null)
 const draftForm = ref<PromptDraftForm | null>(null)
 const validation = ref<PromptValidationReport | null>(null)
 const versions = ref<PromptTemplateVersion[]>([])
+const auditEvents = ref<PromptAdminEvent[]>([])
 
 const pageLoading = ref(false)
 const pageError = ref('')
 const draftError = ref('')
 const validationError = ref('')
 const versionsError = ref('')
+const auditError = ref('')
 const metaSaving = ref(false)
 const draftSaving = ref(false)
 const validationLoading = ref(false)
 const versionsLoading = ref(false)
+const auditLoading = ref(false)
 const publishing = ref(false)
 
 const showConflict = ref(false)
@@ -231,9 +244,33 @@ async function loadVersions() {
   try {
     versions.value = await listVersions(templateId.value)
   } catch (error) {
-    versionsError.value = extractApiErrorMessage(error, t('admin.promptTemplates.loadFailed'))
+    versionsError.value = extractI18nErrorMessage(
+      error,
+      t,
+      'admin.promptTemplates.errors',
+      t('admin.promptTemplates.loadFailed'),
+    )
   } finally {
     versionsLoading.value = false
+  }
+}
+
+/** 只读管理审计事件：不含正文，仅哈希与元数据。 */
+async function loadAuditEvents() {
+  auditLoading.value = true
+  auditError.value = ''
+  try {
+    auditEvents.value = await listTemplateEvents(templateId.value)
+  } catch (error) {
+    auditEvents.value = []
+    auditError.value = extractI18nErrorMessage(
+      error,
+      t,
+      'admin.promptTemplates.errors',
+      t('admin.promptTemplates.audit.loadFailed'),
+    )
+  } finally {
+    auditLoading.value = false
   }
 }
 
@@ -244,7 +281,12 @@ async function loadValidation() {
     validation.value = await getValidation(templateId.value)
   } catch (error) {
     validation.value = null
-    validationError.value = extractApiErrorMessage(error, t('admin.promptTemplates.validation.loadFailed'))
+    validationError.value = extractI18nErrorMessage(
+      error,
+      t,
+      'admin.promptTemplates.errors',
+      t('admin.promptTemplates.validation.loadFailed'),
+    )
   } finally {
     validationLoading.value = false
   }
@@ -259,7 +301,12 @@ async function loadDraft() {
   } catch (error) {
     serverDraft.value = null
     draftForm.value = null
-    draftError.value = extractApiErrorMessage(error, t('admin.promptTemplates.draft.saveFailed'))
+    draftError.value = extractI18nErrorMessage(
+      error,
+      t,
+      'admin.promptTemplates.errors',
+      t('admin.promptTemplates.draft.saveFailed'),
+    )
   }
 }
 
@@ -270,11 +317,16 @@ async function load() {
     template.value = await getTemplate(templateId.value)
   } catch (error) {
     template.value = null
-    pageError.value = extractApiErrorMessage(error, t('admin.promptTemplates.loadFailed'))
+    pageError.value = extractI18nErrorMessage(
+      error,
+      t,
+      'admin.promptTemplates.errors',
+      t('admin.promptTemplates.loadFailed'),
+    )
     pageLoading.value = false
     return
   }
-  await Promise.allSettled([loadDraft(), loadValidation(), loadVersions()])
+  await Promise.allSettled([loadDraft(), loadValidation(), loadVersions(), loadAuditEvents()])
   pageLoading.value = false
 }
 
@@ -287,7 +339,9 @@ async function saveMeta(payload: UpdatePromptTemplatePayload) {
     if (isConflict(error)) {
       showConflict.value = true
     } else {
-      appStore.showError(extractApiErrorMessage(error, t('admin.promptTemplates.meta.saveFailed')))
+      appStore.showError(
+        extractI18nErrorMessage(error, t, 'admin.promptTemplates.errors', t('admin.promptTemplates.meta.saveFailed')),
+      )
     }
   } finally {
     metaSaving.value = false
@@ -309,7 +363,12 @@ async function saveDraft() {
     if (isConflict(error)) {
       showConflict.value = true
     } else {
-      draftError.value = extractApiErrorMessage(error, t('admin.promptTemplates.draft.saveFailed'))
+      draftError.value = extractI18nErrorMessage(
+        error,
+        t,
+        'admin.promptTemplates.errors',
+        t('admin.promptTemplates.draft.saveFailed'),
+      )
     }
   } finally {
     draftSaving.value = false
@@ -331,7 +390,9 @@ async function archiveTemplateNow() {
     if (isConflict(error)) {
       showConflict.value = true
     } else {
-      appStore.showError(extractApiErrorMessage(error, t('admin.promptTemplates.meta.archiveFailed')))
+      appStore.showError(
+        extractI18nErrorMessage(error, t, 'admin.promptTemplates.errors', t('admin.promptTemplates.meta.archiveFailed')),
+      )
     }
   }
 }
@@ -354,7 +415,9 @@ async function publish(payload: { changeNote: string; idempotencyKey: string }) 
       showConflict.value = true
       showPublish.value = false
     } else {
-      appStore.showError(extractApiErrorMessage(error, t('admin.promptTemplates.versions.publishFailed')))
+      appStore.showError(
+        extractI18nErrorMessage(error, t, 'admin.promptTemplates.errors', t('admin.promptTemplates.versions.publishFailed')),
+      )
     }
   } finally {
     publishing.value = false

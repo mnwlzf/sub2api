@@ -40,7 +40,7 @@
         </button>
       </div>
 
-      <div class="card p-4 sm:p-6">
+      <div v-else class="card p-4 sm:p-6">
         <div class="mb-4 max-w-md">
           <SearchInput
             v-model="search"
@@ -126,7 +126,7 @@ import Toggle from '@/components/common/Toggle.vue'
 import Icon from '@/components/icons/Icon.vue'
 import type { Column } from '@/components/common/types'
 import { useAppStore } from '@/stores/app'
-import { extractApiErrorMessage } from '@/utils/apiError'
+import { extractI18nErrorMessage } from '@/utils/apiError'
 import CreateTemplateDialog from './components/CreateTemplateDialog.vue'
 import { listTemplates, listVersions } from './api'
 import type { PromptTemplate, PromptTemplateVersion } from './types'
@@ -228,7 +228,14 @@ async function load() {
     templates.value = items
     await loadVersions(items)
   } catch (error) {
-    loadError.value = extractApiErrorMessage(error, t('admin.promptTemplates.list.loadFailed'))
+    templates.value = []
+    versionsByTemplate.value = {}
+    loadError.value = extractI18nErrorMessage(
+      error,
+      t,
+      'admin.promptTemplates.errors',
+      t('admin.promptTemplates.list.loadFailed'),
+    )
   } finally {
     loading.value = false
   }
