@@ -1054,6 +1054,9 @@ type GatewayConfig struct {
 	OpenAIHTTP2 GatewayOpenAIHTTP2Config `mapstructure:"openai_http2"`
 	// OpenAIProxyStreamCircuit: Responses SSE 代理断流熔断策略。
 	OpenAIProxyStreamCircuit GatewayOpenAIProxyStreamCircuitConfig `mapstructure:"openai_proxy_stream_circuit"`
+	// OpenCodeWarpRotate: opencode_go 免费层 429 时轮换 WARP 出口 IP 后同账号重试。
+	// 默认关闭（enabled=false），合并即安全，不影响未配置的部署。
+	OpenCodeWarpRotate GatewayOpenCodeWarpRotateConfig `mapstructure:"opencode_warp_rotate"`
 	// ImageConcurrency: 图片生成独立并发限制配置（默认关闭）
 	ImageConcurrency ImageConcurrencyConfig `mapstructure:"image_concurrency"`
 
@@ -1214,6 +1217,35 @@ type GatewayOpenAIProxyStreamCircuitConfig struct {
 	WindowSeconds int `mapstructure:"window_seconds"`
 	// TTLSeconds: 代理隔离持续时间（秒）。
 	TTLSeconds int `mapstructure:"ttl_seconds"`
+}
+
+// GatewayOpenCodeWarpRotateConfig 控制 opencode_go 免费层 429 的 WARP 出口轮换钩子。
+//
+// 背景：opencode 免费层配额按「出口 IP」记账，每日 00:00 UTC 重置。同一个 SOCKS5
+// 代理端点（WARP）背后的出口 IP 可以在端点不变的前提下被轮换掉，因此遇到
+// FreeUsageLimitError 429 时不需要改账号的 proxy 绑定，只要让出口换一个 IP 就能
+// 用同一账号重试。
+//
+// 该配置默认关闭：未显式开启时网关行为与改动前完全一致。
+type GatewayOpenCodeWarpRotateConfig struct {
+	// Enabled: 全局总开关，默认 false（合并即安全）。
+	// 账号凭据 warp_rotate_on_429=on 可在全局关闭时单独开启该账号（灰度用）。
+	Enabled bool `mapstructure:"enabled"`
+	// ServiceURL: 轮换服务基址，例如 http://warp-rotate:9110。
+	// 实际请求 POST {ServiceURL}/ensure-fresh。为空表示未部署该服务。
+	ServiceURL string `mapstructure:"service_url"`
+	// Token: 轮换服务的 Bearer token（Authorization: Bearer <token>）。
+	Token string `mapstructure:"token"`
+	// TimeoutSeconds: 单次轮换请求的客户端超时（秒）。
+	// 服务端自身硬超时约 90 秒，客户端应略大于它。
+	TimeoutSeconds int `mapstructure:"timeout_seconds"`
+	// MaxRotationsPerRequest: 单次客户端请求内允许的同账号重试次数上限，
+	// 写入 UpstreamFailoverError.SameAccountRetryMax。不要配置
+	// SameAccountRetryDeadline：非零 deadline 会让 handler 绕过次数上限。
+	MaxRotationsPerRequest int `mapstructure:"max_rotations_per_request"`
+	// MinIntervalSeconds: 同一 proxy 两次轮换之间的最小间隔（秒），防止抖动。
+	// <= 0 表示不额外限流（并发去重仍由 singleflight 保证）。
+	MinIntervalSeconds int `mapstructure:"min_interval_seconds"`
 }
 
 // UserMessageQueueConfig 用户消息串行队列配置

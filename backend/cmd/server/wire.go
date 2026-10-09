@@ -50,6 +50,9 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 		// Privacy client factory for OpenAI training opt-out
 		providePrivacyClientFactory,
 
+		// opencode_go 429 的 WARP 出口轮换器（未配置 service_url 时为 nil）
+		provideOpenCodeWarpRotator,
+
 		// BuildInfo provider
 		provideServiceBuildInfo,
 		providePluginHostInfo,
@@ -65,6 +68,12 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 
 func providePrivacyClientFactory() service.PrivacyClientFactory {
 	return repository.CreatePrivacyReqClient
+}
+
+// provideOpenCodeWarpRotator 构造 opencode_go 免费层 429 的 WARP 出口轮换器。
+// 未配置 gateway.opencode_warp_rotate.service_url 时返回 nil，网关侧据此保持 no-op。
+func provideOpenCodeWarpRotator(cfg *config.Config) service.WarpExitRotator {
+	return repository.NewOpenCodeWarpRotator(cfg)
 }
 
 func provideServiceBuildInfo(buildInfo handler.BuildInfo) service.BuildInfo {

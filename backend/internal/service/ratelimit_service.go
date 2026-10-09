@@ -1171,6 +1171,16 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 			return
 		}
 	}
+	// opencode_go 免费层 429：本次请求已经成功换过 WARP 出口时，同账号重试才是
+	// 有效动作。此处若照常写冷却/持久化限流，账号会在下一次选号时被排除，
+	// 同账号重试静默落空（与上面 OpenAI OAuth 分支同一类问题）。
+	if account != nil && account.IsOpenCodeGo() && s.runtimeBlocker != nil {
+		if checker, ok := s.runtimeBlocker.(interface {
+			ShouldRetryOpenCodeWarpRotated429(context.Context, *Account, []byte) bool
+		}); ok && checker.ShouldRetryOpenCodeWarpRotated429(ctx, account, responseBody) {
+			return
+		}
+	}
 	// Spark 影子：限流/熔断状态 100% 由 QueryUsage(/wham/usage body 的 codex_bengalfox)驱动。
 	// /responses 的 429 携带的 x-codex-*/usage_limit_reached 是 global codex 道(plan/spec §8),
 	// 套到影子会把 spark 误耦合到 global 窗口——即便 spark 仍有配额也会被冷却到 global reset,

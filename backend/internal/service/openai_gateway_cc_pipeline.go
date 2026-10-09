@@ -124,19 +124,24 @@ func (s *OpenAIGatewayService) failoverOpenAIUpstreamHTTPError(
 		Message:            upstreamMsg,
 		Detail:             upstreamDetail,
 	})
+	// opencode_go 免费层 429：先换 WARP 出口再用同一账号重试。必须早于
+	// handleOpenAIAccountUpstreamError（其内部 handle429 会写冷却并摘号）。
+	rotateCtx, warpRotated := s.rotateOpenCodeWarpExitOn429(ctx, c, account, resp.StatusCode, respBody)
 	shouldDisable := tempUnscheduled
 	if account.Platform != PlatformGrok && !tempUnscheduled {
-		shouldDisable = s.handleOpenAIAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody, upstreamModel)
+		shouldDisable = s.handleOpenAIAccountUpstreamError(rotateCtx, account, resp.StatusCode, resp.Header, respBody, upstreamModel)
 	}
-	return s.newOpenAIAccountFailoverError(
+	failoverErr := s.newOpenAIAccountFailoverError(
 		account,
 		resp.StatusCode,
 		resp.Header,
 		respBody,
 		upstreamMsg,
 		shouldDisable,
-		!shouldDisable && account.IsPoolMode() && (account.IsPoolModeRetryableStatus(resp.StatusCode) || isOpenAITransientProcessingError(resp.StatusCode, upstreamMsg, respBody)),
+		warpRotated || (!shouldDisable && account.IsPoolMode() && (account.IsPoolModeRetryableStatus(resp.StatusCode) || isOpenAITransientProcessingError(resp.StatusCode, upstreamMsg, respBody))),
 	)
+	s.applyOpenCodeWarpRotateRetryBudget(failoverErr, warpRotated)
+	return failoverErr
 }
 
 // openAIChatCompletionsTargetURL 解析账号的（非 Grok）Chat Completions 上游端点。

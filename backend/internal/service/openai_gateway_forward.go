@@ -1214,16 +1214,23 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 					Detail:             upstreamDetail,
 				})
 
-				shouldDisable := s.handleFailoverSideEffects(ctx, resp, account, respBody, upstreamModel)
-				return nil, s.newOpenAIAccountFailoverError(
+				// opencode_go 免费层 429：先换 WARP 出口再用同一账号重试。
+				// 必须早于 handleFailoverSideEffects：后者会走 handle429 写冷却并把
+				// 账号摘出调度快照，先轮换才能把「已轮换」标记带进那条链路。
+				rotateCtx, warpRotated := s.rotateOpenCodeWarpExitOn429(ctx, c, account, resp.StatusCode, respBody)
+
+				shouldDisable := s.handleFailoverSideEffects(rotateCtx, resp, account, respBody, upstreamModel)
+				failoverErr := s.newOpenAIAccountFailoverError(
 					account,
 					resp.StatusCode,
 					resp.Header,
 					respBody,
 					upstreamMsg,
 					shouldDisable,
-					!shouldDisable && account.IsPoolMode() && (account.IsPoolModeRetryableStatus(resp.StatusCode) || isOpenAITransientProcessingError(resp.StatusCode, upstreamMsg, respBody)),
+					warpRotated || (!shouldDisable && account.IsPoolMode() && (account.IsPoolModeRetryableStatus(resp.StatusCode) || isOpenAITransientProcessingError(resp.StatusCode, upstreamMsg, respBody))),
 				)
+				s.applyOpenCodeWarpRotateRetryBudget(failoverErr, warpRotated)
+				return nil, failoverErr
 			}
 			return s.handleErrorResponse(ctx, resp, c, account, body, resolveOpenAIErrorSchedulingModel(billingModel, upstreamModel))
 		}
