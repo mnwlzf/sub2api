@@ -828,6 +828,43 @@ func (s *httpUpstreamService) removeClientLocked(key string, entry *upstreamClie
 	}
 }
 
+// CloseUpstreamIdleConnections 关闭指定代理对应客户端的空闲连接。
+//
+// 用途：代理端点（URL）背后的出口 IP 发生变化时——例如 WARP 出口轮换——缓存里
+// 的空闲隧道仍然指向旧出口。OpenAI profile 走 HTTP/2 时一条 TCP 隧道被多路复用，
+// 空闲连接池的 IdleConnTimeout 长达 90 秒，不显式关闭的话后续重试会直接复用旧隧道，
+// 出口 IP 根本没变。
+//
+// 只调用 CloseIdleConnections（不删除缓存条目、不关闭 transport），因此不会打断
+// 在途请求：活跃连接在请求结束后自然归还，届时已是新出口。
+//
+// 该方法是 service.WarpExitRotator 链路的可选能力，通过接口断言调用，
+// 刻意不加入 service.HTTPUpstream 接口定义。
+func (s *httpUpstreamService) CloseUpstreamIdleConnections(proxyURL string, accountID int64) {
+	if s == nil {
+		return
+	}
+	proxyKey, _, err := normalizeProxyURL(proxyURL)
+	if err != nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	closed := 0
+	for _, entry := range s.clients {
+		if entry == nil || entry.client == nil || entry.proxyKey != proxyKey {
+			continue
+		}
+		entry.client.CloseIdleConnections()
+		closed++
+	}
+	slog.Debug("upstream_idle_connections_closed",
+		"proxy_key", proxyKey,
+		"account_id", accountID,
+		"clients", closed,
+	)
+}
+
 // evictIdleLocked 淘汰空闲超时的客户端（需持有锁）
 // 遍历所有客户端，移除超过 TTL 且无活跃请求的条目
 //

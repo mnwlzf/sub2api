@@ -460,6 +460,9 @@ type OpenAIGatewayService struct {
 	userGroupRateResolver *userGroupRateResolver
 	httpUpstream          HTTPUpstream
 	pluginManager         *PluginManager
+	// warpExitRotator 为可选注入的 WARP 出口轮换器（见 opencode_warp_rotate.go）。
+	// 未注入时 opencode_go 的 429 走原有 failover 链路。
+	warpExitRotator       WarpExitRotator
 	deferredService       *DeferredService
 	openAITokenProvider   *OpenAITokenProvider
 	grokTokenProvider     *GrokTokenProvider
@@ -496,6 +499,10 @@ type OpenAIGatewayService struct {
 	openaiAccountRuntimeBlockGeneration sync.Map // key: int64(accountID), value: uint64
 	openaiAccountRuntimeBlockSequence   atomic.Uint64
 	openaiOAuth429RetryStartedAt        sync.Map // key: int64(accountID), value: time.Time
+	// openCodeWarpRotateMu / openCodeWarpRotate 惰性持有 WARP 出口轮换的
+	// singleflight 与最小间隔状态（见 opencode_warp_rotate.go）。
+	openCodeWarpRotateMu                sync.Mutex
+	openCodeWarpRotate                  *openCodeWarpRotateState
 	grokCredentialMutationLocks         sync.Map // key: int64(accountID), value: *sync.Mutex
 	openaiOAuth429WindowStartUnixNano   atomic.Int64
 	openaiOAuth429WindowCount           atomic.Int64

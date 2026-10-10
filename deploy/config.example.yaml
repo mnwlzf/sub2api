@@ -445,6 +445,29 @@ gateway:
     failure_threshold: 2
     window_seconds: 60
     ttl_seconds: 600
+  # opencode_go 免费层 429 的 WARP 出口轮换（默认关闭）。
+  # 免费层配额按出口 IP 记账，每日 00:00 UTC 重置；同一个 SOCKS5 端点背后的
+  # WARP 出口可以换掉，因此 429 时不需要改账号 proxy 绑定，换出口后同账号重试即可。
+  # 服务端契约：POST {service_url}/ensure-fresh，Body {"proxy_id": N}，
+  # 200 {"ok":true,"usable":true,"exit_ip":"..."} / 503 {"ok":false,"usable":false,...}。
+  # 账号级灰度：credentials.warp_rotate_on_429 = on|off（on 可在全局关闭时单独开启）。
+  opencode_warp_rotate:
+    # 全局总开关；默认 false，未配置该服务的部署行为完全不变。
+    enabled: false
+    # 轮换服务基址，例如 http://172.19.0.1:9110
+    # 172.19.0.1 是 docker 默认网桥的网关地址（宿主机在 bridge 网络上的入口）：
+    # sub2api 容器内可达，公网不可达。容器内没有 warp-rotate 这类 DNS 别名，
+    # 写 http://warp-rotate:9110 在容器里解析不了。
+    service_url: ""
+    # Bearer token
+    token: ""
+    # 单次轮换请求的客户端超时（秒）；服务端硬超时约 90 秒，应略大于它。
+    timeout_seconds: 95
+    # 单次客户端请求内允许的同账号重试次数上限（写入 SameAccountRetryMax）。
+    max_rotations_per_request: 2
+    # 同一 proxy 两次轮换之间的最小间隔（秒），防止抖动；<=0 表示不额外限流
+    # （并发去重始终由 singleflight 保证）。
+    min_interval_seconds: 30
   # Grok free-tier local soft gate (scheduler filter only; admin QueryQuota/import probe bypasses it).
   # Enabled by default because free detection requires an explicit subscription_tier/plan_type of "free".
   # Stats/query failures fail open so DB issues do not block all Grok traffic.

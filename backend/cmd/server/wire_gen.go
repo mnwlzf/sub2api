@@ -305,7 +305,8 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	gatewayHandler := handler.ProvideGatewayHandler(gatewayService, openAIGatewayService, geminiMessagesCompatService, antigravityGatewayService, userService, concurrencyService, billingCacheService, usageService, apiKeyService, usageRecordWorkerPool, errorPassthroughService, contentModerationService, userMessageQueueService, configConfig, settingService, coordinator)
 	promptPolicyResolver := service.NewPromptPolicyResolver(promptTemplateRepository, configConfig)
 	promptRequestEventRecorder := repository.NewPromptRequestEventRecorder(client)
-	openAIGatewayHandler := handler.ProvideOpenAIGatewayHandler(openAIGatewayService, pluginManager, concurrencyService, billingCacheService, apiKeyService, usageRecordWorkerPool, errorPassthroughService, contentModerationService, opsService, grokQuotaService, configConfig, coordinator, compositeRouteResolver, promptPolicyResolver, promptRequestEventRecorder)
+	warpExitRotator := provideOpenCodeWarpRotator(configConfig)
+	openAIGatewayHandler := handler.ProvideOpenAIGatewayHandler(openAIGatewayService, pluginManager, concurrencyService, billingCacheService, apiKeyService, usageRecordWorkerPool, errorPassthroughService, contentModerationService, opsService, grokQuotaService, configConfig, coordinator, compositeRouteResolver, promptPolicyResolver, promptRequestEventRecorder, warpExitRotator)
 	handlerSettingHandler := handler.ProvideSettingHandler(settingService, buildInfo, notificationEmailService)
 	totpHandler := handler.NewTotpHandler(totpService)
 	passkeyRepository := repository.NewPasskeyRepository(db)
@@ -383,6 +384,12 @@ type Application struct {
 
 func providePrivacyClientFactory() service.PrivacyClientFactory {
 	return repository.CreatePrivacyReqClient
+}
+
+// provideOpenCodeWarpRotator 构造 opencode_go 免费层 429 的 WARP 出口轮换器。
+// 未配置 gateway.opencode_warp_rotate.service_url 时返回 nil，网关侧据此保持 no-op。
+func provideOpenCodeWarpRotator(cfg *config.Config) service.WarpExitRotator {
+	return repository.NewOpenCodeWarpRotator(cfg)
 }
 
 func provideServiceBuildInfo(buildInfo handler.BuildInfo) service.BuildInfo {

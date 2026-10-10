@@ -141,9 +141,13 @@ func ProvideOpenAIGatewayHandler(
 	compositeResolver *service.CompositeRouteResolver,
 	promptPolicyResolver *service.PromptPolicyResolver,
 	promptEventRecorder service.PromptRequestEventRecorder,
+	warpExitRotator service.WarpExitRotator,
 ) *OpenAIGatewayHandler {
 	gatewayService.SetPluginManager(pluginManager)
 	gatewayService.SetPromptEventRecorder(promptEventRecorder)
+	// WARP 出口轮换器由 cmd/server 提供（handler 不得依赖 repository）。
+	// 未配置 gateway.opencode_warp_rotate.service_url 时为 nil，本能力整体 no-op。
+	gatewayService.SetWarpExitRotator(warpExitRotator)
 	h := NewOpenAIGatewayHandler(gatewayService, concurrencyService, billingCacheService, apiKeyService,
 		usageRecordWorkerPool, errorPassthroughService, contentModerationService, opsService, promptPolicyResolver, cfg)
 	h.compositeResolver = compositeResolver
