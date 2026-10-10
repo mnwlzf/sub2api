@@ -501,8 +501,8 @@ type OpenAIGatewayService struct {
 	openaiOAuth429RetryStartedAt        sync.Map // key: int64(accountID), value: time.Time
 	// openCodeWarpRotateMu / openCodeWarpRotate 惰性持有 WARP 出口轮换的
 	// singleflight 与最小间隔状态（见 opencode_warp_rotate.go）。
-	openCodeWarpRotateMu sync.Mutex
-	openCodeWarpRotate   *openCodeWarpRotateState
+	openCodeWarpRotateMu                sync.Mutex
+	openCodeWarpRotate                  *openCodeWarpRotateState
 	grokCredentialMutationLocks         sync.Map // key: int64(accountID), value: *sync.Mutex
 	openaiOAuth429WindowStartUnixNano   atomic.Int64
 	openaiOAuth429WindowCount           atomic.Int64
