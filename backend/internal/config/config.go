@@ -1231,7 +1231,10 @@ type GatewayOpenCodeWarpRotateConfig struct {
 	// Enabled: 全局总开关，默认 false（合并即安全）。
 	// 账号凭据 warp_rotate_on_429=on 可在全局关闭时单独开启该账号（灰度用）。
 	Enabled bool `mapstructure:"enabled"`
-	// ServiceURL: 轮换服务基址，例如 http://warp-rotate:9110。
+	// ServiceURL: 轮换服务基址，例如 http://172.19.0.1:9110。
+	// 其中 172.19.0.1 是 docker 默认网桥的网关地址（宿主机在 bridge 网络上的
+	// 入口）：sub2api 容器内可达，公网不可达。容器内没有 warp-rotate 这类 DNS
+	// 别名，写 http://warp-rotate:9110 在容器里解析不了。
 	// 实际请求 POST {ServiceURL}/ensure-fresh。为空表示未部署该服务。
 	ServiceURL string `mapstructure:"service_url"`
 	// Token: 轮换服务的 Bearer token（Authorization: Bearer <token>）。

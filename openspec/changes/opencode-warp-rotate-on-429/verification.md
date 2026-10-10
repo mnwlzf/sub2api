@@ -121,7 +121,7 @@ cd backend && go test -tags=unit -count=1 ./internal/service/... ./internal/hand
    ```
    该分支已删除。仓库本身正常（`archived=false`、`disabled=false`、`visibility=public`，5 个 workflow 均为 `state=active`），最后一次成功 run 是 2026-10-08T18:41。仓库级 Actions 开关无法用当前 token 读取（`repos/{owner}/{repo}/actions/permissions*` 全部返回 403，需要 fine-grained "Actions policies" 权限），因此**无法在本会话内定位或修复**。CI 状态：**未运行 / 无 check**。
 2. **golangci-lint v2.13 未在本地运行**：安装因 module checksum mismatch 失败（经代理下载的 `ryanrolds/sqlclosecheck@v0.6.0` 与 sum.golang.org 记录不一致），系统内也没有现成二进制。已用 `go build ./...`、`go vet ./...`、`gofmt -l` 替代；depguard 的 `handler-no-repository` 规则已人工核对（handler 无 repository import）。
-3. **未做真实上游端到端验证**：轮换服务 `warp-rotate:9110` 与生产账号 31568 均未在本地接入，验证停留在单元/服务级替身。
+3. **未做真实上游端到端验证**：轮换服务（`172.19.0.1:9110`，docker 网桥网关，容器内可达、公网不可达）与生产账号 31568 均未在本地接入，验证停留在单元/服务级替身。
 4. **`min_interval_seconds` 默认值**：示例配置给 30，代码里 `<= 0` 表示不额外限流。生产灰度时需确认该值是否合适——它决定「同一 proxy 多久内只允许一次轮换」。
 5. **轮换服务耗时会占用客户端请求**：服务端硬超时约 90 秒，期间请求处于等待。若客户端超时短于该值，可能先断开；此时 ctx 取消会让轮换返回 `timeout` 并回落原 failover。
 6. **`Retry-After` 透传**：轮换成功后上游 429 的 `Retry-After` 仍保留在 failover 错误里。同账号重试预算耗尽后客户端仍会收到 429 与 `Retry-After`——这是预期行为（本改动只是让重试有机会发生，不改变耗尽后的对外语义）。

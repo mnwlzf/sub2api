@@ -5,7 +5,7 @@ opencode 免费层配额按出口 IP 记账。账号 31568 绑定的 `socks5h://
 轮换服务（已按冻结契约实现，服务端独立部署）：
 
 ```
-POST http://warp-rotate:9110/ensure-fresh
+POST http://172.19.0.1:9110/ensure-fresh
   Header: Authorization: Bearer <token>
   Body:   {"proxy_id": 17}
   200 → {"ok":true,"action":"none"|"rotated","usable":true,"exit_ip":"2a09:...",
@@ -15,6 +15,8 @@ POST http://warp-rotate:9110/ensure-fresh
          "exit_ip":"...","attempts":6,"retry_after":49711}
 GET /status   /healthz
 ```
+
+地址说明：基址用 `http://172.19.0.1:9110`。`172.19.0.1` 是 docker 默认网桥的网关地址（宿主机在 bridge 网络上的入口），sub2api 容器内可达、公网不可达；容器内没有 `warp-rotate` 这类 DNS 别名，`http://warp-rotate:9110` 在容器里解析不了。
 
 语义：当前出口可用则直接返回（`action=none`，不轮换）；不可用才轮换到可用为止。**服务端硬超时约 90 秒**。
 

@@ -454,7 +454,10 @@ gateway:
   opencode_warp_rotate:
     # 全局总开关；默认 false，未配置该服务的部署行为完全不变。
     enabled: false
-    # 轮换服务基址，例如 http://warp-rotate:9110
+    # 轮换服务基址，例如 http://172.19.0.1:9110
+    # 172.19.0.1 是 docker 默认网桥的网关地址（宿主机在 bridge 网络上的入口）：
+    # sub2api 容器内可达，公网不可达。容器内没有 warp-rotate 这类 DNS 别名，
+    # 写 http://warp-rotate:9110 在容器里解析不了。
     service_url: ""
     # Bearer token
     token: ""
