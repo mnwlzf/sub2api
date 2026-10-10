@@ -225,8 +225,8 @@ func (f *fakePromptRepo) GetVersionByIdempotencyKey(context.Context, string) (*P
 	return nil, ErrPromptVersionNotFound
 }
 func (f *fakePromptRepo) PublishVersion(context.Context, *PromptTemplateVersion) error { return nil }
-func (f *fakePromptRepo) NextVersionNo(context.Context, int64) (int, error)           { return 1, nil }
-func (f *fakePromptRepo) LockTemplate(context.Context, int64) error                   { return nil }
+func (f *fakePromptRepo) NextVersionNo(context.Context, int64) (int, error)            { return 1, nil }
+func (f *fakePromptRepo) LockTemplate(context.Context, int64) error                    { return nil }
 func (f *fakePromptRepo) GetGroupBinding(context.Context, int64) (*GroupPromptBinding, error) {
 	if f.bindingErr != nil {
 		return nil, f.bindingErr

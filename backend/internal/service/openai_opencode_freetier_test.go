@@ -537,10 +537,10 @@ func TestDefaultOpenCodeZenFreeModelIDsRouting(t *testing.T) {
 	}
 
 	// muse-spark-*-free 必须命中 muse-spark-* → Responses 规则。
-	require.Equal(t, APIProtocolResponses, OpenCodeGoModelProtocol("muse-spark-1.3-contributor-free"))
+	require.Equal(t, APIProtocolResponses, matchProtocolRules("muse-spark-1.3-contributor-free", DefaultOpenCodeGoProtocolRules()))
 	// 其余免费模型走 Chat Completions。
-	require.Equal(t, APIProtocolChatCompletions, OpenCodeGoModelProtocol("mimo-v2.6-flash-free"))
-	require.Equal(t, APIProtocolChatCompletions, OpenCodeGoModelProtocol("deepseek-v4-flash-free"))
+	require.Equal(t, APIProtocolChatCompletions, matchProtocolRules("mimo-v2.6-flash-free", DefaultOpenCodeGoProtocolRules()))
+	require.Equal(t, APIProtocolChatCompletions, matchProtocolRules("deepseek-v4-flash-free", DefaultOpenCodeGoProtocolRules()))
 }
 
 // TestOpenCodeFreeTierGateEndToEndBodyShape 把四项硬要求一起断言，作为门禁的
