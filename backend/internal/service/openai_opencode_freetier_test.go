@@ -2,9 +2,13 @@ package service
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -23,6 +27,17 @@ func openCodeGateTestAccount(credentials map[string]any) *Account {
 		Credentials: creds,
 	}
 }
+
+// openCodeGateTestSessionID 是一个门禁合法的会话 id 样例。hex 段
+// ecb74175effe 取自 2026-10-13 单变量实测中返回 200 的真实客户端 id，
+// 其低 12 位（末 3 个 hex 字符）为 ffe。
+const openCodeGateTestSessionID = "ses_ecb74175effeABCDEFGHIJKLMN"
+
+// openCodeGateRejectedSessionID 是形状合法但**位不合法**的样例：hex 段
+// d1bfaf4aff65 低 12 位为 f65，2026-10-13 实测返回 403 FreeTierError。
+// 任何用 sha256 派生 hex 的实现（含本仓库 2026-10-11 之前的算法）都会产出
+// 这种值，因此必须被识别为非法并重铸。
+const openCodeGateRejectedSessionID = "ses_d1bfaf4aff65ABCDEFGHIJKLMN"
 
 func TestCanonicalOpenCodeIDShape(t *testing.T) {
 	got := canonicalOpenCodeID("ses", "conversation-1")
@@ -56,6 +71,267 @@ func TestCanonicalOpenCodeIDDeterministicAndDistinct(t *testing.T) {
 		canonicalOpenCodeID("msg", "x"),
 		"前缀必须参与结果",
 	)
+}
+
+// TestIsOpenCodeGateSessionID 钉住门禁会话 id 的两段判定：形状（正则）与位不变量
+// （hex 段低 12 位 == ffe）。位不变量是 2026-10-11 上游把 /zen/* 改成薄代理时
+// 引入的；只查形状的实现在那之后必然 403 FreeTierError。
+func TestIsOpenCodeGateSessionID(t *testing.T) {
+	tests := []struct {
+		name string
+		id   string
+		want bool
+	}{
+		{"实测返回 200 的真实客户端 id", openCodeGateTestSessionID, true},
+		{"hex 段为 000000000ffe", "ses_000000000ffeABCDEFGHIJKLMN", true},
+		{"hex 段为 fffffffffffe", "ses_fffffffffffeABCDEFGHIJKLMN", true},
+		{"实测返回 403 的真实客户端 id（末 3 位 f65）", openCodeGateRejectedSessionID, false},
+		{"末 3 位 fff", "ses_000000000fffABCDEFGHIJKLMN", false},
+		{"末 3 位全 0", "ses_000000000000ABCDEFGHIJKLMN", false},
+		{"哈希派生值（旧算法输出，末 3 位 9ab）", "ses_0123456789abABCDEFGHIJKLMN", false},
+		{"UUID", "3f2504e0-4f89-11d3-9a0c-0305e82c3301", false},
+		{"短串", "abc", false},
+		{"空串", "", false},
+		{"缺 ses_ 前缀", "msg_ecb74175effeABCDEFGHIJKLMN", false},
+		{"hex 段含大写", "ses_ECB74175EFFEABCDEFGHIJKLMN", false},
+		{"后缀含非字母数字", "ses_ecb74175effeABCDEFGHIJKLM!", false},
+		{"总长不足", "ses_ecb74175effeABCDEFGHIJKLM", false},
+		{"总长超出", "ses_ecb74175effeABCDEFGHIJKLMNO", false},
+		{"前后有空白（不 trim，由调用方负责）", " ses_ecb74175effeABCDEFGHIJKLMN", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, isOpenCodeGateSessionID(tt.id), "isOpenCodeGateSessionID(%q)", tt.id)
+		})
+	}
+}
+
+// assertOpenCodeGateSessionIDValid 断言 id 同时满足形状与位不变量，并用官方算法
+// 自洽校验编码里含的时间戳：(hex >> 12) + mintedAtMillis == epoch - 1。
+func assertOpenCodeGateSessionIDValid(t *testing.T, id string) {
+	t.Helper()
+	require.Regexp(t, `^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$`, id, "形状必须合法")
+	require.True(t, isOpenCodeGateSessionID(id), "位不变量必须满足，实际 %q", id)
+	require.Equal(t, openCodeGateSessionLowHex, id[13:16], "hex 段低 12 位必须为 0xffe")
+
+	hexValue, err := strconv.ParseUint(id[4:16], 16, 64)
+	require.NoError(t, err)
+	// 精确恒等式为 (hex>>12) + mintedAt == epoch-1；测试与铸造之间存在毫秒级
+	// 时间差，故允许 2 秒容差。
+	delta := (openCodeGateSessionEpochMillis - 1) - (int64(hexValue>>12) + time.Now().UnixMilli())
+	require.LessOrEqual(t, delta, int64(2000), "编码时间戳必须落在当前时刻附近")
+	require.GreaterOrEqual(t, delta, int64(-2000), "编码时间戳必须落在当前时刻附近")
+}
+
+// officialOpenCodeSessionHexForTest 逐字复刻从 opencode 1.19.0 二进制
+// （偏移 105055473）挖出的官方编码 tA()，仅用于交叉验证生产实现逐位一致：
+//
+//	$ = now*0x1000n + counter
+//	U = descending ? ~$ : $
+//	hex = U 的低 48 位
+//
+// 生产实现对应 descending=true、counter=1（低 12 位为 0xFFE 的唯一形态）。
+func officialOpenCodeSessionHexForTest(nowMillis, counter int64) string {
+	dollar := uint64(nowMillis)*0x1000 + uint64(counter)
+	value := (^dollar) & 0xFFFFFFFFFFFF
+	return fmt.Sprintf("%012x", value)
+}
+
+// TestOpenCodeGateSessionHexMatchesOfficialEncoding 证明生产实现的 hex 段与官方
+// 客户端算法**逐位相同**（counter == 1 时），而不仅是「低 12 位凑巧对」。
+// 覆盖整个 27<<36 窗口内外，包含窗口边界与 2028 年之后的时钟。
+func TestOpenCodeGateSessionHexMatchesOfficialEncoding(t *testing.T) {
+	windowStart := int64(26) << 36
+	windowEnd := int64(27) << 36
+	cases := []int64{
+		0, 1, 1000,
+		windowStart - 1, windowStart, windowStart + 1,
+		windowEnd - 1, windowEnd, windowEnd + 1,
+		1791882946721, // 实测返回 200 的真实客户端 id 的铸造时刻
+		1791881638000, // 实测返回 403 的那次请求时刻
+	}
+	// 窗口内均匀取样。
+	step := (windowEnd - windowStart) / 64
+	for now := windowStart; now < windowEnd; now += step {
+		cases = append(cases, now)
+	}
+	// 伪随机取样（固定种子，避免抖动）。
+	span := uint64(windowEnd - windowStart)
+	seed := uint64(0x9E3779B97F4A7C15)
+	for i := 0; i < 512; i++ {
+		seed = seed*6364136223846793005 + 1442695040888963407
+		cases = append(cases, windowStart+int64(seed%span))
+	}
+
+	for _, now := range cases {
+		got := openCodeGateSessionHexPartAt(now)
+		want := officialOpenCodeSessionHexForTest(now, 1)
+		require.Equal(t, want, got, "now=%d 时生产实现必须与官方编码逐位一致", now)
+		require.Equal(t, openCodeGateSessionLowHex, got[9:12], "now=%d 低 12 位必须为 0xffe", now)
+	}
+}
+
+// TestOpenCodeGateSessionHexCounterOneIsGateForm 说明「低 12 位 == 0xFFE」为什么
+// 等价于「官方客户端的 counter == 1」：counter 每递增 1，低 12 位就减 1。
+func TestOpenCodeGateSessionHexCounterOneIsGateForm(t *testing.T) {
+	const now = int64(1791882946721)
+	require.Equal(t, openCodeGateSessionLowHex, officialOpenCodeSessionHexForTest(now, 1)[9:12],
+		"counter=1 的低 12 位必须是 0xffe")
+	require.Equal(t, "ffd", officialOpenCodeSessionHexForTest(now, 2)[9:12],
+		"counter=2 的低 12 位必须是 0xffd")
+	require.Equal(t, "fff", officialOpenCodeSessionHexForTest(now, 4096)[9:12],
+		"counter 溢出 4096 后低 12 位回到 0xfff")
+	require.Equal(t, openCodeGateSessionHexPartAt(now), officialOpenCodeSessionHexForTest(now, 1))
+}
+
+// TestMintOpenCodeSessionIDInvariant 钉住**每一条铸造路径**的产出都满足形状 +
+// 位不变量。任何一条路径漏掉不变量都会让对应请求稳定 403，因此逐路径覆盖。
+func TestMintOpenCodeSessionIDInvariant(t *testing.T) {
+	t.Run("随机后缀铸造（最后兜底路径）", func(t *testing.T) {
+		seen := make(map[string]bool, 64)
+		for i := 0; i < 64; i++ {
+			id := mintOpenCodeSessionID()
+			assertOpenCodeGateSessionIDValid(t, id)
+			require.False(t, seen[id], "随机后缀不应碰撞：%q", id)
+			seen[id] = true
+		}
+	})
+
+	t.Run("按来源铸造（缓存路径）", func(t *testing.T) {
+		for i := 0; i < 64; i++ {
+			assertOpenCodeGateSessionIDValid(t, mintOpenCodeSessionIDForSource("mint-source-"+strconv.Itoa(i)))
+		}
+	})
+
+	t.Run("规范会话改写路径", func(t *testing.T) {
+		for i := 0; i < 64; i++ {
+			assertOpenCodeGateSessionIDValid(t, canonicalOpenCodeSessionID("canonical-source-"+strconv.Itoa(i)))
+		}
+	})
+
+	t.Run("门禁端到端路径（含 affinity 镜像）", func(t *testing.T) {
+		account := openCodeGateTestAccount(nil)
+		for i := 0; i < 32; i++ {
+			headers := http.Header{}
+			headers.Set(openCodeSessionHeader, "e2e-uuid-"+strconv.Itoa(i))
+			body := []byte(`{"model":"mimo-v2.6-flash-free","messages":[{"role":"user","content":"hi ` + strconv.Itoa(i) + `"}]}`)
+
+			applyOpenCodeFreeTierGateSession(account, headers, body)
+
+			session := headers.Get(openCodeSessionHeader)
+			assertOpenCodeGateSessionIDValid(t, session)
+			require.Equal(t, session, headers.Get(openCodeSessionAffinityHeader))
+			require.Equal(t, session, headers.Get(openCodeSessionIDHeader))
+		}
+	})
+}
+
+// openCodeGateHashShapedSessionID 返回一个由 canonicalOpenCodeID（与上游插件的
+// canonicalID 同构，即 sha256 派生 hex）产出、且 hex 段低 12 位不为 ffe 的样本。
+//
+// 用搜索而不是硬编码字面量：样本永远与算法保持一致，算法变了测试仍然成立。
+// 命中概率为 4095/4096，256 个来源里必然有一个，且选中结果是算法的纯函数，
+// 因此不存在抖动。
+func openCodeGateHashShapedSessionID(t *testing.T) string {
+	t.Helper()
+	for i := 0; i < 256; i++ {
+		id := canonicalOpenCodeID("ses", "plugin-supplied-"+strconv.Itoa(i))
+		if openCodeCanonicalSessionRe.MatchString(id) && !isOpenCodeGateSessionID(id) {
+			return id
+		}
+	}
+	t.Fatal("256 个哈希派生样本里没有位不合法的值（正则或算法已变，需复核）")
+	return ""
+}
+
+// TestCanonicalOpenCodeSessionIDRekeysHashShapedValues 钉住本次修复的核心行为：
+// 形状合法但位不合法的 ses_ 值（任何哈希派生实现的产物，含上游插件）必须被
+// 重铸，绝不能原样透传——否则上游的 403 FreeTierError 会被带进来。
+func TestCanonicalOpenCodeSessionIDRekeysHashShapedValues(t *testing.T) {
+	hashShaped := openCodeGateHashShapedSessionID(t)
+	require.True(t, openCodeCanonicalSessionRe.MatchString(hashShaped), "前提：形状合法")
+	require.False(t, isOpenCodeGateSessionID(hashShaped), "前提：位不合法")
+
+	got := canonicalOpenCodeSessionID(hashShaped)
+	require.NotEqual(t, hashShaped, got, "哈希型客户端会话值必须被重铸，不得原样透传")
+	require.True(t, isOpenCodeGateSessionID(got), "重铸结果必须满足门禁，实际 %q", got)
+
+	// 重铸仍须确定：同一来源跨轮次稳定，否则上游 prompt cache 击穿。
+	require.Equal(t, got, canonicalOpenCodeSessionID(hashShaped))
+
+	// 形状合法且位合法时必须原样保留（不破坏调用方自建的会话连续性）。
+	require.Equal(t, openCodeGateTestSessionID, canonicalOpenCodeSessionID(openCodeGateTestSessionID))
+	// 非 ses_ 形状同样要重铸。
+	require.True(t, isOpenCodeGateSessionID(canonicalOpenCodeSessionID("3f2504e0-4f89-11d3-9a0c-0305e82c3301")))
+	// 空来源不铸造（由调用方决定是否兜底）。
+	require.Empty(t, canonicalOpenCodeSessionID("   "))
+}
+
+// TestOpenCodeGateSessionMintCacheStability 钉住缓存语义：同一 source 恒等、
+// 不同 source 不同、每条产出都过门禁，且命中缓存时不重复铸造。
+func TestOpenCodeGateSessionMintCacheStability(t *testing.T) {
+	cache := newOpenCodeGateSessionMintCache(openCodeGateSessionMintCacheSize)
+	calls := 0
+	mint := func() string {
+		calls++
+		return mintOpenCodeSessionID()
+	}
+
+	first := cache.getOrMint("conversation-a", mint)
+	require.Equal(t, 1, calls)
+	require.Equal(t, first, cache.getOrMint("conversation-a", mint), "同一 source 必须返回同一 id")
+	require.Equal(t, 1, calls, "命中缓存时不得重复铸造")
+
+	second := cache.getOrMint("conversation-b", mint)
+	require.NotEqual(t, first, second, "不同 source 必须得到不同 id")
+	require.Equal(t, 2, calls)
+
+	assertOpenCodeGateSessionIDValid(t, first)
+	assertOpenCodeGateSessionIDValid(t, second)
+}
+
+// TestOpenCodeGateSessionMintCacheEviction 钉住 FIFO 淘汰：容量满后淘汰最早的
+// 条目，被淘汰的 source 下一轮重铸——仍满足门禁，只是损失一次 prompt cache 命中。
+func TestOpenCodeGateSessionMintCacheEviction(t *testing.T) {
+	cache := newOpenCodeGateSessionMintCache(2)
+
+	a1 := cache.getOrMint("a", mintOpenCodeSessionID)
+	_ = cache.getOrMint("b", mintOpenCodeSessionID)
+	require.Len(t, cache.ids, 2)
+
+	// 容量已满，插入 c 必须淘汰最早的 a。
+	_ = cache.getOrMint("c", mintOpenCodeSessionID)
+	require.Len(t, cache.ids, 2, "缓存必须有界")
+	require.NotContains(t, cache.ids, "a", "FIFO 应淘汰最早的条目")
+
+	a2 := cache.getOrMint("a", mintOpenCodeSessionID)
+	require.NotEqual(t, a1, a2, "被淘汰的 source 必须重铸")
+	assertOpenCodeGateSessionIDValid(t, a2)
+	assertOpenCodeGateSessionIDValid(t, cache.getOrMint("b", mintOpenCodeSessionID))
+	assertOpenCodeGateSessionIDValid(t, cache.getOrMint("c", mintOpenCodeSessionID))
+}
+
+// TestOpenCodeGateSessionMintCacheConcurrent 钉住并发安全：同一 source 的并发
+// 调用必须拿到同一个 id（否则 prompt cache 会因并发抖动而击穿）。
+func TestOpenCodeGateSessionMintCacheConcurrent(t *testing.T) {
+	cache := newOpenCodeGateSessionMintCache(openCodeGateSessionMintCacheSize)
+
+	const workers = 16
+	results := make([]string, workers)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			results[idx] = cache.getOrMint("shared-conversation", mintOpenCodeSessionID)
+		}(i)
+	}
+	wg.Wait()
+
+	for i := 1; i < workers; i++ {
+		require.Equal(t, results[0], results[i], "并发下同一 source 必须只铸造一次")
+	}
+	assertOpenCodeGateSessionIDValid(t, results[0])
 }
 
 func TestIsOpenCodeFreeTierModel(t *testing.T) {
@@ -359,7 +635,7 @@ func TestApplyOpenCodeFreeTierGateSessionMirrorsAffinityHeaders(t *testing.T) {
 	applyOpenCodeFreeTierGateSession(account, headers, body)
 
 	session := headers.Get(openCodeSessionHeader)
-	require.True(t, openCodeCanonicalSessionRe.MatchString(session))
+	require.True(t, isOpenCodeGateSessionID(session), "镜像的会话值必须满足形状与位不变量，实际 %q", session)
 	require.Equal(t, session, headers.Get(openCodeSessionAffinityHeader))
 	require.Equal(t, session, headers.Get(openCodeSessionIDHeader))
 }
@@ -413,9 +689,9 @@ func TestApplyOpenCodeFreeTierGateBodyToolsNotArrayIsPassthrough(t *testing.T) {
 }
 
 func TestApplyOpenCodeFreeTierGateSession(t *testing.T) {
-	canonical := "ses_0123456789abABCDEFGHIJKLMN"
+	canonical := openCodeGateTestSessionID
 
-	t.Run("客户端已提供规范值时原样保留", func(t *testing.T) {
+	t.Run("客户端已提供合法值时原样保留", func(t *testing.T) {
 		account := openCodeGateTestAccount(nil)
 		headers := http.Header{}
 		headers.Set(openCodeSessionHeader, canonical)
@@ -424,6 +700,22 @@ func TestApplyOpenCodeFreeTierGateSession(t *testing.T) {
 		applyOpenCodeFreeTierGateSession(account, headers, body)
 
 		require.Equal(t, canonical, headers.Get(openCodeSessionHeader))
+	})
+
+	// 本次修复的核心：形状合法但位不合法（哈希派生的 ses_）不得透传。
+	t.Run("形状合法但位不合法必须重铸", func(t *testing.T) {
+		account := openCodeGateTestAccount(nil)
+		headers := http.Header{}
+		headers.Set(openCodeSessionHeader, openCodeGateRejectedSessionID)
+		body := []byte(`{"model":"mimo-v2.6-flash-free"}`)
+
+		applyOpenCodeFreeTierGateSession(account, headers, body)
+
+		got := headers.Get(openCodeSessionHeader)
+		require.NotEqual(t, openCodeGateRejectedSessionID, got, "位不合法（f65）的值不得原样透传")
+		require.True(t, isOpenCodeGateSessionID(got), "重铸结果必须满足形状与位不变量，实际 %q", got)
+		require.Equal(t, got, headers.Get(openCodeSessionAffinityHeader))
+		require.Equal(t, got, headers.Get(openCodeSessionIDHeader))
 	})
 
 	t.Run("UUID 被改写为规范形状", func(t *testing.T) {
@@ -435,7 +727,7 @@ func TestApplyOpenCodeFreeTierGateSession(t *testing.T) {
 		applyOpenCodeFreeTierGateSession(account, headers, body)
 
 		got := headers.Get(openCodeSessionHeader)
-		require.True(t, openCodeCanonicalSessionRe.MatchString(got), "改写结果必须匹配上游形状，实际 %q", got)
+		require.True(t, isOpenCodeGateSessionID(got), "改写结果必须满足门禁，实际 %q", got)
 		require.NotEqual(t, "3f2504e0-4f89-11d3-9a0c-0305e82c3301", got)
 	})
 
@@ -476,7 +768,7 @@ func TestApplyOpenCodeFreeTierGateSession(t *testing.T) {
 		applyOpenCodeFreeTierGateSession(account, headers, body)
 
 		got := headers.Get(openCodeSessionHeader)
-		require.True(t, openCodeCanonicalSessionRe.MatchString(got), "必须补出规范会话值，实际 %q", got)
+		require.True(t, isOpenCodeGateSessionID(got), "必须补出门禁合法的会话值，实际 %q", got)
 	})
 
 	t.Run("无会话头时按内容派生且跨轮次稳定", func(t *testing.T) {
@@ -544,7 +836,7 @@ func TestDefaultOpenCodeZenFreeModelIDsRouting(t *testing.T) {
 }
 
 // TestOpenCodeFreeTierGateEndToEndBodyShape 把四项硬要求一起断言，作为门禁的
-// 验收测试：会话形状、UA 版本下限、bash+read、stream:true。
+// 验收测试：会话形状 + 位不变量、UA 版本下限、bash+read、stream:true。
 func TestOpenCodeFreeTierGateEndToEndBodyShape(t *testing.T) {
 	account := openCodeGateTestAccount(nil)
 	headers := http.Header{}
@@ -555,8 +847,11 @@ func TestOpenCodeFreeTierGateEndToEndBodyShape(t *testing.T) {
 	require.NoError(t, err)
 	applyOpenCodeFreeTierGateSession(account, headers, body)
 
-	// 1. 会话形状
-	require.True(t, openCodeCanonicalSessionRe.MatchString(headers.Get(openCodeSessionHeader)))
+	// 1. 会话形状 + 位不变量（hex 段低 12 位必须为 0xFFE）
+	session := headers.Get(openCodeSessionHeader)
+	require.True(t, openCodeCanonicalSessionRe.MatchString(session), "会话形状必须合法，实际 %q", session)
+	require.True(t, isOpenCodeGateSessionID(session), "会话位不变量必须满足，实际 %q", session)
+	require.Equal(t, openCodeGateSessionLowHex, session[13:16])
 	// 2. UA 版本下限
 	version := strings.TrimPrefix(strings.Fields(openCodeUpstreamUserAgent)[0], "opencode/")
 	require.True(t, version >= "1.18.0", "UA 版本 %s 必须不低于 1.18.0", version)

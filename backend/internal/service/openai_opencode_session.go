@@ -22,10 +22,21 @@ const (
 	// 凭证类 strike，健康账号因此被自动禁用。取值沿用真实 opencode 客户端的
 	// UA 格式（opencode/<version>）。
 	//
-	// 版本下限：上游对 opencode/<version> 做版本校验，低于 1.18.0 一律返回
+	// 版本下限：上游对 opencode/<version> 做版本校验，低于下限一律返回
 	// 426 UpgradeRequired（实测 1.17.9 拒绝、1.18.0 通过）。此前取值为
 	// opencode/1.0.0，会稳定触发 426，故对齐到官方客户端实际发送的完整身份串。
-	openCodeUpstreamUserAgent = "opencode/1.18.31 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14"
+	//
+	// **UA 版本不是免费层门禁的检查项。** 门禁只要求 UA 是 opencode/ 形态且
+	// 不低于版本下限，具体版本号不参与判定（实测上游插件 UA opencode/1.18.31
+	// 与 1.19.0 同样返回 200）。2026-10-13 免费层稳定 403 FreeTierError 的真实
+	// 根因是会话 id 的**位编码**（hex 段低 12 位必须为 0xFFE），与 UA 无关：
+	// 见 openCodeGateSessionLowHex 与 docs/opencode-free-tier-gate-runbook.md。
+	//
+	// 取值保持为最新官方版本（1.19.0，2026-10-11 发布）只是「保持最新无害」。
+	// 子版本从官方发布产物实测取得：ai-sdk/provider-utils 仍为 4.0.23
+	// （二进制内 `var QF="4.0.23"`），Bun runtime 仍为 1.3.14（`bun/1.3.14`），
+	// 故本次只有主版本号变化。
+	openCodeUpstreamUserAgent = "opencode/1.19.0 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14"
 )
 
 // rememberOpenCodeInboundBody keeps the client request body so protocol
