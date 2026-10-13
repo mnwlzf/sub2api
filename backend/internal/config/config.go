@@ -2752,6 +2752,25 @@ func setEnvReachableDefaults() {
 	// （见 env_reachability_test.go 里 image_storage 的教训）。这里登记零值默认，
 	// 让 env 能生效；config.yaml 或 env 里的显式取值仍然优先。
 	viper.SetDefault("gateway.text_prompt_injection_enabled", false)
+
+	// opencode_go 免费层 429 的 WARP 出口轮换（默认关闭）。这 6 个键此前只有
+	// mapstructure 字段、没有登记默认值，GATEWAY_OPENCODE_WARP_ROTATE_* 会被
+	// viper 静默丢弃（env_reachability_test.go 的守卫即为此而设）。
+	//
+	// 统一登记零值默认，且都是各自的「有效默认」，因此不改变现有行为：
+	//   - service_url 为空 → 轮换器构造为 nil，网关侧保持 no-op；
+	//   - enabled=false   → 全局关闭（账号凭据 warp_rotate_on_429=on 仍可单独灰度）；
+	//   - timeout_seconds<=0、max_rotations_per_request<=0 → 由网关侧回落到内置
+	//     默认（95 秒 / 2 次），与 config.example.yaml 的示例值一致；
+	//   - min_interval_seconds<=0 → 不额外限流（并发去重仍由 singleflight 保证）。
+	// 这些键没有任何 viper.IsSet 判定（那只用于 trusted_proxies 与
+	// sticky_escape_enabled），因此登记默认值不会把「未配置」误判成「显式配置」。
+	viper.SetDefault("gateway.opencode_warp_rotate.enabled", false)
+	viper.SetDefault("gateway.opencode_warp_rotate.service_url", "")
+	viper.SetDefault("gateway.opencode_warp_rotate.token", "")
+	viper.SetDefault("gateway.opencode_warp_rotate.timeout_seconds", 0)
+	viper.SetDefault("gateway.opencode_warp_rotate.max_rotations_per_request", 0)
+	viper.SetDefault("gateway.opencode_warp_rotate.min_interval_seconds", 0)
 }
 
 func (c *Config) Validate() error {

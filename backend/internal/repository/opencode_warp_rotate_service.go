@@ -68,7 +68,15 @@ func NewOpenCodeWarpRotator(cfg *config.Config) service.WarpExitRotator {
 	}
 	// 显式清空 Transport.Proxy：这是站内服务调用，不能继承 HTTP_PROXY/HTTPS_PROXY
 	// 环境变量，否则会被运维侧的出网代理劫持（轮换服务通常只在容器网络内可达）。
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	//
+	// 用双返回值断言而非裸断言：http.DefaultTransport 由标准库初始化为
+	// *http.Transport，正常路径下必然命中；被测试或第三方替换过的极端情况下
+	// 回落到一个等价默认值，避免这里 panic 掉整条 failover 链路。
+	baseTransport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		baseTransport = &http.Transport{Proxy: nil}
+	}
+	transport := baseTransport.Clone()
 	transport.Proxy = nil
 	return &openCodeWarpRotateService{
 		serviceURL: serviceURL,

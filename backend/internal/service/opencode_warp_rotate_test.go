@@ -146,12 +146,6 @@ func (s *warpRotateUpstreamStub) CloseUpstreamIdleConnections(proxyURL string, a
 	s.events.add("close_idle")
 }
 
-func (s *warpRotateUpstreamStub) callCount() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.calls
-}
-
 func (s *warpRotateUpstreamStub) closedProxyURLs() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -687,9 +681,12 @@ func TestOpenCodeWarpRotate_CCPipelineIgnoresOtherPlatforms(t *testing.T) {
 				Header:     http.Header{"Content-Type": []string{"application/json"}},
 			}
 
-			svc.failoverOpenAIUpstreamHTTPError(
+			// 非 opencode_go 平台即便 429 带 FreeUsageLimitError 也绝不应触发出口轮换；
+			// 同时 failover 本身必须照常发生（返回值非 nil），两者一起断言。
+			failoverErr := svc.failoverOpenAIUpstreamHTTPError(
 				context.Background(), c, account, resp, []byte(openCodeWarpRotateFreeUsageLimitBody), "Rate limit exceeded", "some-model",
 			)
+			require.NotNil(t, failoverErr)
 
 			require.Zero(t, rotator.callCount())
 		})

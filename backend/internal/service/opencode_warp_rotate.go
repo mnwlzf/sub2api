@@ -54,11 +54,12 @@ const (
 const openCodeFreeUsageLimitErrorType = "FreeUsageLimitError"
 
 const (
-	// defaultOpenCodeWarpRotateTimeoutSeconds 客户端超时默认值。轮换服务自身硬超时
-	// 约 90 秒，客户端必须略大于它，否则会在服务端仍在轮换时提前放弃。
-	defaultOpenCodeWarpRotateTimeoutSeconds = 95
 	// defaultOpenCodeWarpRotateMaxPerRequest 同账号重试次数上限默认值。
 	// 刻意保持很小的值：每次重试都伴随一次最长 90 秒的出口轮换。
+	//
+	// 客户端超时默认值（95 秒，需略大于轮换服务约 90 秒的硬超时）由 repository 层
+	// 的 defaultOpenCodeWarpRotateTimeout 持有：service 层只透传 ctx，不构造
+	// HTTP 客户端，因此这里不再重复声明该常量。
 	defaultOpenCodeWarpRotateMaxPerRequest = 2
 	// openCodeWarpRotateRetryDelay 同账号重试前的最小间隔。轮换本身已经消耗了
 	// 绝大部分等待时间，这里只需一个很小的延迟让上游状态稳定。

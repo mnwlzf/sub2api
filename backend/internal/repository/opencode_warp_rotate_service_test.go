@@ -35,7 +35,8 @@ func (r *recordingIdleCloserTransport) calls() int64 {
 }
 
 func TestCloseUpstreamIdleConnections_OnlyMatchingProxyKey(t *testing.T) {
-	svc := NewHTTPUpstream(&config.Config{}).(*httpUpstreamService)
+	svc, ok := NewHTTPUpstream(&config.Config{}).(*httpUpstreamService)
+	require.True(t, ok, "NewHTTPUpstream must return *httpUpstreamService")
 
 	sharedByProxy := &recordingIdleCloserTransport{}
 	accountScopedSameProxy := &recordingIdleCloserTransport{}
@@ -79,7 +80,8 @@ func TestCloseUpstreamIdleConnections_OnlyMatchingProxyKey(t *testing.T) {
 }
 
 func TestCloseUpstreamIdleConnections_InvalidProxyURLIsNoop(t *testing.T) {
-	svc := NewHTTPUpstream(&config.Config{}).(*httpUpstreamService)
+	svc, ok := NewHTTPUpstream(&config.Config{}).(*httpUpstreamService)
+	require.True(t, ok, "NewHTTPUpstream must return *httpUpstreamService")
 	transport := &recordingIdleCloserTransport{}
 	svc.mu.Lock()
 	svc.clients["proxy:socks5h://warp-test:1080"] = &upstreamClientEntry{
