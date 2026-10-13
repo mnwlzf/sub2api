@@ -72,4 +72,4 @@
 ## 8. 交付
 
 - [x] 8.1 分支 `fix/opencode-gate-session-bit-encoding`
-- [ ] 8.2 推送并提 PR（不自行合并）
+- [x] 8.2 推送并提 PR：<https://github.com/mnwlzf/sub2api/pull/21>（**未自行合并**）
