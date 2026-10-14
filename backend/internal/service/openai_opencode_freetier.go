@@ -28,20 +28,28 @@ import (
 // "OpenCode's free tier can only be used from within OpenCode"：
 //
 //  1. X-Opencode-Session 必须是 ses_ + 12 位小写 hex + 14 位字母数字，
-//     **且 hex 段低 12 位必须等于 0xFFE**（形状 + 位不变量，两者缺一即 403）
+//     **且 hex 段必须是官方 tA() 时间戳编码**（形状 + 完整编码，两者缺一即
+//     403）。低 12 位为 0xFFE 只是该编码的结构推论，**不是**充分条件：随机
+//     hex 只把末 3 位凑成 ffe 依然 403（2026-10-14 实测，见
+//     openCodeGateSessionLowHex）
 //  2. User-Agent 必须为 opencode/<version> 且 version >= 1.18.0
 //     （1.17.9 返回 426 UpgradeRequired）
 //  3. body 的 tools 必须同时含 bash 与 read（只含其一仍 403）
 //  4. body 的 stream 必须为 true（false 返回 403）
 //
-// 信号 1 的位不变量是 2026-10-11 上游把 /zen/* 改成指向新 inference 服务的
+// 信号 1 的编码要求是 2026-10-11 上游把 /zen/* 改成指向新 inference 服务的
 // 薄代理（anomalyco/opencode commit 83f2b6f67a）时引入的：门禁从「只查形状」
-// 升级为「查形状 + 查位不变量」。此前用 sha256 派生 hex（等价随机）必然被拒，
-// 详见 openCodeGateSessionLowHex 与 mintOpenCodeSessionID。
+// 升级为「查形状 + 查 hex 段的完整官方编码」。此前用 sha256 派生 hex（等价
+// 随机）必然被拒；**只把末 3 位凑成 ffe 同样必然被拒**（2026-10-14 单变量
+// 实测），详见 openCodeGateSessionLowHex 与 mintOpenCodeSessionID。
+//
+// 本仓库的透传判据 isOpenCodeGateSessionID 自 2026-10-14 起与上游同步收紧为
+// 「形状 + 完整编码」：低 12 位之外还要能反解出合法的铸造时刻。理由见该函数。
 //
 // 四条信号均为对 https://opencode.ai/zen/v1/chat/completions 的实测结论
 // （Authorization: Bearer public，模型 mimo-v2.6-flash-free；信号 2/3/4 为
-// 2026-09-30，信号 1 的位不变量为 2026-10-13）。X-Opencode-Request / Client /
+// 2026-09-30，信号 1 的完整编码要求由 2026-10-13 的结论修正而来，
+// 2026-10-14 定稿）。X-Opencode-Request / Client /
 // Project / Accept / X-Session-Affinity / X-Session-Id 经实测非必需，故不依赖
 // 它们通过门禁（affinity 头仍然镜像，仅为形态对齐）。
 //
@@ -71,22 +79,46 @@ const (
 // openCodeCanonicalSessionRe 是上游接受的会话 ID 形状：ses_ + 12 位小写 hex
 // + 14 位字母数字，总长恒为 30。
 //
-// 注意：形状只是必要条件。2026-10-11 起还必须满足位不变量
-// （hex 段低 12 位 == 0xFFE），见 isOpenCodeGateSessionID。
+// 注意：形状只是必要条件。2026-10-11 起 hex 段还必须是官方 tA() 时间戳编码
+// （低 12 位 == 0xFFE 只是它的结构推论），见 isOpenCodeGateSessionID。
 var openCodeCanonicalSessionRe = regexp.MustCompile(`^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$`)
 
 const (
-	// openCodeGateSessionLowHex 是门禁的位不变量：X-Opencode-Session 的 12 位
-	// hex 字段，其低 12 位（即末 3 个 hex 字符）必须等于 0xFFE。
+	// openCodeGateSessionLowHex 是门禁的**结构必要条件**：X-Opencode-Session
+	// 的 12 位 hex 字段，其低 12 位（即末 3 个 hex 字符）必须等于 0xFFE。
 	//
-	// 单变量实测（2026-10-13，头 / UA / body 逐字节相同，只改会话值）：
+	// 它**不是充分条件**。门禁真正要求的是整个 hex 段为官方 tA() 时间戳编码
+	// （见 openCodeGateSessionHexPartAt）：低 12 位恒为 0xFFE，高 36 位是从
+	// epoch-1 起递减的毫秒计数。随机 hex 即使末 3 位凑成 ffe，高 36 位解出的
+	// 「铸造时刻」也是无意义的随机值，上游照样 403。
 	//
-	//	hex=d1bfaf4aff65（末 3 位 f65）→ 403 FreeTierError
-	//	hex=ecb74175effe（末 3 位 ffe）→ 200 OK
+	// 单变量实测（头 / UA / body 逐字节相同，只改会话值）：
+	//
+	//	2026-10-13  hex=d1bfaf4aff65（哈希派生，末 3 位 f65）→ 403 FreeTierError
+	//	2026-10-13  hex=ecb74175effe（末 3 位 ffe）          → 200 OK
+	//	2026-10-14  hex=<随机 hex，仅把末 3 位改成 ffe>      → 403 FreeTierError
+	//	2026-10-14  hex=ec580097cffe（官方 tA 完整编码）      → 429 FreeUsageLimitError
+	//
+	// 2026-10-13 的「末 3 位 ffe → 200」是误导性样本，也是这里一度把不变量写
+	// 松的原因：ecb74175effe 反解出的铸造时刻是 1791882946721，它本来就是一枚
+	// **真实的官方客户端 id**（见 TestOpenCodeGateSessionHexMatchesOfficial
+	// Encoding 的用例），而不是手工凑出来的「只改末 3 位」。2026-10-14 补做的
+	// 第三、四条对照才证明：末 3 位 ffe 既不充分，写成「门禁位不变量」也过松。
+	//
+	// 校验判据 2026-10-14 起同步收紧：isOpenCodeGateSessionID 在低 12 位之外还要
+	// 求高 36 位反解出的铸造时刻落在容许窗口内。单查低 12 位会放过哈希派生值里
+	// 1/4096 的偶然命中，而那类值实测 403——403 会封 key 约 15 分钟（见
+	// docs/opencode-free-tier-gate-runbook.md §1.2），代价远高于误判导致的重复
+	// 铸造（只损失一次上游 prompt cache 命中）。
 	//
 	// 这条不变量不满足时上游返回与「缺会话头」完全相同的 403，因此极易被误判
 	// 成形状问题。排查入口见 docs/opencode-free-tier-gate-runbook.md。
 	openCodeGateSessionLowHex = "ffe"
+
+	// openCodeGateSessionLowValue 是 openCodeGateSessionLowHex 的数值形式
+	// （0xFFE = 4094），供反解校验按位比较使用。两者必须恒等，由
+	// TestOpenCodeGateSessionLowHexMatchesValue 钉住。
+	openCodeGateSessionLowValue = uint64(0xFFE)
 
 	// openCodeGateSessionEpochMillis 是官方客户端递减计数的起点常量：
 	// 27 << 36 毫秒 = 1855425871872（≈ 2028-10-13）。
@@ -104,6 +136,29 @@ const (
 	// 该恒等式对任意 now 成立（模 2^48）。自洽校验等式为
 	// (hex >> 12) + mintedAtMillis == epoch - 1；用真实客户端 id 反推即可验证。
 	openCodeGateSessionEpochMillis = int64(27) << 36
+
+	// openCodeGateSessionMintMaxAgeMillis 是反解出的「铸造时刻」允许早于当前
+	// 时刻的最大时长（窗口下界，48 小时）。
+	//
+	// 取值理由：
+	//
+	//   - 唯一有实测证据的官方客户端复用样本（hex=ecb74175effe，铸造于
+	//     2026-10-13T09:15:46Z）在被上游以 200 接受时已铸造约 28 小时，因此窗口
+	//     必须显著大于 28 小时；
+	//   - 客户端请求在途、分钟级时钟偏差、跨天会话都被 48 小时完全覆盖；
+	//   - 仍然「有限」：反解时刻落在窗口外即判非法。哈希派生的 hex 其高 36 位是
+	//     噪声，反解时刻近似均匀分布在 2^36 毫秒 ≈ 795 天的跨度上，因此该窗口把
+	//     「低 12 位恰好是 ffe 的哈希值」的漏检率从 1/4096 压到
+	//     (49h / 795d) / 4096 ≈ 6e-7。
+	//
+	// 误判方向是安全的：判严只会让本可透传的官方 id 被重铸，代价是一次上游
+	// prompt cache 未命中，不会产生 403（见 isOpenCodeGateSessionID）。
+	openCodeGateSessionMintMaxAgeMillis = int64(48) * 60 * 60 * 1000
+
+	// openCodeGateSessionMintFutureSkewMillis 是允许「铸造时刻晚于当前时刻」的
+	// 偏差（窗口上界，1 小时），覆盖客户端时钟略快与请求在途的情形。取 1 小时：
+	// 远大于任何正常的时钟偏差，同时仍然有限。
+	openCodeGateSessionMintFutureSkewMillis = int64(1) * 60 * 60 * 1000
 
 	// openCodeGateSessionMintCacheSize 是会话铸造缓存的容量上限。
 	// 4096 远大于典型并发会话数；淘汰只会让该会话下一轮换一次 id（仍过门禁，
@@ -235,10 +290,10 @@ func openCodeGateLogSchemaRefs(account *Account, dialect string, tools []json.Ra
 // 确定性是硬要求而非优化：会话 ID 每轮随机会让上游 prompt cache 永不命中，
 // 因此同一来源必须恒等映射。
 //
-// **本函数只保证形状，不保证 ses_ 的门禁位不变量**（hex 段低 12 位必须是
-// 0xFFE）。会话 id 必须走 canonicalOpenCodeSessionID / mintOpenCodeSessionID；
-// 这里保留是因为门禁铸造复用了它的 14 位后缀派生（见
-// openCodeGateSessionSuffix）。
+// **本函数只保证形状，不保证 ses_ 的门禁 hex 段要求**（必须是官方 tA() 时间戳
+// 编码，低 12 位为 0xFFE 只是其结构推论）。会话 id 必须走
+// canonicalOpenCodeSessionID / mintOpenCodeSessionID；这里保留是因为门禁铸造
+// 复用了它的 14 位后缀派生（见 openCodeGateSessionSuffix）。
 func canonicalOpenCodeID(prefix, source string) string {
 	sum := sha256.Sum256([]byte(source))
 	hexPart := hex.EncodeToString(sum[:6])
@@ -258,8 +313,8 @@ func canonicalOpenCodeID(prefix, source string) string {
 //
 // 低位 12 bit 恒为 0xFFE（门禁位不变量），高 36 bit 是自 epoch-1 起的递减毫秒
 // 计数。这里的 -1 不是近似：官方值等于 ((epoch - now) << 12) - 2，少减一个
-// 单位。门禁当前只读低 12 位，两者都能过；但保持逐位一致可以在门禁将来收紧到
-// 高 36 位时不用再改一次，且让「与官方编码等价」成为可证命题。
+// 单位。本仓库的判据 2026-10-14 起同时校验高 36 位（见
+// isOpenCodeGateSessionID），因此逐位一致不再只是「防御性对齐」，而是硬要求。
 //
 // 即便系统时钟越过 epoch（remaining 为负）或严重偏移，模 2^48 掩码后低 12 位
 // 仍是 0xFFE，不变量不会被破坏。
@@ -299,7 +354,7 @@ func openCodeGateRandomSessionSuffix() string {
 	return string(suffix)
 }
 
-// mintOpenCodeSessionID 按官方编码铸造一个满足门禁位不变量的会话 id：
+// mintOpenCodeSessionID 按官方编码铸造一个满足门禁完整编码要求的会话 id：
 // ses_<12 位小写 hex><14 位 base62>，hex 段低 12 位恒为 0xFFE。
 //
 // 每次调用都会得到不同的值（编码含当前时间且后缀随机），因此只用于「既无
@@ -312,25 +367,81 @@ func mintOpenCodeSessionID() string {
 // mintOpenCodeSessionIDForSource 铸造与 source 绑定的稳定会话 id。
 //
 // 后缀由 source 确定性派生，因此即便缓存条目被淘汰或进程重启，同一 source
-// 的后缀也不会变；hex 段由官方编码生成，保证位不变量。
+// 的后缀也不会变；hex 段由官方编码生成，保证完整官方编码（含高 36 位时间窗）。
 func mintOpenCodeSessionIDForSource(source string) string {
 	return openCodeGateSessionMints.getOrMint(source, func() string {
 		return "ses_" + openCodeGateSessionHexPart() + openCodeGateSessionSuffix(source)
 	})
 }
 
-// isOpenCodeGateSessionID 校验会话 id 是否同时满足门禁的**形状**与**位不变量**。
+// isOpenCodeGateSessionID 校验会话 id 是否满足门禁的**形状**与**完整官方 tA()
+// 编码**。两个条件缺一即非法：
+//
+//  1. 形状：^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$（openCodeCanonicalSessionRe）。
+//  2. 编码：hex 段低 12 位 == 0xFFE（tA() 的 counter == 1 形态），**且**高 36 位
+//     反解出的铸造时刻落在容许窗口内（openCodeGateSessionMintMaxAgeMillis /
+//     …FutureSkewMillis）。
+//
+// 为什么必须查高 36 位：低 12 位只是该编码的**结构必要条件**，不是充分条件。
+// 随机 hex（哈希派生的 ses_ 值正是这种形态）把末 3 位凑成 ffe 的概率是 1/4096，
+// 2026-10-14 单变量实测这类值仍然 403 FreeTierError（见 openCodeGateSessionLowHex）。
+//
+// 判据不对称，因此从严：
+//
+//   - 该透传时误判为重铸是**无害**的：我们自己铸造的值一样过门禁，只损失一次
+//     上游 prompt cache 命中（见 canonicalOpenCodeSessionID）。
+//   - 不该透传时透传是**致命**的：403 FreeTierError 会封禁该 key 约 15 分钟，
+//     期间连完全正确的请求也一并被拒（见 docs/opencode-free-tier-gate-runbook.md
+//     §1.2）。因此宁可多铸，不可放过。
+//
+// 窗口常量取宽松值（48 小时 / 1 小时）是刻意的，理由见其声明处：误拒真实官方 id
+// 只是多铸一枚新 id，而窗口越宽则哈希噪声越容易蒙混过关。
 //
 // 形状合法但 hex 段低位不是 0xFFE 的值必须被判为非法：任何用 sha256 派生 hex
 // 的实现（含我们 2026-10-11 之前的算法、以及部分上游插件的 canonicalID）都会
 // 产出这种值，原样透传会被上游以 403 FreeTierError 拒绝。
 func isOpenCodeGateSessionID(id string) bool {
-	if !openCodeCanonicalSessionRe.MatchString(id) {
+	return isOpenCodeGateSessionIDAt(id, time.Now().UnixMilli())
+}
+
+// isOpenCodeGateSessionIDAt 是 isOpenCodeGateSessionID 的可注入时钟版本，便于用
+// 真实客户端样本在「其铸造时刻」上做确定性校验（样本会随时间老化，用墙钟判定
+// 会让测试随时间漂移）。
+func isOpenCodeGateSessionIDAt(id string, nowMillis int64) bool {
+	mintedAtMillis, ok := openCodeGateSessionMintedAtMillis(id)
+	if !ok {
 		return false
 	}
-	// 正则已保证 id = "ses_" + 12 位小写 hex + 14 位字母数字，
-	// 故 id[4:16] 是 hex 段，其末 3 个字符（低 12 位）必须为 ffe。
-	return id[13:16] == openCodeGateSessionLowHex
+	if mintedAtMillis > nowMillis+openCodeGateSessionMintFutureSkewMillis {
+		return false
+	}
+	return mintedAtMillis >= nowMillis-openCodeGateSessionMintMaxAgeMillis
+}
+
+// openCodeGateSessionMintedAtMillis 从会话 id 的 hex 段反解「铸造时刻」（Unix
+// 毫秒）。第二个返回值为 false 表示形状非法，或 hex 段不是 tA() 的 counter == 1
+// 形态（低 12 位 != 0xFFE）。
+//
+// 反解等式（见 openCodeGateSessionEpochMillis）：
+//
+//	mintedAtMillis = (epoch - 1) - (hex >> 12)
+//
+// counter > 1 的官方 id（低 12 位为 0xFFD..0x000）过不了门禁，同样按非法处理：
+// 它们是官方客户端的非首次铸造路径产物，2026-10-13 实测原样透传会被 403。
+func openCodeGateSessionMintedAtMillis(id string) (int64, bool) {
+	if !openCodeCanonicalSessionRe.MatchString(id) {
+		return 0, false
+	}
+	// 正则已保证 id = "ses_" + 12 位小写 hex + 14 位字母数字，故 id[4:16] 是
+	// hex 段，可安全按 16 进制解析（48 bit，ParseUint 的 64 位上限足够）。
+	hexValue, err := strconv.ParseUint(id[4:16], 16, 64)
+	if err != nil {
+		return 0, false
+	}
+	if hexValue&0xFFF != openCodeGateSessionLowValue {
+		return 0, false
+	}
+	return openCodeGateSessionEpochMillis - 1 - int64(hexValue>>12), true
 }
 
 // openCodeGateSessionMintCache 把「会话来源字符串」有界地映射到已铸造的会话 id，
@@ -338,7 +449,7 @@ func isOpenCodeGateSessionID(id string) bool {
 //
 // 为什么必须有缓存：官方编码把当前时间编进 hex 段，逐次铸造必然得到不同值。
 // 同一会话每轮换 id 会让上游 prompt cache 永不命中（每轮全量重算，成本与延迟
-// 都显著上升）。缓存把 source → id 固定下来；因为 id 本身已满足位不变量，
+// 都显著上升）。缓存把 source → id 固定下来；因为 id 本身已满足完整官方编码，
 // 缓存不会影响门禁通过性。
 //
 // 淘汰策略：FIFO（先进先出），容量 openCodeGateSessionMintCacheSize。选 FIFO
@@ -431,11 +542,17 @@ func openCodeGateModelFromBody(body []byte) string {
 
 // canonicalOpenCodeSessionID 把已解析出的会话来源规范化为上游接受的会话 id。
 //
-// 合法值（**形状与门禁位不变量都满足**）必须原样保留——重新铸造会破坏调用方
-// 自建的会话连续性。其余一切值都要重铸，**包括形状合法但 hex 段低位不是
-// 0xFFE 的值**：上游插件 / 客户端用哈希派生的 ses_ 值正是这种形态，原样透传会
-// 把 403 FreeTierError 带进来（2026-10-13 单变量实测：hex=d1bfaf4aff65 → 403，
-// hex=ecb74175effe → 200）。
+// 合法值（**形状与完整官方 tA() 编码都满足**）必须原样保留——重新铸造会破坏
+// 调用方自建的会话连续性。其余一切值都要重铸，两类尤其不能漏：
+//
+//   - 形状合法但 hex 段低位不是 0xFFE 的值：上游插件 / 客户端用哈希派生的 ses_
+//     值正是这种形态（2026-10-13 单变量实测：hex=d1bfaf4aff65 → 403，
+//     hex=ecb74175effe → 200）。
+//   - 低 12 位恰好是 0xFFE、但高 36 位反解不出合法铸造时刻的值：哈希派生的 ses_
+//     值有 1/4096 的概率落在这种形态，原样透传同样会被 403（2026-10-14 单变量
+//     实测）。
+//
+// 两类都由 isOpenCodeGateSessionID 统一判定；透传判据从严的理由见该函数。
 func canonicalOpenCodeSessionID(source string) string {
 	source = strings.TrimSpace(source)
 	if isOpenCodeGateSessionID(source) {
@@ -448,7 +565,7 @@ func canonicalOpenCodeSessionID(source string) string {
 }
 
 // applyOpenCodeFreeTierGateSession 在 applyOpenCodeSessionHeader 之后调用，
-// 把已经落地的会话值改写为满足门禁的规范值（形状 + hex 段低位 0xFFE）。
+// 把已经落地的会话值改写为满足门禁的规范值（形状 + 官方 tA() hex 编码）。
 // 复用既有解析链（客户端头 → prompt_cache_key / metadata.user_id → 账号覆写）
 // 保证跨轮次稳定。
 //
@@ -469,7 +586,7 @@ func applyOpenCodeFreeTierGateSession(account *Account, headers http.Header, bod
 	canonical := canonicalOpenCodeSessionID(current)
 	if canonical == "" {
 		// 既无客户端会话标识、也无法从请求体推导稳定种子时的最后兜底：
-		// 随机值会让 prompt cache 不命中，但至少满足门禁的形状与位不变量。
+		// 随机值会让 prompt cache 不命中，但至少满足门禁的形状与完整官方编码。
 		canonical = mintOpenCodeSessionID()
 	}
 	for key := range headers {

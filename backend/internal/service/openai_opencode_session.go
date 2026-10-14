@@ -29,8 +29,9 @@ const (
 	// **UA 版本不是免费层门禁的检查项。** 门禁只要求 UA 是 opencode/ 形态且
 	// 不低于版本下限，具体版本号不参与判定（实测上游插件 UA opencode/1.18.31
 	// 与 1.19.0 同样返回 200）。2026-10-13 免费层稳定 403 FreeTierError 的真实
-	// 根因是会话 id 的**位编码**（hex 段低 12 位必须为 0xFFE），与 UA 无关：
-	// 见 openCodeGateSessionLowHex 与 docs/opencode-free-tier-gate-runbook.md。
+	// 根因是会话 id 的**编码**（hex 段必须是官方 tA() 时间戳编码，低 12 位为
+	// 0xFFE 只是其结构推论），与 UA 无关：见 openCodeGateSessionLowHex 与
+	// docs/opencode-free-tier-gate-runbook.md。
 	//
 	// 取值保持为最新官方版本（1.19.0，2026-10-11 发布）只是「保持最新无害」。
 	// 子版本从官方发布产物实测取得：ai-sdk/provider-utils 仍为 4.0.23
