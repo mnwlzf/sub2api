@@ -701,6 +701,111 @@ func TestOpenAIGatewayService_Forward_HTTPThinkingSignatureDoesNotRetryUnrelated
 	}
 }
 
+// openAIEncryptedContentNotIssuedBody mirrors the real upstream rejection for a
+// replayed encrypted reasoning block minted by another account: the message is
+// the only discriminator because error.code is null.
+const openAIEncryptedContentNotIssuedBody = `{"error":{"code":null,"message":"reasoning ` + "`encrypted_content`" + ` was not issued to this caller","param":null,"type":"invalid_request_error"}}`
+
+func newOpenAIEncryptedContentRetryTestUpstream(responses ...*http.Response) (*OpenAIGatewayService, *httpUpstreamRecorder, *Account) {
+	upstream := &httpUpstreamRecorder{responses: responses}
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream}
+	account := &Account{ID: 10, Name: "openai-apikey", Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+		Concurrency: 1, Credentials: map[string]any{"api_key": "sk-test", "base_url": "https://example.com"},
+		Extra: map[string]any{"use_responses_api": true}}
+	return svc, upstream, account
+}
+
+func newOpenAIEncryptedContentRetryTestContext() *gin.Context {
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+	SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
+	return c
+}
+
+func openAIEncryptedContentRetryTestResponse(status int, body string) *http.Response {
+	return &http.Response{StatusCode: status, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(body))}
+}
+
+// The "was not issued to this caller" rejection arrives with error.code == null, so
+// it can only be matched by message. Recovery must reuse the existing
+// drop-encrypted-reasoning-items + retry-once path.
+func TestOpenAIGatewayService_Forward_HTTPEncryptedContentNotIssuedToCallerRecovers(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc, upstream, account := newOpenAIEncryptedContentRetryTestUpstream(
+		openAIEncryptedContentRetryTestResponse(http.StatusBadRequest, openAIEncryptedContentNotIssuedBody),
+		openAIEncryptedContentRetryTestResponse(http.StatusOK, `{"id":"resp_recovered","usage":{"input_tokens":1,"output_tokens":2}}`),
+	)
+	body := []byte(`{"model":"gpt-5","stream":false,"input":[{"type":"reasoning","encrypted_content":"other-account-blob","summary":[{"type":"summary_text","text":"keep me"}]},{"type":"message","content":[{"type":"input_text","text":"hi"}]}]}`)
+
+	result, err := svc.Forward(context.Background(), newOpenAIEncryptedContentRetryTestContext(), account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, upstream.bodies, 2, "must retry exactly once after the caller-mismatch rejection")
+	require.Equal(t, "other-account-blob", gjson.GetBytes(upstream.bodies[0], "input.0.encrypted_content").String())
+	require.False(t, gjson.GetBytes(upstream.bodies[1], "input.0.encrypted_content").Exists())
+	require.Equal(t, "keep me", gjson.GetBytes(upstream.bodies[1], "input.0.summary.0.text").String())
+	require.Equal(t, "hi", gjson.GetBytes(upstream.bodies[1], "input.1.content.0.text").String())
+}
+
+// The matcher must stay narrow: only this message triggers it, only on HTTP 400,
+// and a second identical rejection must not retry again.
+func TestOpenAIGatewayService_Forward_HTTPEncryptedContentNotIssuedToCallerDoesNotOverTrigger(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	input := `[{"type":"reasoning","encrypted_content":"other-account-blob"},{"type":"message","content":[{"type":"input_text","text":"hi"}]}]`
+	for _, tc := range []struct {
+		name     string
+		status   int
+		upstream string
+	}{
+		{"unrelated 400 message", http.StatusBadRequest, `{"error":{"code":null,"message":"bad request","type":"invalid_request_error"}}`},
+		{"encrypted_content mentioned without the caller clause", http.StatusBadRequest, `{"error":{"code":null,"message":"reasoning ` + "`encrypted_content`" + ` was rejected","type":"invalid_request_error"}}`},
+		{"caller clause without the encrypted_content mention", http.StatusBadRequest, `{"error":{"code":null,"message":"the input was not issued to this caller","type":"invalid_request_error"}}`},
+		{"same message but not 400", http.StatusInternalServerError, openAIEncryptedContentNotIssuedBody},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, upstream, account := newOpenAIEncryptedContentRetryTestUpstream(
+				openAIEncryptedContentRetryTestResponse(tc.status, tc.upstream),
+			)
+			_, _ = svc.Forward(context.Background(), newOpenAIEncryptedContentRetryTestContext(), account,
+				[]byte(`{"model":"gpt-5","stream":false,"input":`+input+`}`))
+			require.Len(t, upstream.bodies, 1, "recovery must not trigger")
+		})
+	}
+}
+
+func TestOpenAIGatewayService_Forward_HTTPEncryptedContentNotIssuedToCallerRetriesOnlyOnce(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc, upstream, account := newOpenAIEncryptedContentRetryTestUpstream(
+		openAIEncryptedContentRetryTestResponse(http.StatusBadRequest, openAIEncryptedContentNotIssuedBody),
+		openAIEncryptedContentRetryTestResponse(http.StatusBadRequest, openAIEncryptedContentNotIssuedBody),
+		openAIEncryptedContentRetryTestResponse(http.StatusOK, `{"id":"resp_unexpected","usage":{"input_tokens":1,"output_tokens":2}}`),
+	)
+	body := []byte(`{"model":"gpt-5","stream":false,"input":[{"type":"reasoning","encrypted_content":"other-account-blob"},{"type":"message","content":[{"type":"input_text","text":"hi"}]}]}`)
+
+	_, err := svc.Forward(context.Background(), newOpenAIEncryptedContentRetryTestContext(), account, body)
+	require.Error(t, err)
+	require.Len(t, upstream.bodies, 2, "the recovery must be attempted at most once per request")
+}
+
+func TestOpenAIGatewayService_Forward_HTTPEncryptedContentNotIssuedToCallerSkipsWithoutEncryptedItems(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	sink, release := captureStructuredLog(t)
+	defer release()
+
+	svc, upstream, account := newOpenAIEncryptedContentRetryTestUpstream(
+		openAIEncryptedContentRetryTestResponse(http.StatusBadRequest, openAIEncryptedContentNotIssuedBody),
+	)
+	body := []byte(`{"model":"gpt-5","stream":false,"input":[{"type":"message","content":[{"type":"input_text","text":"hi"}]}]}`)
+
+	_, err := svc.Forward(context.Background(), newOpenAIEncryptedContentRetryTestContext(), account, body)
+	require.Error(t, err)
+	require.Len(t, upstream.bodies, 1, "nothing to trim means no retry")
+	require.True(t, sink.ContainsMessage("Skip non-WSv2 invalid_encrypted_content retry because encrypted reasoning items are missing"),
+		"the skipped recovery must be observable in the logs")
+}
+
 func TestOpenAIGatewayService_Forward_CodexSparkRejectsEscapedInputImage(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	upstream := &httpUpstreamRecorder{

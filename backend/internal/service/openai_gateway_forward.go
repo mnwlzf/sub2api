@@ -1129,11 +1129,24 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			}
 			respBody = s.redactAgentIdentitySensitiveBody(ctx, account, respBody)
 			resp.Body = io.NopCloser(bytes.NewReader(respBody))
+			// "reasoning `encrypted_content` was not issued to this caller" is the third
+			// shape of the same upstream rejection, and it needs its own matcher because
+			// the upstream sends it with error.code == null
+			// ({"error":{"code":null,"message":"...","param":null,"type":"invalid_request_error"}}),
+			// so upstreamCode is empty and the code-based branch cannot fire. The cause is
+			// the same encrypted-reasoning lineage problem: an encrypted reasoning block is
+			// bound to the account/API key that issued it, and multi-account failover means a
+			// replayed history can carry blocks minted by a different account than the one
+			// serving this attempt, so compaction/replay re-sends them and the upstream
+			// rejects the whole request. Recovery is identical: drop the encrypted reasoning
+			// items and retry once.
 			invalidEncryptedContentError := upstreamCode == "invalid_encrypted_content" ||
 				(upstreamCode == "thinking_signature_invalid" &&
 					strings.Contains(upstreamMsg, "The encrypted content") &&
 					strings.Contains(upstreamMsg, "could not be verified") &&
-					strings.Contains(upstreamMsg, "could not be decrypted or parsed"))
+					strings.Contains(upstreamMsg, "could not be decrypted or parsed")) ||
+				(strings.Contains(upstreamMsg, "encrypted_content") &&
+					strings.Contains(upstreamMsg, "was not issued to this caller"))
 			if !httpInvalidEncryptedContentRetryTried && resp.StatusCode == http.StatusBadRequest && invalidEncryptedContentError {
 				decoded, decodeErr := ensureReqBody()
 				if decodeErr != nil {
