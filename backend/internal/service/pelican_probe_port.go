@@ -71,8 +71,8 @@ type PelicanProbeResult struct {
 // PelicanProbePublicStatus is the user-facing payload: only plans explicitly
 // marked public, plus their recent results. Never includes secrets.
 type PelicanProbePublicStatus struct {
-	Enabled bool                 `json:"enabled"`
-	Plans   []*PelicanProbePlan  `json:"plans"`
+	Enabled bool                  `json:"enabled"`
+	Plans   []*PelicanProbePlan   `json:"plans"`
 	Results []*PelicanProbeResult `json:"results"`
 }
 
