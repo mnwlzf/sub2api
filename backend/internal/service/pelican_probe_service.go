@@ -3,14 +3,18 @@ package service
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/tidwall/gjson"
 )
 
@@ -24,6 +28,69 @@ import (
 // Missing key means enabled.
 const PelicanProbeEnabledSettingKey = "pelican_probe_enabled"
 
+// Probe run budgets.
+const (
+	// pelicanProbeRunTimeout bounds one probe run. Manual ("run now") and
+	// scheduled runs share the same budget: generating an SVG animation
+	// legitimately takes minutes, so the ceiling is generous.
+	pelicanProbeRunTimeout = 10 * time.Minute
+	// pelicanProbeClientTimeout is the HTTP client budget for one probe request.
+	// It matches the run budget on purpose: the request starts after the run
+	// context was created, so the context deadline always fires first and the
+	// client timeout is only a backstop (it must never cut a long stream short
+	// before the context says the budget is over).
+	pelicanProbeClientTimeout = 10 * time.Minute
+	// pelicanProbePersistenceTimeout bounds the DB writes after a probe finished.
+	pelicanProbePersistenceTimeout = 15 * time.Second
+)
+
+// Sentinel errors of the probe execution API.
+var (
+	// ErrPelicanProbeAlreadyRunning reports that a run for the same plan is
+	// already in flight. The admin handler maps it to HTTP 409.
+	ErrPelicanProbeAlreadyRunning = errors.New("a probe run is already running for this plan")
+	// ErrPelicanProbePlanNotFound reports a missing plan (mapped to HTTP 404).
+	ErrPelicanProbePlanNotFound = errors.New("pelican probe plan not found")
+)
+
+// PelicanProbeRunTrigger is the payload of an accepted ("run now") trigger.
+type PelicanProbeRunTrigger struct {
+	Started bool  `json:"started"`
+	PlanID  int64 `json:"plan_id"`
+	// Reason explains a non-started trigger; empty when Started is true.
+	Reason string `json:"reason,omitempty"`
+}
+
+// pelicanProbeRunGuard is a process-wide in-flight set allowing at most one
+// probe run per plan at a time. It is intentionally in-memory: the API runs as a
+// single process, so a distributed lease is not needed (and a multi-instance
+// deployment would need a DB/redis lock instead).
+type pelicanProbeRunGuard struct {
+	mu      sync.Mutex
+	running map[int64]struct{}
+}
+
+// tryStart reserves a run slot for planID; it reports false when one is taken.
+func (g *pelicanProbeRunGuard) tryStart(planID int64) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.running == nil {
+		g.running = make(map[int64]struct{})
+	}
+	if _, busy := g.running[planID]; busy {
+		return false
+	}
+	g.running[planID] = struct{}{}
+	return true
+}
+
+// finish releases the run slot for planID.
+func (g *pelicanProbeRunGuard) finish(planID int64) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	delete(g.running, planID)
+}
+
 type PelicanProbeService struct {
 	planRepo    PelicanProbePlanRepository
 	resultRepo  PelicanProbeResultRepository
@@ -31,6 +98,11 @@ type PelicanProbeService struct {
 	settingRepo SettingRepository
 	cfg         *config.Config
 	httpClient  *http.Client
+
+	// runGuard serializes runs per plan (manual trigger + scheduled runner).
+	runGuard pelicanProbeRunGuard
+	// retryBackoffLadder overrides pelicanProbeRetryBackoffs when set (tests).
+	retryBackoffLadder []time.Duration
 }
 
 // NewPelicanProbeService creates a new PelicanProbeService.
@@ -47,7 +119,7 @@ func NewPelicanProbeService(
 		encryptor:   encryptor,
 		settingRepo: settingRepo,
 		cfg:         cfg,
-		httpClient:  &http.Client{Timeout: 5 * time.Minute},
+		httpClient:  &http.Client{Timeout: pelicanProbeClientTimeout},
 	}
 }
 
@@ -170,6 +242,10 @@ func judgeNoteSnippet(s string) string {
 // upstream calls). No max-token parameter is sent: parameter names differ
 // across upstream models, so the prompt constrains the reply to one word.
 //
+// The judge stays non-streaming (it is a short, single-word reply) but runs on
+// the caller's background context: runRow hands it the detached run context, so
+// the judge survives the request that triggered the run.
+//
 // Return contract:
 //   - verdict is PelicanJudgeYes / PelicanJudgeNo when the reply is decidable,
 //     or "" when the reply cannot be decided (ambiguous or off-topic).
@@ -212,16 +288,12 @@ func (s *PelicanProbeService) judgeCandyAnswer(ctx context.Context, baseURL, api
 		return "", "", err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	respBytes, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	respBytes, err := io.ReadAll(io.LimitReader(resp.Body, pelicanProbeMaxContentBytes))
 	if err != nil {
 		return "", "", err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		snippet := strings.TrimSpace(string(respBytes))
-		if len(snippet) > 500 {
-			snippet = snippet[:500]
-		}
-		return "", "", fmt.Errorf("judge HTTP %d: %s", resp.StatusCode, snippet)
+		return "", "", fmt.Errorf("judge HTTP %d: %s", resp.StatusCode, truncateProbeSnippet(string(respBytes)))
 	}
 	content := gjson.GetBytes(respBytes, "choices.0.message.content").String()
 	if strings.TrimSpace(content) == "" {
@@ -528,6 +600,12 @@ func (s *PelicanProbeService) SetGlobalEnabled(ctx context.Context, enabled bool
 
 // ListPublicStatus returns the user-facing payload. When globally disabled,
 // only Enabled=false is returned with empty lists.
+//
+// Everything returned here is user-visible, so it is redacted on the way out:
+// raw upstream errors (which embed the internal probe endpoint and upstream
+// bodies) are replaced by a coarse failure_reason, skip notes that quote an
+// upstream error are dropped, and the probe base URL is blanked. The admin
+// endpoints are untouched and keep the verbatim error text.
 func (s *PelicanProbeService) ListPublicStatus(ctx context.Context) (*PelicanProbePublicStatus, error) {
 	out := &PelicanProbePublicStatus{Enabled: false, Plans: []*PelicanProbePlan{}, Results: []*PelicanProbeResult{}}
 	if !s.GetGlobalEnabled(ctx) {
@@ -539,14 +617,93 @@ func (s *PelicanProbeService) ListPublicStatus(ctx context.Context) (*PelicanPro
 		return nil, err
 	}
 	for _, r := range rows {
-		out.Plans = append(out.Plans, sanitizePlan(r))
+		out.Plans = append(out.Plans, sanitizePlanPublic(r))
 	}
 	results, err := s.resultRepo.ListPublicRecent(ctx, 60)
 	if err != nil {
 		return nil, err
 	}
-	out.Results = results
+	out.Results = make([]*PelicanProbeResult, 0, len(results))
+	for _, r := range results {
+		out.Results = append(out.Results, publicResult(r))
+	}
 	return out, nil
+}
+
+// sanitizePlanPublic is sanitizePlan plus the fields that are internal-only.
+//
+// base_url is the probe's own endpoint (by default the loopback address of this
+// server): users have no use for it and it leaks internal topology.
+func sanitizePlanPublic(row *PelicanProbePlanRow) *PelicanProbePlan {
+	p := sanitizePlan(row)
+	p.BaseURL = ""
+	return p
+}
+
+// publicResult copies a result and strips everything the user endpoint must not
+// expose. The raw error is replaced by a classification; FailureReason is
+// derived and never persisted.
+func publicResult(r *PelicanProbeResult) *PelicanProbeResult {
+	if r == nil {
+		return nil
+	}
+	out := *r
+	if strings.TrimSpace(out.ErrorMessage) != "" {
+		out.FailureReason = classifyProbeFailure(out.ErrorMessage)
+	}
+	out.ErrorMessage = ""
+	out.Note = publicResultNote(out.Note)
+	return &out
+}
+
+// publicResultNote reduces a stored note to the part that is safe to publish.
+//
+// Whitelist, not blacklist: only the judge verdict prefix
+// (`judge=<model>: YES|NO`) is exposed. Skip notes quote upstream errors and can
+// therefore carry the probe URL, a path or an upstream body, so they are dropped
+// entirely (the verdict already tells the user the run awaits review).
+func publicResultNote(note string) string {
+	note = strings.TrimSpace(note)
+	if trimmed, ok := strings.CutPrefix(note, "judge="); ok {
+		verdict := trimmed
+		if idx := strings.Index(verdict, "|"); idx >= 0 {
+			verdict = strings.TrimSpace(verdict[:idx])
+		}
+		return "judge=" + strings.TrimSpace(verdict)
+	}
+	return ""
+}
+
+// classifyProbeFailure maps a raw upstream error to the coarse enum the user
+// endpoint publishes. Order matters: concurrency gates and timeouts are checked
+// before the more generic HTTP classes.
+func classifyProbeFailure(message string) string {
+	msg := strings.ToLower(strings.TrimSpace(message))
+	if msg == "" {
+		return ""
+	}
+	switch {
+	case containsAny(msg,
+		"gateway_concurrency_limit", "gateway_queue_full", "concurrency limit",
+		"too many requests", "rate limit", "http 429"):
+		return PelicanFailureConcurrency
+	case containsAny(msg,
+		"context deadline exceeded", "deadline exceeded", "client.timeout",
+		"timeout", "timed out", "context canceled"):
+		return PelicanFailureTimeout
+	case containsAny(msg,
+		"model_not_found", "invalid_request", "invalid request", "bad request",
+		"unauthorized", "forbidden", "api key", "decrypt", "not configured",
+		"http 400", "http 401", "http 403", "http 404", "http 422"):
+		return PelicanFailureConfig
+	case containsAny(msg,
+		"http 500", "http 502", "http 503", "http 504", "empty model content",
+		"connection refused", "connection reset", "unexpected eof", "eof",
+		"response too large", "stream error"):
+		return PelicanFailureUpstream
+	default:
+		return PelicanFailureUnknown
+	}
 }
 
 // --- results ---
@@ -585,13 +742,63 @@ func (s *PelicanProbeService) ReviewResult(ctx context.Context, id int64, verdic
 
 // --- execution ---
 
-// RunPlanOnce executes one probe for the given plan ID and persists the result.
+// RunPlanOnce executes one probe for the given plan ID synchronously, honoring
+// the caller's context, and persists the result. The HTTP admin endpoint no
+// longer uses it (it cannot outlive the request); it stays as the synchronous
+// primitive for internal callers and tests.
 func (s *PelicanProbeService) RunPlanOnce(ctx context.Context, planID int64) (*PelicanProbeResult, error) {
 	row, err := s.planRepo.GetByID(ctx, planID)
 	if err != nil {
 		return nil, err
 	}
 	return s.runRow(ctx, row, true)
+}
+
+// StartPlanRun validates the plan and starts the probe in a goroutine that is
+// detached from the caller's request lifecycle, then returns immediately.
+//
+// Why detached: a probe generates an SVG animation and legitimately runs for
+// tens of seconds to minutes, while the frontend HTTP client aborts its request
+// after 30s. Binding the probe to the request context made manual "run now"
+// fail with `context canceled` although the work was still valid. The run now
+// owns a 10 minute budget of its own and persists its result even when the
+// requesting browser is long gone.
+//
+// Only cheap pre-checks happen inline (the plan exists and its test type is
+// valid); the probe itself runs in the background. Nothing derived from the
+// request-scoped *gin.Context may be touched inside the goroutine, so only the
+// plain context.Context and the already-loaded plan row are captured.
+func (s *PelicanProbeService) StartPlanRun(ctx context.Context, planID int64) (*PelicanProbeRunTrigger, error) {
+	row, err := s.planRepo.GetByID(ctx, planID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrPelicanProbePlanNotFound
+		}
+		return nil, err
+	}
+	if _, err := normalizePelicanTestType(row.TestType); err != nil {
+		return nil, err
+	}
+	if !s.runGuard.tryStart(planID) {
+		return nil, fmt.Errorf("%w (plan_id=%d)", ErrPelicanProbeAlreadyRunning, planID)
+	}
+
+	// Values (logging/tracing) survive, cancellation and deadline do not.
+	bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), pelicanProbeRunTimeout)
+	go func() {
+		defer cancel()
+		defer s.runGuard.finish(planID)
+		defer func() {
+			if r := recover(); r != nil {
+				logger.LegacyPrintf("service.pelican_probe", "[PelicanProbe] plan=%d panic: %v", planID, r)
+			}
+		}()
+		if _, err := s.runRow(bgCtx, row, true); err != nil {
+			logger.LegacyPrintf("service.pelican_probe", "[PelicanProbe] plan=%d run failed: %v", planID, err)
+		}
+	}()
+
+	return &PelicanProbeRunTrigger{Started: true, PlanID: planID}, nil
 }
 
 // runRow executes the probe HTTP call and persists the result.
@@ -622,11 +829,10 @@ func (s *PelicanProbeService) runRow(ctx context.Context, row *PelicanProbePlanR
 		// admins can always override the verdict via review.
 		s.applyCandyJudge(ctx, row, result, rawHTML)
 	}
-	// Persist with a detached context: the RunNow HTTP call may be cut off by
-	// the frontend 30s timeout, but the probe result must still land in the DB
-	// so a refresh shows it. Only persistence is detached; the upstream probe
-	// call above already honored request cancellation to save quota.
-	dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+	// Persist with a detached context: scheduled runs, manual runs and tests may
+	// hand us a context that is already cancelled, but the probe result must
+	// still land in the DB so a refresh shows it.
+	dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), pelicanProbePersistenceTimeout)
 	defer cancel()
 	saved, err := s.resultRepo.Create(dbCtx, result)
 	if err != nil {
@@ -667,6 +873,13 @@ func (s *PelicanProbeService) resolveProbeEndpoint(row *PelicanProbePlanRow) (ba
 }
 
 // executeProbe performs the OpenAI-compatible chat completion call.
+//
+// The probe streams (`stream: true`): a non-streaming request only yields
+// response headers once the model has finished generating, which is exactly what
+// made long generations die with `Client.Timeout exceeded while awaiting
+// headers`. Streaming returns the first bytes immediately, so the run is bounded
+// by its own (detached, 10 minute) context instead of by a header timeout.
+// Transient upstream failures are retried with backoff inside that budget.
 func (s *PelicanProbeService) executeProbe(ctx context.Context, row *PelicanProbePlanRow) (rawHTML string, promptTokens, completionTokens int, latencyMs int64, err error) {
 	baseURL, apiKey, err := s.resolveProbeEndpoint(row)
 	if err != nil {
@@ -684,7 +897,7 @@ func (s *PelicanProbeService) executeProbe(ctx context.Context, row *PelicanProb
 	// Fixed sampling params keep runs longitudinally comparable.
 	reqBody := map[string]any{
 		"model":       row.ModelID,
-		"stream":      false,
+		"stream":      true,
 		"temperature": 0.7,
 		"messages": []map[string]string{
 			{"role": "user", "content": prompt},
@@ -695,34 +908,24 @@ func (s *PelicanProbeService) executeProbe(ctx context.Context, row *PelicanProb
 	}
 	bodyBytes, _ := json.Marshal(reqBody)
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/v1/chat/completions", bytes.NewReader(bodyBytes))
-	if err != nil {
-		return "", 0, 0, 0, err
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+strings.TrimSpace(apiKey))
-
 	start := time.Now()
-	resp, err := s.httpClient.Do(httpReq)
-	latencyMs = time.Since(start).Milliseconds()
+	resp, err := s.doProbeChatCompletion(ctx, baseURL+"/v1/chat/completions", apiKey, bodyBytes)
 	if err != nil {
-		return "", 0, 0, latencyMs, err
+		return "", 0, 0, time.Since(start).Milliseconds(), err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	respBytes, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+
+	content, promptTokens, completionTokens, truncated, err := readProbeChatStream(resp.Body)
+	// Latency covers the whole generation (first byte through last chunk), which
+	// is what the run duration means for the operator.
+	latencyMs = time.Since(start).Milliseconds()
 	if err != nil {
-		return "", 0, 0, latencyMs, err
+		return content, promptTokens, completionTokens, latencyMs, err
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		snippet := strings.TrimSpace(string(respBytes))
-		if len(snippet) > 500 {
-			snippet = snippet[:500]
-		}
-		return "", 0, 0, latencyMs, fmt.Errorf("upstream HTTP %d: %s", resp.StatusCode, snippet)
+	if truncated {
+		return content, promptTokens, completionTokens, latencyMs,
+			fmt.Errorf("upstream stream exceeded the %d byte probe limit", pelicanProbeMaxContentBytes)
 	}
-	content := gjson.GetBytes(respBytes, "choices.0.message.content").String()
-	promptTokens = int(gjson.GetBytes(respBytes, "usage.prompt_tokens").Int())
-	completionTokens = int(gjson.GetBytes(respBytes, "usage.completion_tokens").Int())
 	if strings.TrimSpace(content) == "" {
 		return "", promptTokens, completionTokens, latencyMs, fmt.Errorf("empty model content")
 	}

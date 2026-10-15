@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -163,18 +164,45 @@ func (h *PelicanProbeHandler) DeletePlan(c *gin.Context) {
 }
 
 // RunNow POST /admin/pelican-probe-plans/:id/run
+//
+// Asynchronous by contract: only the cheap pre-checks run inside the request,
+// the probe itself is handed to a detached background goroutine that owns a
+// 10 minute budget, and the endpoint answers 202 immediately with
+// {"started":true,"plan_id":N}. Nothing may wait for the probe here: the
+// frontend apiClient aborts its request after 30s, which used to cancel every
+// manual run while the model was still drawing.
+//
+// Re-entrancy: if a run for the same plan is already in flight the trigger is
+// refused with HTTP 409 and body
+// {"code":409,...,"data":{"started":false,"plan_id":N,"reason":"already_running"}}
+// so a client can branch on either the status code or the payload.
 func (h *PelicanProbeHandler) RunNow(c *gin.Context) {
 	planID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "invalid plan id")
 		return
 	}
-	result, err := h.probeSvc.RunPlanOnce(c.Request.Context(), planID)
+	trigger, err := h.probeSvc.StartPlanRun(c.Request.Context(), planID)
 	if err != nil {
-		response.InternalError(c, err.Error())
+		switch {
+		case errors.Is(err, service.ErrPelicanProbePlanNotFound):
+			response.NotFound(c, err.Error())
+		case errors.Is(err, service.ErrPelicanProbeAlreadyRunning):
+			c.JSON(http.StatusConflict, response.Response{
+				Code:    http.StatusConflict,
+				Message: err.Error(),
+				Data: gin.H{
+					"started": false,
+					"plan_id": planID,
+					"reason":  "already_running",
+				},
+			})
+		default:
+			response.InternalError(c, err.Error())
+		}
 		return
 	}
-	c.JSON(http.StatusOK, result)
+	response.Accepted(c, trigger)
 }
 
 // ListResults GET /admin/pelican-probe-plans/:id/results?limit=

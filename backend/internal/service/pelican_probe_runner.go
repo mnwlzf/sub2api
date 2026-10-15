@@ -81,7 +81,7 @@ func (s *PelicanProbeRunnerService) runScheduled() {
 	// Offset from :00 to avoid thundering herd with other minutely jobs.
 	time.Sleep(25 * time.Second)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), pelicanProbeRunTimeout)
 	defer cancel()
 
 	if !s.probeSvc.GetGlobalEnabled(ctx) {
@@ -102,11 +102,18 @@ func (s *PelicanProbeRunnerService) runScheduled() {
 	sem := make(chan struct{}, pelicanProbeDefaultMaxWorkers)
 	var wg sync.WaitGroup
 	for _, plan := range plans {
+		// Same per-plan guard as the manual trigger: never let the cron tick and
+		// an admin "run now" (or an overrunning previous tick) race the same plan.
+		if !s.probeSvc.runGuard.tryStart(plan.ID) {
+			logger.LegacyPrintf("service.pelican_probe_runner", "[PelicanProbeRunner] plan=%d skipped: a run is already in progress", plan.ID)
+			continue
+		}
 		sem <- struct{}{}
 		wg.Add(1)
 		go func(p *PelicanProbePlanRow) {
 			defer wg.Done()
 			defer func() { <-sem }()
+			defer s.probeSvc.runGuard.finish(p.ID)
 			if _, err := s.probeSvc.runRow(ctx, p, true); err != nil {
 				logger.LegacyPrintf("service.pelican_probe_runner", "[PelicanProbeRunner] plan=%d run error: %v", p.ID, err)
 			}
