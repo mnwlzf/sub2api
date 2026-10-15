@@ -32,8 +32,12 @@ import (
 //     403）。低 12 位为 0xFFE 只是该编码的结构推论，**不是**充分条件：随机
 //     hex 只把末 3 位凑成 ffe 依然 403（2026-10-14 实测，见
 //     openCodeGateSessionLowHex）
-//  2. User-Agent 必须为 opencode/<version> 且 version >= 1.18.0
-//     （1.17.9 返回 426 UpgradeRequired）
+//  2. User-Agent 必须为 opencode/<version> 且 version 落在闭区间
+//     [1.18.0, 1.18.33]：低于下界返回 426 UpgradeRequired（1.17.9 实测），
+//     高于上界返回 403 FreeTierError（1.18.34 / 1.18.35 / 1.19.0 实测）。
+//     上界是上游 2026-10-14 13:45-13:53 UTC 收紧版本带时钉下的，官方最新
+//     1.19.0 客户端同样被拒（上游回归）。**版本号不是「越新越好」**，改前
+//     必须重测，见 openCodeUpstreamUserAgent。
 //  3. body 的 tools 必须同时含 bash 与 read（只含其一仍 403）
 //  4. body 的 stream 必须为 true（false 返回 403）
 //
@@ -48,8 +52,8 @@ import (
 //
 // 四条信号均为对 https://opencode.ai/zen/v1/chat/completions 的实测结论
 // （Authorization: Bearer public，模型 mimo-v2.6-flash-free；信号 2/3/4 为
-// 2026-09-30，信号 1 的完整编码要求由 2026-10-13 的结论修正而来，
-// 2026-10-14 定稿）。X-Opencode-Request / Client /
+// 2026-09-30，信号 2 的上界 [1.18.33] 由 2026-10-15 二分确定，信号 1 的完整
+// 编码要求由 2026-10-13 的结论修正而来，2026-10-14 定稿）。X-Opencode-Request / Client /
 // Project / Accept / X-Session-Affinity / X-Session-Id 经实测非必需，故不依赖
 // 它们通过门禁（affinity 头仍然镜像，仅为形态对齐）。
 //

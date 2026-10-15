@@ -974,7 +974,7 @@ func TestDefaultOpenCodeZenFreeModelIDsRouting(t *testing.T) {
 }
 
 // TestOpenCodeFreeTierGateEndToEndBodyShape 把四项硬要求一起断言，作为门禁的
-// 验收测试：会话形状 + 位不变量、UA 版本下限、bash+read、stream:true。
+// 验收测试：会话形状 + 位不变量、UA 版本带、bash+read、stream:true。
 func TestOpenCodeFreeTierGateEndToEndBodyShape(t *testing.T) {
 	account := openCodeGateTestAccount(nil)
 	headers := http.Header{}
@@ -990,9 +990,8 @@ func TestOpenCodeFreeTierGateEndToEndBodyShape(t *testing.T) {
 	require.True(t, openCodeCanonicalSessionRe.MatchString(session), "会话形状必须合法，实际 %q", session)
 	require.True(t, isOpenCodeGateSessionID(session), "会话位不变量必须满足，实际 %q", session)
 	require.Equal(t, openCodeGateSessionLowHex, session[13:16])
-	// 2. UA 版本下限
-	version := strings.TrimPrefix(strings.Fields(openCodeUpstreamUserAgent)[0], "opencode/")
-	require.True(t, version >= "1.18.0", "UA 版本 %s 必须不低于 1.18.0", version)
+	// 2. UA 版本必须落在上游当前接受的闭区间 [1.18.0, 1.18.33]
+	requireOpenCodeUAVersionInBand(t, openCodeUpstreamUserAgent)
 	// 3. bash + read
 	requireGateTools(t, out, "function.name")
 	// 4. stream:true
@@ -1001,4 +1000,99 @@ func TestOpenCodeFreeTierGateEndToEndBodyShape(t *testing.T) {
 	// body 必须是合法 JSON（门禁改写不得破坏载荷）。
 	var decoded map[string]any
 	require.NoError(t, json.Unmarshal(out, &decoded))
+}
+
+// openCodeUAVersionBandLow / High 是上游免费层门禁当前接受的 UA 版本闭区间。
+//
+// 2026-10-15 单变量实测（同一 key / body / 出口，只改 UA 版本号）：
+//
+//	1.17.9                 -> 426 UpgradeRequired
+//	1.18.0/1.18.1/1.18.31/1.18.32/1.18.33 -> 200
+//	1.18.34/1.18.35/1.19.0/1.20.0         -> 403 FreeTierError
+//
+// 上界是上游 2026-10-14 13:45-13:53 UTC 收紧版本带时钉下的，官方最新 1.19.0
+// 客户端同样被拒（上游回归）。**上界会变**：若上游再次调整，必须重测并同时
+// 更新这两个常量、openCodeUpstreamUserAgent 与 runbook。
+var (
+	openCodeUAVersionBandLow  = [3]int{1, 18, 0}
+	openCodeUAVersionBandHigh = [3]int{1, 18, 33}
+)
+
+// TestOpenCodeUpstreamUserAgentVersionBand 拦住「顺手把版本号升到官方最新」
+// 这类危险操作（2026-10-13 正是这样把 UA 升到 1.19.0，次日上游收紧版本带后
+// 全站 403）：常量版本必须落在实测闭区间内。
+func TestOpenCodeUpstreamUserAgentVersionBand(t *testing.T) {
+	requireOpenCodeUAVersionInBand(t, openCodeUpstreamUserAgent)
+
+	// 断言这个测试真的能拦住越界版本（防「断言写松了」导致形同虚设）。
+	require.False(t, openCodeUAVersionInBand("opencode/1.19.0"), "1.19.0 必须被判为越界（上界外）")
+	require.False(t, openCodeUAVersionInBand("opencode/1.18.34"), "1.18.34 必须被判为越界（上界外）")
+	require.False(t, openCodeUAVersionInBand("opencode/1.17.9"), "1.17.9 必须被判为越界（下界外）")
+	require.True(t, openCodeUAVersionInBand("opencode/1.18.0"), "下界闭区间端点必须通过")
+	require.True(t, openCodeUAVersionInBand("opencode/1.18.33"), "上界闭区间端点必须通过")
+	require.True(t, openCodeUAVersionInBand("opencode/1.18.31 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14"),
+		"带后缀的完整身份串必须能解析出版本")
+	require.False(t, openCodeUAVersionInBand("curl/8.0"), "非 opencode/ 形态必须被拒")
+}
+
+// requireOpenCodeUAVersionInBand 断言 UA 中的 opencode/<version> 落在
+// [openCodeUAVersionBandLow, openCodeUAVersionBandHigh] 内。
+func requireOpenCodeUAVersionInBand(t *testing.T, ua string) {
+	t.Helper()
+	version, ok := parseOpenCodeUAVersion(ua)
+	require.True(t, ok, "UA 必须形如 opencode/<major>.<minor>.<patch>，实际 %q", ua)
+	require.GreaterOrEqual(t, compareOpenCodeVersions(version, openCodeUAVersionBandLow), 0,
+		"UA 版本 %v 低于上游下限 %v（上游返回 426 UpgradeRequired）", version, openCodeUAVersionBandLow)
+	require.LessOrEqual(t, compareOpenCodeVersions(version, openCodeUAVersionBandHigh), 0,
+		"UA 版本 %v 高于上游上界 %v（上游返回 403 FreeTierError）：不要顺手把版本号升到官方最新版",
+		version, openCodeUAVersionBandHigh)
+}
+
+// openCodeUAVersionInBand 是 requireOpenCodeUAVersionInBand 的非断言版本，
+// 供测试自证使用。
+func openCodeUAVersionInBand(ua string) bool {
+	version, ok := parseOpenCodeUAVersion(ua)
+	if !ok {
+		return false
+	}
+	return compareOpenCodeVersions(version, openCodeUAVersionBandLow) >= 0 &&
+		compareOpenCodeVersions(version, openCodeUAVersionBandHigh) <= 0
+}
+
+// parseOpenCodeUAVersion 从 UA 首段解析 opencode/<major>.<minor>.<patch>。
+func parseOpenCodeUAVersion(ua string) ([3]int, bool) {
+	fields := strings.Fields(ua)
+	if len(fields) == 0 {
+		return [3]int{}, false
+	}
+	raw := strings.TrimPrefix(fields[0], "opencode/")
+	if raw == fields[0] {
+		return [3]int{}, false
+	}
+	parts := strings.Split(raw, ".")
+	if len(parts) != 3 {
+		return [3]int{}, false
+	}
+	var out [3]int
+	for i, part := range parts {
+		n, err := strconv.Atoi(part)
+		if err != nil || n < 0 {
+			return [3]int{}, false
+		}
+		out[i] = n
+	}
+	return out, true
+}
+
+// compareOpenCodeVersions 按 major/minor/patch 数值比较，返回 -1/0/1。
+func compareOpenCodeVersions(a, b [3]int) int {
+	for i := range a {
+		if a[i] != b[i] {
+			if a[i] < b[i] {
+				return -1
+			}
+			return 1
+		}
+	}
+	return 0
 }
