@@ -50,13 +50,18 @@ type openAIWSSessionConnBinding struct {
 // openAIWSInvalidEncryptedBinding 记录一个会话中已被上游判定失效的
 // encrypted_content 摘要（invalid_encrypted_content lineage）。
 type openAIWSInvalidEncryptedBinding struct {
-	digests   map[string]struct{}
+	digests map[string]struct{}
+	// order 是 digests 的 FIFO 插入顺序队列（与 digests 一一对应）。
+	// 集合满后新摘要到来时从队头淘汰最旧项，保证"刚被拒绝的摘要一定
+	// 记得上"；append/队头弹出复用同一 backing 数组，长度恒 ≤ 容量。
+	order     []string
 	expiresAt time.Time
 }
 
-// openAIWSInvalidEncryptedDigestsPerSession 是单会话摘要集合的存储自保护上限。
-// 超出后新增摘要被忽略，仅退化为"该项下次仍触发一次上游拒绝后的常规 recovery"，
-// 不影响正确性。
+// openAIWSInvalidEncryptedDigestsPerSession 是单会话摘要集合的容量上限。
+// 满后按 FIFO 淘汰最旧摘要（见 MarkSessionInvalidEncryptedContent）：淘汰只会
+// 让被淘汰的旧摘要在下次出现时多触发一次"上游拒绝→重记"的常规 recovery，
+// 而当前请求体携带的失效摘要一定能记入，不会再因"集合满 + TTL 续命"被静默丢弃。
 const openAIWSInvalidEncryptedDigestsPerSession = 512
 
 // OpenAIWSStateStore 管理 WSv2 的粘连状态。
@@ -430,7 +435,7 @@ func (s *defaultOpenAIWSStateStore) MarkSessionInvalidEncryptedContent(groupID i
 	s.maybeCleanup()
 
 	now := time.Now()
-	overflowed := 0
+	evicted := 0
 	s.sessionInvalidEncryptedMu.Lock()
 	ensureBindingCapacity(s.sessionInvalidEncrypted, key, openAIWSStateStoreMaxEntriesPerMap)
 	binding, ok := s.sessionInvalidEncrypted[key]
@@ -442,23 +447,44 @@ func (s *defaultOpenAIWSStateStore) MarkSessionInvalidEncryptedContent(groupID i
 		if digest == "" {
 			continue
 		}
-		if len(binding.digests) >= openAIWSInvalidEncryptedDigestsPerSession {
-			if _, exists := binding.digests[digest]; !exists {
-				overflowed++
-			}
+		if _, exists := binding.digests[digest]; exists {
 			continue
 		}
+		if len(binding.digests) >= openAIWSInvalidEncryptedDigestsPerSession {
+			// 满后淘汰最旧（FIFO）而非丢弃新增：刚被上游拒绝的摘要一定
+			// 要记入，否则同一失效密文每轮重复触发 400（旧语义的实测故障）。
+			// order 与 digests 由本函数成对维护，恒一一对应。
+			if len(binding.order) > 0 {
+				oldest := binding.order[0]
+				copy(binding.order, binding.order[1:])
+				binding.order[len(binding.order)-1] = ""
+				binding.order = binding.order[:len(binding.order)-1]
+				delete(binding.digests, oldest)
+			} else {
+				// 防御分支：理论不可达（order 为空则 digests 必为空）。
+				// 即使不变式被破坏也优先保证新增可记入、内存有界。
+				for stale := range binding.digests {
+					delete(binding.digests, stale)
+					break
+				}
+			}
+			evicted++
+		}
 		binding.digests[digest] = struct{}{}
+		binding.order = append(binding.order, digest)
 	}
+	// TTL 仍是全集合滑动续期：新鲜度现在由 FIFO 淘汰保证（集合恒为最近
+	// 失效的 N 条），TTL 只负责回收空闲会话；若改为"建后固定过期"，活跃
+	// 会话将在 TTL 后丢失 lineage 并周期性多一次 400，得不偿失。
 	binding.expiresAt = now.Add(ttl)
 	s.sessionInvalidEncrypted[key] = binding
 	s.sessionInvalidEncryptedMu.Unlock()
 
 	// HasAny/Get 在每个 OpenAI 请求热路径上抢同一把锁，日志 IO 必须在锁外。
-	if overflowed > 0 {
+	if evicted > 0 {
 		logOpenAIWSModeInfo(
-			"invalid_encrypted_lineage_capacity_overflow dropped_digests=%d capacity=%d",
-			overflowed,
+			"invalid_encrypted_lineage_fifo_evict evicted_digests=%d capacity=%d",
+			evicted,
 			openAIWSInvalidEncryptedDigestsPerSession,
 		)
 	}

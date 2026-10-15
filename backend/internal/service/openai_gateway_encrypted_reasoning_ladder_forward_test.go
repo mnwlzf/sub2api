@@ -117,6 +117,39 @@ func TestOpenAIGatewayService_Forward_EncryptedReasoningLadderGivesUpAfterStageT
 	require.Len(t, upstream.bodies, 4, "the ladder is capped at three retries (four upstream attempts)")
 }
 
+// Merged first rung on the opencode_go route: the first retry already carries the
+// S2 shape (blob and id both gone), so one upstream round-trip is saved compared
+// to the S1 -> S2 sequence other routes still take.
+func TestOpenAIGatewayService_Forward_EncryptedReasoningLadderMergedForOpenCodeGo(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	sink, release := captureStructuredLog(t)
+	defer release()
+
+	svc, upstream, account := newOpenAIEncryptedContentRetryTestUpstream(
+		openAIEncryptedContentRetryTestResponse(http.StatusBadRequest, openAIEncryptedContentNotIssuedBody),
+		openAIEncryptedContentRetryTestResponse(http.StatusOK, `{"id":"resp_recovered","usage":{"input_tokens":1,"output_tokens":2}}`),
+	)
+	account.Platform = PlatformOpenCodeGo
+	require.True(t, account.IsOpenCodeGo())
+
+	result, err := svc.Forward(context.Background(), newOpenAIEncryptedContentRetryTestContext(), account, []byte(openAIEncryptedReasoningLadderTestBody))
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, upstream.bodies, 2, "the merged rung must recover in a single retry")
+
+	require.Equal(t, "other-account-blob", gjson.GetBytes(upstream.bodies[0], "input.0.encrypted_content").String())
+	require.False(t, gjson.GetBytes(upstream.bodies[1], "input.0.encrypted_content").Exists())
+	require.False(t, gjson.GetBytes(upstream.bodies[1], "input.0.id").Exists(), "first retry must already have the S2 shape")
+	require.Equal(t, "reasoning", gjson.GetBytes(upstream.bodies[1], "input.0.type").String())
+	require.Equal(t, "keep me", gjson.GetBytes(upstream.bodies[1], "input.0.summary.0.text").String())
+	require.True(t, sink.ContainsMessage("escalating to stage=1 action=drop_encrypted_content_and_id"),
+		"the merged rung must be distinguishable from a pure S1 in the logs")
+}
+
+// Non-opencode routes keep the S1 -> S2 order: covered by
+// TestOpenAIGatewayService_Forward_EncryptedReasoningLadderStopsAtStageOne (S1
+// first, id preserved) and ...EscalatesToStageTwo above, both on PlatformOpenAI.
+
 // A not-found rejection on a body that already lost its encrypted_content (the
 // lineage pre-strip does exactly that) skips stage one and goes straight to stage
 // two rather than spending a retry on a body that cannot change.

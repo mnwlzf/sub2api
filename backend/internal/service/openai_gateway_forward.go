@@ -757,6 +757,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		if invalidDigests := stateStore.GetSessionInvalidEncryptedContentDigests(lineageGroupID, lineageSessionHash); len(invalidDigests) > 0 {
 			strippedBody, strippedCount := s.stripSessionInvalidEncryptedContentLogged(
 				body, invalidDigests, "invalid_encrypted_lineage_strip", account.ID, 0,
+				account.IsOpenCodeGo(),
 			)
 			if strippedCount > 0 {
 				body = strippedBody
@@ -1051,8 +1052,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 
 	// Bounded ladder: at most one retry per rung, three rungs in total. The counters
 	// live in the ladder so a rung cannot be replayed even if the upstream keeps
-	// answering with the same shape.
-	encryptedReasoningLadder := &openAIEncryptedReasoningLadder{}
+	// answering with the same shape. On the opencode_go route the first rung is
+	// merged (S1+S2 in one retry) because the pure-S1 body never succeeds there;
+	// every other route keeps the S1 -> S2 -> S3 order.
+	encryptedReasoningLadder := &openAIEncryptedReasoningLadder{mergeDropIDIntoFirstRung: account.IsOpenCodeGo()}
 	compactModelFallbackRetried := false
 	agentTaskRecoveryTried := false
 	rejectedFieldRetryState := openAIResponsesRejectedFieldRetryStateForRequest(c, body)
