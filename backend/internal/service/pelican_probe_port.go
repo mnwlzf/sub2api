@@ -18,6 +18,31 @@ const (
 	PelicanRunFailed  = "failed"
 )
 
+// Pelican probe failure classifications exposed to end users.
+//
+// The public status endpoint must never expose the raw upstream error: it can
+// embed the internal probe endpoint (production showed
+// `Post "http://127.0.0.1:8080/v1/chat/completions": context canceled`) and
+// upstream bodies. The raw text is replaced by this coarse enum and the frontend
+// renders a human sentence from it.
+const (
+	// PelicanFailureUpstream: the upstream call itself failed (5xx, empty
+	// content, transport reset).
+	PelicanFailureUpstream = "upstream"
+	// PelicanFailureTimeout: the run ran out of time (context deadline or HTTP
+	// client timeout).
+	PelicanFailureTimeout = "timeout"
+	// PelicanFailureConcurrency: the gateway refused the call because the
+	// user/account concurrency quota was exhausted (429,
+	// gateway_concurrency_limit, gateway_queue_full).
+	PelicanFailureConcurrency = "concurrency"
+	// PelicanFailureConfig: the request is misconfigured (model_not_found, bad
+	// parameters, rejected credentials).
+	PelicanFailureConfig = "config"
+	// PelicanFailureUnknown: the error could not be classified.
+	PelicanFailureUnknown = "unknown"
+)
+
 // DefaultPelicanPrompt is the Classic-track prompt. All plans share it by
 // default so scores stay longitudinally comparable for the same group+model.
 const DefaultPelicanPrompt = "创建一个HTML，内容是SVG绘制一个鹈鹕骑自行车的2D动画"
@@ -96,21 +121,26 @@ type PelicanProbePlanRow struct {
 
 // PelicanProbeResult represents a single probe execution result.
 type PelicanProbeResult struct {
-	ID               int64      `json:"id"`
-	PlanID           int64      `json:"plan_id"`
-	Status           string     `json:"status"`
-	RawHTML          string     `json:"raw_html"`
-	Verdict          string     `json:"verdict"`
-	Note             string     `json:"note"`
-	ReviewedBy       string     `json:"reviewed_by"`
-	ReviewedAt       *time.Time `json:"reviewed_at"`
-	ErrorMessage     string     `json:"error_message"`
-	LatencyMs        int64      `json:"latency_ms"`
-	PromptTokens     int        `json:"prompt_tokens"`
-	CompletionTokens int        `json:"completion_tokens"`
-	StartedAt        time.Time  `json:"started_at"`
-	FinishedAt       time.Time  `json:"finished_at"`
-	CreatedAt        time.Time  `json:"created_at"`
+	ID           int64      `json:"id"`
+	PlanID       int64      `json:"plan_id"`
+	Status       string     `json:"status"`
+	RawHTML      string     `json:"raw_html"`
+	Verdict      string     `json:"verdict"`
+	Note         string     `json:"note"`
+	ReviewedBy   string     `json:"reviewed_by"`
+	ReviewedAt   *time.Time `json:"reviewed_at"`
+	ErrorMessage string     `json:"error_message"`
+	// FailureReason is a derived, user-safe classification of ErrorMessage. It is
+	// never persisted: the public status endpoint fills it in and clears
+	// ErrorMessage, while the admin endpoints keep ErrorMessage verbatim and
+	// leave this empty.
+	FailureReason    string    `json:"failure_reason,omitempty"`
+	LatencyMs        int64     `json:"latency_ms"`
+	PromptTokens     int       `json:"prompt_tokens"`
+	CompletionTokens int       `json:"completion_tokens"`
+	StartedAt        time.Time `json:"started_at"`
+	FinishedAt       time.Time `json:"finished_at"`
+	CreatedAt        time.Time `json:"created_at"`
 }
 
 // PelicanProbePublicStatus is the user-facing payload: only plans explicitly
