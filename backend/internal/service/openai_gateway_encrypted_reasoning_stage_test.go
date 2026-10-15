@@ -277,3 +277,72 @@ func TestOpenAIEncryptedReasoningLadderSkipsRungsWithoutTargets(t *testing.T) {
 		require.Equal(t, "message", encryptedReasoningTestType(t, items, 0))
 	})
 }
+
+// Merged first rung (opencode_go only): the first escalation applies S1+S2 at
+// once, reports stage one with the merged action label, and leaves stage three
+// as the only remaining fallback.
+func TestOpenAIEncryptedReasoningLadderMergedFirstRung(t *testing.T) {
+	reqBody := decodeEncryptedReasoningTestBody(t, `{"input":[
+		{"type":"reasoning","id":"rs_6ad05224","status":"completed","summary":[{"type":"summary_text","text":"keep"}],"encrypted_content":"blob"},
+		{"type":"message","content":[{"type":"input_text","text":"hi"}]}]}`)
+	ladder := &openAIEncryptedReasoningLadder{mergeDropIDIntoFirstRung: true}
+
+	stage, action, skipped := ladder.escalate(reqBody)
+	require.Equal(t, openAIEncryptedReasoningStageDropEncryptedContent, stage)
+	require.Equal(t, openAIEncryptedReasoningActionDropEncryptedContentAndID, action)
+	require.Empty(t, skipped)
+	reasoning := encryptedReasoningTestItem(t, encryptedReasoningTestInput(t, reqBody), 0)
+	_, hasEncrypted := reasoning["encrypted_content"]
+	require.False(t, hasEncrypted, "merged rung must drop the blob")
+	_, hasID := reasoning["id"]
+	require.False(t, hasID, "merged rung must drop the dangling id in the same retry")
+	require.Equal(t, "completed", encryptedReasoningTestField(t, reasoning, "status"))
+	require.Equal(t, "keep", encryptedReasoningTestSummaryText(t, reasoning))
+
+	stage, action, skipped = ladder.escalate(reqBody)
+	require.Equal(t, openAIEncryptedReasoningStageDropReasoningItem, stage,
+		"stage two is consumed by the merged rung; stage three is the only fallback left")
+	require.Equal(t, openAIEncryptedReasoningActionDropReasoningItem, action)
+	require.Empty(t, skipped)
+
+	stage, action, _ = ladder.escalate(reqBody)
+	require.Equal(t, openAIEncryptedReasoningStageNone, stage)
+	require.Empty(t, action)
+	require.Equal(t, [openAIEncryptedReasoningStageMax + 1]int{0, 1, 1, 1}, ladder.attempts,
+		"every rung runs at most once; the merged rung consumes stage two without a retry")
+}
+
+// The merged rung also acts when only the dangling id is left (the blob is
+// already gone): it must not burn a retry on a pure-S1 body that cannot change.
+func TestOpenAIEncryptedReasoningLadderMergedFirstRungActsOnDanglingIDOnly(t *testing.T) {
+	reqBody := decodeEncryptedReasoningTestBody(t, `{"input":[
+		{"type":"reasoning","id":"rs_1","status":"completed","summary":[{"type":"summary_text","text":"keep"}]},
+		{"type":"message","content":"hi"}]}`)
+	ladder := &openAIEncryptedReasoningLadder{mergeDropIDIntoFirstRung: true}
+
+	stage, action, skipped := ladder.escalate(reqBody)
+	require.Equal(t, openAIEncryptedReasoningStageDropEncryptedContent, stage)
+	require.Equal(t, openAIEncryptedReasoningActionDropEncryptedContentAndID, action)
+	require.Empty(t, skipped)
+	reasoning := encryptedReasoningTestItem(t, encryptedReasoningTestInput(t, reqBody), 0)
+	_, hasID := reasoning["id"]
+	require.False(t, hasID)
+}
+
+// With no reasoning items at all the merged ladder reports its skips with the
+// merged action label and never mentions a standalone stage two.
+func TestOpenAIEncryptedReasoningLadderMergedFirstRungSkipsWithoutTargets(t *testing.T) {
+	reqBody := decodeEncryptedReasoningTestBody(t, `{"input":[{"type":"message","content":"hi"}]}`)
+	ladder := &openAIEncryptedReasoningLadder{mergeDropIDIntoFirstRung: true}
+
+	stage, _, skipped := ladder.escalate(reqBody)
+	require.Equal(t, openAIEncryptedReasoningStageNone, stage)
+	require.Equal(t, []openAIEncryptedReasoningSkip{
+		{Stage: openAIEncryptedReasoningStageDropEncryptedContent, Action: openAIEncryptedReasoningActionDropEncryptedContentAndID},
+		{Stage: openAIEncryptedReasoningStageDropReasoningItem, Action: openAIEncryptedReasoningActionDropReasoningItem},
+	}, skipped)
+
+	stage, _, skipped = ladder.escalate(reqBody)
+	require.Equal(t, openAIEncryptedReasoningStageNone, stage)
+	require.Empty(t, skipped, "an exhausted ladder must not retry")
+}

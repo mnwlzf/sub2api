@@ -74,13 +74,49 @@ func collectOpenAIEncryptedContentDigestsRaw(payload []byte) []string {
 	return digests
 }
 
+// sanitizeEncryptedReasoningInputItemDropDanglingID 是 lineage 专用的 S2 形状
+// 改写：先做与 sanitizeEncryptedReasoningInputItem 完全相同的剥离，再把
+// reasoning 项上已无法解析的悬空 id 一并删掉（等价于阶梯 S1+S2 的一次效果；
+// 只剩 type 的空壳整项丢弃，与 S2 的 dropOpenAIReasoningItemIDs 对齐）。
+//
+// 仅用于 opencode/muse-spark 链路：其实测对"删密文留 id"的 S1 形状也回 400
+// （not found or has expired），主动剥离若只产出 S1 形状，下一轮必再 400。
+// OpenAI 官方链路上的 id 仍可能被上游解析（删掉会丢推理上下文），因此默认
+// 语义必须保留 id —— 不要把本函数合并回 sanitizeEncryptedReasoningInputItem。
+func sanitizeEncryptedReasoningInputItemDropDanglingID(item any) (next any, changed bool, keep bool) {
+	next, changed, keep = sanitizeEncryptedReasoningInputItem(item)
+	if !changed || !keep {
+		return next, changed, keep
+	}
+	inputItem, ok := next.(map[string]any)
+	if !ok {
+		return next, changed, keep
+	}
+	if itemType, _ := inputItem["type"].(string); strings.TrimSpace(itemType) != "reasoning" {
+		return next, changed, keep
+	}
+	if _, has := inputItem["id"]; !has {
+		return next, changed, keep
+	}
+	delete(inputItem, "id")
+	if len(inputItem) == 1 {
+		return nil, true, false
+	}
+	return inputItem, true, true
+}
+
 // stripOpenAIInvalidEncryptedContentItems 剥离 input 中摘要命中 invalid 的密文
-// 项，剥离语义与 trimOpenAIEncryptedReasoningItems 对齐：reasoning 仅剥
-// encrypted_content（连带 content:null 清理与空骨架删除），compaction/
-// compaction_summary 整项删除。返回被改写的项数。
-func stripOpenAIInvalidEncryptedContentItems(reqBody map[string]any, invalid map[string]struct{}) int {
+// 项。dropDanglingID 为 true 时命中项按 S2 形状改写（连带删 reasoning id，
+// 仅 opencode_go 链路）；为 false 时语义与 trimOpenAIEncryptedReasoningItems
+// 对齐：reasoning 仅剥 encrypted_content（连带 content:null 清理与空骨架删除），
+// compaction/compaction_summary 整项删除。返回被改写的项数。
+func stripOpenAIInvalidEncryptedContentItems(reqBody map[string]any, invalid map[string]struct{}, dropDanglingID bool) int {
 	if len(reqBody) == 0 || len(invalid) == 0 {
 		return 0
+	}
+	rewrite := sanitizeEncryptedReasoningInputItem
+	if dropDanglingID {
+		rewrite = sanitizeEncryptedReasoningInputItemDropDanglingID
 	}
 	inputValue, has := reqBody["input"]
 	if !has {
@@ -99,7 +135,7 @@ func stripOpenAIInvalidEncryptedContentItems(reqBody map[string]any, invalid map
 		if _, hit := invalid[openAIEncryptedContentDigest(encrypted)]; !hit {
 			return item, false, true
 		}
-		return sanitizeEncryptedReasoningInputItem(item)
+		return rewrite(item)
 	}
 	switch input := inputValue.(type) {
 	case []any:
@@ -180,11 +216,16 @@ func openAIRawPayloadHasInvalidEncryptedContent(payload []byte, invalid map[stri
 }
 
 // stripOpenAIInvalidEncryptedContentFromReplayItems 对 replay 历史序列做同款
-// 剥离。有改动时返回新头数组，命中项以重写后的新正文整体替换（遵守 replay
+// 剥离。dropDanglingID 的作用域语义与 stripOpenAIInvalidEncryptedContentItems
+// 一致。有改动时返回新头数组，命中项以重写后的新正文整体替换（遵守 replay
 // 所有权不变式，原正文不被修改）；未命中时原样返回。
-func stripOpenAIInvalidEncryptedContentFromReplayItems(items []json.RawMessage, invalid map[string]struct{}) ([]json.RawMessage, int) {
+func stripOpenAIInvalidEncryptedContentFromReplayItems(items []json.RawMessage, invalid map[string]struct{}, dropDanglingID bool) ([]json.RawMessage, int) {
 	if len(items) == 0 || len(invalid) == 0 {
 		return items, 0
+	}
+	rewrite := sanitizeEncryptedReasoningInputItem
+	if dropDanglingID {
+		rewrite = sanitizeEncryptedReasoningInputItemDropDanglingID
 	}
 	hit := false
 	for _, item := range items {
@@ -217,7 +258,7 @@ func stripOpenAIInvalidEncryptedContentFromReplayItems(items []json.RawMessage, 
 			next = append(next, item)
 			continue
 		}
-		nextItem, changed, keep := sanitizeEncryptedReasoningInputItem(decoded)
+		nextItem, changed, keep := rewrite(decoded)
 		if !changed {
 			next = append(next, item)
 			continue
@@ -241,8 +282,10 @@ func stripOpenAIInvalidEncryptedContentFromReplayItems(items []json.RawMessage, 
 }
 
 // stripOpenAIInvalidEncryptedContentRaw 是 raw JSON 版剥离：先零成本探测，命中
-// 才解码改写重编码。返回改写后的 payload 与剥离项数；未命中时原样返回。
-func stripOpenAIInvalidEncryptedContentRaw(payload []byte, invalid map[string]struct{}) ([]byte, int, error) {
+// 才解码改写重编码。dropDanglingID 的作用域语义与
+// stripOpenAIInvalidEncryptedContentItems 一致。返回改写后的 payload 与剥离
+// 项数；未命中时原样返回。
+func stripOpenAIInvalidEncryptedContentRaw(payload []byte, invalid map[string]struct{}, dropDanglingID bool) ([]byte, int, error) {
 	if !openAIRawPayloadHasInvalidEncryptedContent(payload, invalid) {
 		return payload, 0, nil
 	}
@@ -250,7 +293,7 @@ func stripOpenAIInvalidEncryptedContentRaw(payload []byte, invalid map[string]st
 	if err := decodeOpenAIJSONUseNumber(payload, &decoded); err != nil {
 		return payload, 0, err
 	}
-	stripped := stripOpenAIInvalidEncryptedContentItems(decoded, invalid)
+	stripped := stripOpenAIInvalidEncryptedContentItems(decoded, invalid, dropDanglingID)
 	if stripped == 0 {
 		return payload, 0, nil
 	}
@@ -321,15 +364,18 @@ func (s *OpenAIGatewayService) markOpenAIWSInvalidEncryptedContentLineageFromPay
 
 // stripSessionInvalidEncryptedContentLogged 对 payload 执行会话失效密文剥离并
 // 输出观测日志（logKey / logKey+"_skip"），返回（可能已替换的）payload 与剥离
-// 项数；未命中或剥离失败时原样返回。
+// 项数；未命中或剥离失败时原样返回。dropDanglingID 仅当账号为 opencode_go 时
+// 为 true（调用方按 account.IsOpenCodeGo() 传入），日志 shape 字段据此记为
+// s2（删密文+删 id）或 s1（仅删密文）。
 func (s *OpenAIGatewayService) stripSessionInvalidEncryptedContentLogged(
 	payload []byte,
 	invalid map[string]struct{},
 	logKey string,
 	accountID int64,
 	turn int,
+	dropDanglingID bool,
 ) ([]byte, int) {
-	strippedPayload, strippedCount, stripErr := stripOpenAIInvalidEncryptedContentRaw(payload, invalid)
+	strippedPayload, strippedCount, stripErr := stripOpenAIInvalidEncryptedContentRaw(payload, invalid, dropDanglingID)
 	if stripErr != nil {
 		logOpenAIWSModeInfo(
 			"%s_skip account_id=%d turn=%d reason=strip_error cause=%s",
@@ -341,12 +387,17 @@ func (s *OpenAIGatewayService) stripSessionInvalidEncryptedContentLogged(
 		return payload, 0
 	}
 	if strippedCount > 0 {
+		shape := "s1"
+		if dropDanglingID {
+			shape = "s2"
+		}
 		logOpenAIWSModeInfo(
-			"%s account_id=%d turn=%d stripped_items=%d",
+			"%s account_id=%d turn=%d stripped_items=%d shape=%s",
 			logKey,
 			accountID,
 			turn,
 			strippedCount,
+			shape,
 		)
 	}
 	return strippedPayload, strippedCount

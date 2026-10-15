@@ -36,6 +36,13 @@ import "strings"
 //
 // Each rung runs at most once per request, so the ladder performs at most three
 // retries and can never loop.
+//
+// On the opencode_go route the pure-S1 body never succeeds in production (the
+// upstream answers the id-preserving shape with "not found or has expired" every
+// time), so the merged first rung applies S1+S2 in a single retry and the ladder
+// degrades to merged-S1 -> S3. Every other route keeps the S1 -> S2 -> S3 order:
+// the S1 body may still be accepted there, and dropping the id pre-emptively
+// would discard reasoning context the upstream could have resolved.
 type openAIEncryptedReasoningStage int
 
 const (
@@ -50,16 +57,23 @@ const openAIEncryptedReasoningStageMax = int(openAIEncryptedReasoningStageDropRe
 // Action labels are part of the observable log line so the depth actually reached
 // can be read straight out of production logs.
 const (
-	openAIEncryptedReasoningActionDropEncryptedContent = "drop_encrypted_content"
-	openAIEncryptedReasoningActionDropReasoningID      = "drop_reasoning_id"
-	openAIEncryptedReasoningActionDropReasoningItem    = "drop_reasoning_item"
+	openAIEncryptedReasoningActionDropEncryptedContent      = "drop_encrypted_content"
+	openAIEncryptedReasoningActionDropReasoningID           = "drop_reasoning_id"
+	openAIEncryptedReasoningActionDropReasoningItem         = "drop_reasoning_item"
+	openAIEncryptedReasoningActionDropEncryptedContentAndID = "drop_encrypted_content_and_id"
 )
 
 // openAIEncryptedReasoningLadder counts how many times each rung of the recovery
 // ladder already ran during one Forward call. A rung is eligible only while its
 // counter is zero, which is what bounds the ladder to a single pass.
+//
+// mergeDropIDIntoFirstRung is set for the opencode_go route only: the first rung
+// then applies S1+S2 at once (see escalate) instead of spending a retry on the
+// pure-S1 body the upstream never accepts there.
 type openAIEncryptedReasoningLadder struct {
 	attempts [openAIEncryptedReasoningStageMax + 1]int
+
+	mergeDropIDIntoFirstRung bool
 }
 
 // openAIEncryptedReasoningSkip records a rung that was reached but could not act
@@ -75,6 +89,11 @@ type openAIEncryptedReasoningSkip struct {
 // can log the guard hit) but never trigger a retry on their own. Rungs are applied
 // in order because each one assumes the shallower rungs already ran.
 //
+// With mergeDropIDIntoFirstRung the first rung applies S1+S2 in one step: it
+// additionally consumes stage two's attempt, reports stage one with the merged
+// action label, and leaves stage three as the only remaining fallback. The ladder
+// still runs every rung at most once and performs at most three retries.
+//
 // It returns stage == openAIEncryptedReasoningStageNone when no rung could change
 // the body, i.e. the ladder is either exhausted or has no target at all.
 func (l *openAIEncryptedReasoningLadder) escalate(reqBody map[string]any) (openAIEncryptedReasoningStage, string, []openAIEncryptedReasoningSkip) {
@@ -84,6 +103,15 @@ func (l *openAIEncryptedReasoningLadder) escalate(reqBody map[string]any) (openA
 			continue
 		}
 		l.attempts[stage]++
+		if l.mergeDropIDIntoFirstRung && stage == openAIEncryptedReasoningStageDropEncryptedContent {
+			l.attempts[openAIEncryptedReasoningStageDropReasoningID]++
+			action, changed := applyOpenAIEncryptedReasoningStageMergedFirst(reqBody)
+			if changed {
+				return stage, action, skipped
+			}
+			skipped = append(skipped, openAIEncryptedReasoningSkip{Stage: stage, Action: action})
+			continue
+		}
 		action, changed := applyOpenAIEncryptedReasoningStage(reqBody, stage)
 		if changed {
 			return stage, action, skipped
@@ -109,6 +137,17 @@ func applyOpenAIEncryptedReasoningStage(reqBody map[string]any, stage openAIEncr
 	default:
 		return "", false
 	}
+}
+
+// applyOpenAIEncryptedReasoningStageMergedFirst applies the opencode_go merged
+// first rung: S1 (drop encrypted_content, keep id) immediately followed by S2
+// (drop the now-dangling id), in that cumulative order, so the first retry body
+// already has the S2 shape the upstream accepts. It reports the merged action
+// label so the rung stays distinguishable from a pure S1 in production logs.
+func applyOpenAIEncryptedReasoningStageMergedFirst(reqBody map[string]any) (action string, changed bool) {
+	trimmed := trimOpenAIEncryptedReasoningItems(reqBody)
+	idsDropped := dropOpenAIReasoningItemIDs(reqBody)
+	return openAIEncryptedReasoningActionDropEncryptedContentAndID, trimmed || idsDropped
 }
 
 // dropOpenAIReasoningItemIDs removes the `id` of reasoning input items while
