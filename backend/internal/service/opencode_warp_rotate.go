@@ -68,6 +68,17 @@ const (
 	// openCodeWarpRotateOpsKind 是轮换相关 ops 事件的 Kind。
 	openCodeWarpRotateOpsKind = "opencode_warp_rotate"
 
+	// openCodeWarpBlipGracePeriod 是「轮换预期窗口」在轮换调用返回后收敛到的宽限期。
+	// 轮换服务本身约 90 秒硬超时，返回后隧道通常已恢复，留一个短宽限期吸收
+	// 恢复瞬间仍可能出现的连接抖动。
+	openCodeWarpBlipGracePeriod = 25 * time.Second
+	// openCodeWarpBlipHardCap 是窗口自「发起轮换前」算起的硬上限。调用异常
+	// （hang 住、时钟漂移、返回时刻异常）时窗口最多张开这么久，绝不永久生效。
+	openCodeWarpBlipHardCap = 120 * time.Second
+
+	// openCodeWarpBlipSuppressReason 是抑制 temp-unschedule 时写入日志的 reason 值。
+	openCodeWarpBlipSuppressReason = "warp_rotation_window"
+
 	openCodeWarpRotateReasonRotated         = "rotated"
 	openCodeWarpRotateReasonFailed          = "failed"
 	openCodeWarpRotateReasonTimeout         = "timeout"
@@ -85,12 +96,16 @@ var errOpenCodeWarpRotateMinInterval = errors.New("opencode warp rotate: min int
 // 429 冷却并摘出调度快照，导致同账号重试在选号阶段被静默排除。
 type openCodeWarpRotatedContextKey struct{}
 
-// openCodeWarpRotateState 持有按 proxyID 的并发去重与最小间隔状态。
+// openCodeWarpRotateState 持有按 proxyID 的并发去重、最小间隔与「轮换预期窗口」状态。
 type openCodeWarpRotateState struct {
 	flight singleflight.Group
 
 	mu            sync.Mutex
 	lastRotatedAt map[int64]time.Time
+	// blipUntil 按 proxyID 记录「轮换预期窗口」的截止时间（见 openBlipWindow）。
+	// 窗口内该 proxy 上出现的传输层错误应视为轮换自身造成的瞬时抖动，不写
+	// temp-unschedulable 冷却。按 proxyID 一条，条目数受代理数量约束。
+	blipUntil map[int64]time.Time
 }
 
 // SetWarpExitRotator 注入 WARP 出口轮换器。未注入时本能力整体为 no-op，
@@ -110,7 +125,10 @@ func (s *OpenAIGatewayService) openCodeWarpRotateState() *openCodeWarpRotateStat
 	s.openCodeWarpRotateMu.Lock()
 	defer s.openCodeWarpRotateMu.Unlock()
 	if s.openCodeWarpRotate == nil {
-		s.openCodeWarpRotate = &openCodeWarpRotateState{lastRotatedAt: make(map[int64]time.Time)}
+		s.openCodeWarpRotate = &openCodeWarpRotateState{
+			lastRotatedAt: make(map[int64]time.Time),
+			blipUntil:     make(map[int64]time.Time),
+		}
 	}
 	return s.openCodeWarpRotate
 }
@@ -133,6 +151,83 @@ func (st *openCodeWarpRotateState) reserve(proxyID int64, minInterval time.Durat
 	}
 	st.lastRotatedAt[proxyID] = now
 	return true
+}
+
+// openBlipWindow 在「发起轮换之前」开启该 proxyID 的轮换预期窗口，返回生效的截止时间。
+//
+// 必须在调用轮换服务之前开启：出口容器的重启发生在轮换调用「进行中」，只按调用
+// 返回时刻设窗口会漏掉整个隧道中断期（生产事故中 4–6 秒的错误全部落在这一段）。
+//
+// 并发语义：窗口只延长不缩短——同一 proxy 上已有更晚的窗口时保留更晚者，避免
+// 并发的开启/收敛把已生效的保护截断。
+func (st *openCodeWarpRotateState) openBlipWindow(proxyID int64, now time.Time, hardCap time.Duration) time.Time {
+	if st == nil || proxyID <= 0 {
+		return time.Time{}
+	}
+	until := now.Add(hardCap)
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if st.blipUntil == nil {
+		st.blipUntil = make(map[int64]time.Time)
+	}
+	if cur, ok := st.blipUntil[proxyID]; ok && cur.After(until) {
+		return cur
+	}
+	st.blipUntil[proxyID] = until
+	return until
+}
+
+// closeBlipWindow 在轮换调用返回后把窗口收敛为 min(now+grace, hardCapUntil)。
+//
+// 收敛只会缩短窗口、绝不延长：即便轮换服务提前失败返回，窗口也不会被拉长到超过
+// 调用前设定的硬上限。hardCapUntil 为零值时退化为 now+grace。
+func (st *openCodeWarpRotateState) closeBlipWindow(proxyID int64, now time.Time, grace time.Duration, hardCapUntil time.Time) time.Time {
+	if st == nil || proxyID <= 0 {
+		return time.Time{}
+	}
+	until := now.Add(grace)
+	if !hardCapUntil.IsZero() && until.After(hardCapUntil) {
+		until = hardCapUntil
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if st.blipUntil == nil {
+		st.blipUntil = make(map[int64]time.Time)
+	}
+	if cur, ok := st.blipUntil[proxyID]; ok && !cur.After(until) {
+		// 已存在更短（或相同）的窗口：保持，不延长。
+		return cur
+	}
+	st.blipUntil[proxyID] = until
+	return until
+}
+
+// blipWindowUntil 返回该 proxyID 当前生效的窗口截止时间；无窗口或已过期时返回零值。
+func (st *openCodeWarpRotateState) blipWindowUntil(proxyID int64, now time.Time) time.Time {
+	if st == nil || proxyID <= 0 {
+		return time.Time{}
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	until, ok := st.blipUntil[proxyID]
+	if !ok || !now.Before(until) {
+		return time.Time{}
+	}
+	return until
+}
+
+// openCodeWarpBlipWindowUntil 返回该账号绑定代理的轮换预期窗口截止时间。
+//
+// 只读：不惰性创建轮换状态（未启用轮换的进程上，传输错误路径不应产生任何副作用），
+// nil 安全，且与 openCodeWarpRotateState() 使用同一把外层锁保护指针读取。
+func (s *OpenAIGatewayService) openCodeWarpBlipWindowUntil(account *Account) time.Time {
+	if s == nil || account == nil || account.ProxyID == nil || *account.ProxyID <= 0 {
+		return time.Time{}
+	}
+	s.openCodeWarpRotateMu.Lock()
+	state := s.openCodeWarpRotate
+	s.openCodeWarpRotateMu.Unlock()
+	return state.blipWindowUntil(*account.ProxyID, time.Now())
 }
 
 // openCodeWarpRotateMode 读取账号级开关，缺省/非法值回落 auto。
@@ -240,7 +335,12 @@ func (s *OpenAIGatewayService) ensureFreshWarpExit(
 		if !state.reserve(proxyID, minInterval, time.Now()) {
 			return "", errOpenCodeWarpRotateMinInterval
 		}
-		return s.warpExitRotator.EnsureFreshExit(ctx, proxyID, proxyURL)
+		// 先开窗口再调用：隧道中断发生在轮换进行中，错误会早于调用返回到达。
+		hardCapUntil := state.openBlipWindow(proxyID, time.Now(), openCodeWarpBlipHardCap)
+		exitIP, err := s.warpExitRotator.EnsureFreshExit(ctx, proxyID, proxyURL)
+		// 调用返回后收敛为「返回时刻 + 宽限期」，并受调用前设定的硬上限约束。
+		state.closeBlipWindow(proxyID, time.Now(), openCodeWarpBlipGracePeriod, hardCapUntil)
+		return exitIP, err
 	})
 	if err != nil {
 		return "", shared, err

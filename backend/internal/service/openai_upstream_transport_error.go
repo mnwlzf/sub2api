@@ -105,7 +105,11 @@ func isClientCanceledTransportError(ctx context.Context, err error) bool {
 //     except when the client disconnected (see isClientCanceledTransportError);
 //  2. for durable faults (expired/rejected proxy creds, dead proxy, DNS/routing)
 //     temporarily unschedules the account (DB + in-memory) and logs a stable
-//     warn event that alert rules can key on;
+//     warn event that alert rules can key on — unless the failure landed inside
+//     the WARP exit-rotation window for that account's proxy, in which case the
+//     cooldown is suppressed (see
+//     suppressOpenAITransportTempUnschedDuringWarpRotation) because the blip was
+//     caused by our own rotation, not by a durable fault;
 //  3. returns an error that is *UpstreamFailoverError (so the handler fails over
 //     to a healthy account) for all non-canceled errors, or a plain error for
 //     context.Canceled (client gone — no failover, no eviction).
@@ -151,13 +155,61 @@ func (s *OpenAIGatewayService) handleOpenAIUpstreamTransportError(ctx context.Co
 	}
 
 	if classifyUpstreamTransportError(err).Persistent {
-		s.tempUnscheduleOpenAITransportError(ctx, account, safeErr)
+		// 轮换预期窗口内：错误由我们自己的 WARP 出口轮换（出口容器重启、隧道中断）
+		// 造成，是瞬时抖动而非持久故障。抑制冷却（不写 DB、不设内存 block），
+		// 但仍照常 failover 到下一个账号。
+		if !s.suppressOpenAITransportTempUnschedDuringWarpRotation(ctx, account, safeErr) {
+			s.tempUnscheduleOpenAITransportError(ctx, account, safeErr)
+		}
 	}
 
 	return &UpstreamFailoverError{
 		StatusCode:   http.StatusBadGateway,
 		ResponseBody: openAITransportFailoverBody,
 	}
+}
+
+// suppressOpenAITransportTempUnschedDuringWarpRotation reports whether this
+// persistent-class transport error landed inside the WARP exit-rotation
+// expectation window for the account's proxy; when it did, it logs a stable
+// suppression event and returns true so the caller skips temp-unscheduling.
+//
+// Background (production incident): an opencode_go free-tier 429 triggered a
+// WARP exit rotation, which is implemented by restarting the egress container,
+// tearing the tunnel down for 4–6s. Failures inside that gap surface as DNS
+// `no such host` (Docker's embedded resolver 127.0.0.11 losing the container
+// name) and `connection refused` (container port not ready yet). Under
+// classifyUpstreamTransportError's global semantics those are durable-fault
+// markers, so *every account behind that proxy* was written into a 10-minute
+// temp-unschedulable cooldown and the whole group stalled for 10 minutes.
+//
+// They are, however, transient blips caused by our own rotation. Suppression is
+// therefore scoped strictly to the window we ourselves opened around a rotation
+// call: no DB write, no in-memory block, while the ops error event and failover
+// still happen normally. Outside the window the classification is unchanged.
+func (s *OpenAIGatewayService) suppressOpenAITransportTempUnschedDuringWarpRotation(ctx context.Context, account *Account, safeErr string) bool {
+	if account == nil || account.ProxyID == nil {
+		return false
+	}
+	proxyID := *account.ProxyID
+	if proxyID <= 0 {
+		return false
+	}
+	until := s.openCodeWarpBlipWindowUntil(account)
+	if until.IsZero() {
+		return false
+	}
+	logger.FromContext(ctx).With(zap.String("component", "service.openai_gateway")).Warn(
+		"openai.account_temp_unscheduled_transport_suppressed",
+		zap.Int64("account_id", account.ID),
+		zap.String("account_name", account.Name),
+		zap.String("platform", account.Platform),
+		zap.Int64("proxy_id", proxyID),
+		zap.String("reason", openCodeWarpBlipSuppressReason),
+		zap.Time("blip_until", until),
+		zap.String("upstream_error", safeErr),
+	)
+	return true
 }
 
 // tempUnscheduleOpenAITransportError marks an account temporarily unschedulable
