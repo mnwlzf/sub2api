@@ -103,6 +103,9 @@ type PelicanProbeService struct {
 	runGuard pelicanProbeRunGuard
 	// retryBackoffLadder overrides pelicanProbeRetryBackoffs when set (tests).
 	retryBackoffLadder []time.Duration
+	// judge holds the optional lookups used to validate the candy judge's
+	// routing (judge key group / group platform / model availability).
+	judge PelicanJudgeEnv
 }
 
 // NewPelicanProbeService creates a new PelicanProbeService.
@@ -112,6 +115,7 @@ func NewPelicanProbeService(
 	encryptor SecretEncryptor,
 	settingRepo SettingRepository,
 	cfg *config.Config,
+	judge PelicanJudgeEnv,
 ) *PelicanProbeService {
 	return &PelicanProbeService{
 		planRepo:    planRepo,
@@ -120,6 +124,7 @@ func NewPelicanProbeService(
 		settingRepo: settingRepo,
 		cfg:         cfg,
 		httpClient:  &http.Client{Timeout: pelicanProbeClientTimeout},
+		judge:       judge,
 	}
 }
 
@@ -319,6 +324,24 @@ func (s *PelicanProbeService) applyCandyJudge(ctx context.Context, row *PelicanP
 		result.Note = "auto-judge skipped: " + err.Error()
 		return
 	}
+	// The judge may need to travel a different gateway chain than the probe: the
+	// judge model is often served by another group/platform, so an unbound judge
+	// call would be routed into the probe group and 404. A dedicated judge
+	// gateway and/or judge key therefore overrides the probe endpoint here;
+	// both default to the probe values when unset.
+	if judgeBaseURL := strings.TrimSuffix(strings.TrimSpace(row.JudgeBaseURL), "/"); judgeBaseURL != "" {
+		baseURL = judgeBaseURL
+	}
+	if strings.TrimSpace(row.JudgeAPIKeyEncrypted) != "" {
+		decrypted, derr := s.encryptor.Decrypt(row.JudgeAPIKeyEncrypted)
+		if derr != nil {
+			result.Note = "auto-judge skipped: decrypt judge api key: " + derr.Error()
+			return
+		}
+		if decrypted = strings.TrimSpace(decrypted); decrypted != "" {
+			apiKey = decrypted
+		}
+	}
 	verdict, note, err := s.judgeCandyAnswer(ctx, baseURL, apiKey, judgeModel, rawHTML)
 	if err != nil {
 		result.Note = "auto-judge skipped: " + err.Error()
@@ -359,10 +382,14 @@ type CreatePlanInput struct {
 	TestType        string
 	ReasoningEffort string
 	JudgeModelID    string
-	CronExpression  string
-	Enabled         bool
-	IsPublic        bool
-	MaxResults      int
+	// JudgeAPIKey is the plaintext judge key (candy only; "" = reuse the probe
+	// key). It is encrypted at rest and never echoed back.
+	JudgeAPIKey    string
+	JudgeBaseURL   string
+	CronExpression string
+	Enabled        bool
+	IsPublic       bool
+	MaxResults     int
 }
 
 // CreatePlan validates inputs, encrypts the probe key, and persists the plan.
@@ -402,6 +429,15 @@ func (s *PelicanProbeService) CreatePlan(ctx context.Context, in CreatePlanInput
 	if testType == PelicanTestTypeCandy && judgeModelID == "" {
 		return nil, fmt.Errorf("judge_model_id is required when test_type is %q", PelicanTestTypeCandy)
 	}
+	// A judge model that the judge call cannot reach would fail on every run and
+	// leave the verdict pending forever, so reject the plan up front.
+	judgeAPIKey := strings.TrimSpace(in.JudgeAPIKey)
+	judgeBaseURL := strings.TrimSpace(in.JudgeBaseURL)
+	if testType == PelicanTestTypeCandy {
+		if err := s.validateCandyJudgeModel(ctx, in.GroupID, judgeModelID, judgeAPIKey); err != nil {
+			return nil, err
+		}
+	}
 	effort, err := normalizePelicanReasoningEffort(in.ReasoningEffort)
 	if err != nil {
 		return nil, err
@@ -414,6 +450,15 @@ func (s *PelicanProbeService) CreatePlan(ctx context.Context, in CreatePlanInput
 	if err != nil {
 		return nil, fmt.Errorf("encrypt api key: %w", err)
 	}
+	// The judge key is candy-only; encrypting it here keeps the plaintext inside
+	// this function (the row is the only place it is stored).
+	judgeKeyEncrypted := ""
+	if testType == PelicanTestTypeCandy && judgeAPIKey != "" {
+		judgeKeyEncrypted, err = s.encryptor.Encrypt(judgeAPIKey)
+		if err != nil {
+			return nil, fmt.Errorf("encrypt judge api key: %w", err)
+		}
+	}
 	row := &PelicanProbePlanRow{
 		PelicanProbePlan: PelicanProbePlan{
 			Name:            strings.TrimSpace(in.Name),
@@ -423,14 +468,16 @@ func (s *PelicanProbeService) CreatePlan(ctx context.Context, in CreatePlanInput
 			TestType:        testType,
 			ReasoningEffort: effort,
 			JudgeModelID:    judgeModelID,
+			JudgeBaseURL:    judgeBaseURL,
 			CronExpression:  cronExpr,
 			Enabled:         in.Enabled,
 			IsPublic:        in.IsPublic,
 			MaxResults:      maxResults,
 			NextRunAt:       &nextRun,
 		},
-		Prompt:          prompt,
-		APIKeyEncrypted: encrypted,
+		Prompt:               prompt,
+		APIKeyEncrypted:      encrypted,
+		JudgeAPIKeyEncrypted: judgeKeyEncrypted,
 	}
 	created, err := s.planRepo.Create(ctx, row)
 	if err != nil {
@@ -450,10 +497,13 @@ type UpdatePlanInput struct {
 	TestType        *string
 	ReasoningEffort *string
 	JudgeModelID    *string
-	CronExpression  *string
-	Enabled         *bool
-	IsPublic        *bool
-	MaxResults      *int
+	// JudgeAPIKey empty = keep the stored judge key; non-empty = replace it.
+	JudgeAPIKey    string
+	JudgeBaseURL   *string
+	CronExpression *string
+	Enabled        *bool
+	IsPublic       *bool
+	MaxResults     *int
 }
 
 // UpdatePlan applies partial updates and recomputes next_run_at on cron change.
@@ -471,12 +521,23 @@ func (s *PelicanProbeService) UpdatePlan(ctx context.Context, id int64, in Updat
 	if in.BaseURL != nil {
 		existing.BaseURL = strings.TrimSpace(*in.BaseURL)
 	}
+	if in.JudgeBaseURL != nil {
+		existing.JudgeBaseURL = strings.TrimSpace(*in.JudgeBaseURL)
+	}
 	if strings.TrimSpace(in.APIKey) != "" {
 		encrypted, err := s.encryptor.Encrypt(strings.TrimSpace(in.APIKey))
 		if err != nil {
 			return nil, fmt.Errorf("encrypt api key: %w", err)
 		}
 		existing.APIKeyEncrypted = encrypted
+	}
+	// An empty judge_api_key means "keep the stored one", mirroring api_key.
+	if strings.TrimSpace(in.JudgeAPIKey) != "" {
+		encrypted, err := s.encryptor.Encrypt(strings.TrimSpace(in.JudgeAPIKey))
+		if err != nil {
+			return nil, fmt.Errorf("encrypt judge api key: %w", err)
+		}
+		existing.JudgeAPIKeyEncrypted = encrypted
 	}
 	if in.Prompt != nil && strings.TrimSpace(*in.Prompt) != "" {
 		existing.Prompt = strings.TrimSpace(*in.Prompt)
@@ -510,6 +571,22 @@ func (s *PelicanProbeService) UpdatePlan(ctx context.Context, id int64, in Updat
 	if (in.TestType != nil || in.JudgeModelID != nil) &&
 		existing.TestType == PelicanTestTypeCandy && strings.TrimSpace(existing.JudgeModelID) == "" {
 		return nil, fmt.Errorf("judge_model_id is required when test_type is %q", PelicanTestTypeCandy)
+	}
+	// Same routing check as create: whenever the caller touches the candy judge
+	// configuration, the judge model must be reachable from the group the judge
+	// call will be routed to. Updates that only flip enabled/is_public are exempt
+	// (a legacy plan must stay toggleable).
+	if (in.TestType != nil || in.JudgeModelID != nil || strings.TrimSpace(in.JudgeAPIKey) != "") &&
+		existing.TestType == PelicanTestTypeCandy && strings.TrimSpace(existing.JudgeModelID) != "" {
+		effectiveJudgeKey := strings.TrimSpace(in.JudgeAPIKey)
+		if effectiveJudgeKey == "" && strings.TrimSpace(existing.JudgeAPIKeyEncrypted) != "" {
+			if decrypted, derr := s.encryptor.Decrypt(existing.JudgeAPIKeyEncrypted); derr == nil {
+				effectiveJudgeKey = strings.TrimSpace(decrypted)
+			}
+		}
+		if err := s.validateCandyJudgeModel(ctx, existing.GroupID, existing.JudgeModelID, effectiveJudgeKey); err != nil {
+			return nil, err
+		}
 	}
 	if in.ReasoningEffort != nil {
 		effort, err := normalizePelicanReasoningEffort(*in.ReasoningEffort)
@@ -954,5 +1031,8 @@ func stripCodeFences(s string) string {
 func sanitizePlan(row *PelicanProbePlanRow) *PelicanProbePlan {
 	p := row.PelicanProbePlan
 	p.HasAPIKey = strings.TrimSpace(row.APIKeyEncrypted) != ""
+	// The judge key follows the same contract as the probe key: callers only
+	// learn whether one is stored, never its value.
+	p.HasJudgeAPIKey = strings.TrimSpace(row.JudgeAPIKeyEncrypted) != ""
 	return &p
 }

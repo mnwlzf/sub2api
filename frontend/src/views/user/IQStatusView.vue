@@ -91,8 +91,17 @@
 
                 <!-- Right: preview thumbnail, or a compact friendly line on failure -->
                 <div class="w-full shrink-0 sm:w-64">
+                  <!-- candy answers are prose, so they render as text (never an iframe) -->
+                  <ProbeResultBody
+                    v-if="card.view.hasPreview && card.view.isCandy"
+                    :result="card.latest!"
+                    test-type="candy"
+                    variant="user"
+                    :show-verdict="false"
+                    preview-class="h-[180px]"
+                  />
                   <iframe
-                    v-if="card.view.hasPreview"
+                    v-else-if="card.view.hasPreview"
                     sandbox="allow-scripts"
                     :srcdoc="card.view.html"
                     class="h-[180px] w-full rounded-lg border border-gray-200 bg-white dark:border-gray-700"
@@ -137,8 +146,16 @@
                   </span>
                   <span class="text-[11px] text-gray-400">{{ formatTime(item.result.created_at) }}</span>
                 </div>
+                <ProbeResultBody
+                  v-if="item.view.hasPreview && item.view.isCandy"
+                  :result="item.result"
+                  test-type="candy"
+                  variant="user"
+                  :show-verdict="false"
+                  preview-class="max-h-32"
+                />
                 <iframe
-                  v-if="item.view.hasPreview"
+                  v-else-if="item.view.hasPreview"
                   sandbox="allow-scripts"
                   :srcdoc="item.view.html"
                   class="h-32 w-full bg-white"
@@ -169,6 +186,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Select, { type SelectOption } from '@/components/common/Select.vue'
+import ProbeResultBody from '@/components/pelican/ProbeResultBody.vue'
 import { Icon } from '@/components/icons'
 import { getPublicStatus } from '@/api/pelicanProbe'
 import { useAppStore } from '@/stores/app'
@@ -213,6 +231,8 @@ interface ResultView {
   message: string
   html: string
   hasPreview: boolean
+  /** Candy plans answer in prose: render text instead of an iframe preview. */
+  isCandy: boolean
 }
 
 const { t } = useI18n()
@@ -273,6 +293,24 @@ const stateLabel = (state: StatusState): string => {
 }
 
 /**
+ * Candy plans have an objective answer (21), so their badge names the judge
+ * outcome instead of the generic pelican wording. A failed run has no judge
+ * outcome at all and keeps the generic "no valid result" label.
+ */
+const candyStateLabel = (state: StatusState): string => {
+  switch (state) {
+    case 'pass':
+      return t('admin.pelicanProbe.candyVerdictPass')
+    case 'degraded':
+      return t('admin.pelicanProbe.candyVerdictDegraded')
+    case 'pending':
+      return t('admin.pelicanProbe.candyVerdictPending')
+    default:
+      return t('admin.pelicanProbe.statusNoData')
+  }
+}
+
+/**
  * Plain-language failure message for the user-facing page.
  *
  * `error_message` is deliberately never rendered here: it carries internal
@@ -296,15 +334,17 @@ const failureText = (r?: PelicanProbeResult): string => {
   }
 }
 
-const viewOf = (r?: PelicanProbeResult): ResultView => {
+const viewOf = (r: PelicanProbeResult | undefined, testType: string): ResultView => {
   const state = stateOf(r)
   const html = r && r.status !== 'failed' ? r.raw_html ?? '' : ''
+  const isCandy = (testType || '').toLowerCase() === 'candy'
   return {
     state,
-    label: stateLabel(state),
+    label: isCandy ? candyStateLabel(state) : stateLabel(state),
     message: failureText(r),
     html,
-    hasPreview: html.trim() !== ''
+    hasPreview: html.trim() !== '',
+    isCandy
   }
 }
 
@@ -329,11 +369,12 @@ const sections = computed(() => {
     cards: group.plans.map((plan) => {
       const results = resultsByPlan(plan.id)
       const latest = results[0]
+      const testType = plan.test_type || ''
       return {
         plan,
         latest,
-        history: results.slice(1).map((result) => ({ result, view: viewOf(result) })),
-        view: viewOf(latest)
+        history: results.slice(1).map((result) => ({ result, view: viewOf(result, testType) })),
+        view: viewOf(latest, testType)
       }
     })
   }))

@@ -656,14 +656,32 @@ func ProvideScheduledTestService(
 }
 
 // ProvidePelicanProbeService creates PelicanProbeService.
+//
+// The gateway/group/key dependencies only feed the candy judge's routing
+// validation (is the judge model served by the group the judge call reaches?).
+// They are narrowed to the small interfaces the service actually uses so tests
+// can supply fakes without implementing the full repositories.
 func ProvidePelicanProbeService(
 	planRepo PelicanProbePlanRepository,
 	resultRepo PelicanProbeResultRepository,
 	encryptor SecretEncryptor,
 	settingRepo SettingRepository,
 	cfg *config.Config,
+	gateway *GatewayService,
+	groupRepo GroupRepository,
+	apiKeyRepo APIKeyRepository,
 ) *PelicanProbeService {
-	return NewPelicanProbeService(planRepo, resultRepo, encryptor, settingRepo, cfg)
+	var judge PelicanJudgeEnv
+	if gateway != nil {
+		judge.Models = gateway
+	}
+	if groupRepo != nil {
+		judge.Groups = groupRepo
+	}
+	if apiKeyRepo != nil {
+		judge.Keys = apiKeyRepo
+	}
+	return NewPelicanProbeService(planRepo, resultRepo, encryptor, settingRepo, cfg, judge)
 }
 
 // ProvidePelicanProbeRunnerService creates and starts PelicanProbeRunnerService.

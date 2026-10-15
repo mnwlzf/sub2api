@@ -31,6 +31,8 @@ type createPelicanProbePlanRequest struct {
 	TestType        string `json:"test_type"`
 	ReasoningEffort string `json:"reasoning_effort"`
 	JudgeModelID    string `json:"judge_model_id"`
+	JudgeAPIKey     string `json:"judge_api_key"`
+	JudgeBaseURL    string `json:"judge_base_url"`
 	CronExpression  string `json:"cron_expression"`
 	Enabled         *bool  `json:"enabled"`
 	IsPublic        *bool  `json:"is_public"`
@@ -46,6 +48,8 @@ type updatePelicanProbePlanRequest struct {
 	TestType        *string `json:"test_type"`
 	ReasoningEffort *string `json:"reasoning_effort"`
 	JudgeModelID    *string `json:"judge_model_id"`
+	JudgeAPIKey     string  `json:"judge_api_key"`
+	JudgeBaseURL    *string `json:"judge_base_url"`
 	CronExpression  *string `json:"cron_expression"`
 	Enabled         *bool   `json:"enabled"`
 	IsPublic        *bool   `json:"is_public"`
@@ -97,6 +101,8 @@ func (h *PelicanProbeHandler) CreatePlan(c *gin.Context) {
 		TestType:        req.TestType,
 		ReasoningEffort: req.ReasoningEffort,
 		JudgeModelID:    req.JudgeModelID,
+		JudgeAPIKey:     req.JudgeAPIKey,
+		JudgeBaseURL:    req.JudgeBaseURL,
 		CronExpression:  req.CronExpression,
 		Enabled:         true,
 		MaxResults:      req.MaxResults,
@@ -136,6 +142,8 @@ func (h *PelicanProbeHandler) UpdatePlan(c *gin.Context) {
 		TestType:        req.TestType,
 		ReasoningEffort: req.ReasoningEffort,
 		JudgeModelID:    req.JudgeModelID,
+		JudgeAPIKey:     req.JudgeAPIKey,
+		JudgeBaseURL:    req.JudgeBaseURL,
 		CronExpression:  req.CronExpression,
 		Enabled:         req.Enabled,
 		IsPublic:        req.IsPublic,

@@ -2620,6 +2620,10 @@ export interface PelicanProbePlan {
   test_type: string
   reasoning_effort: string
   judge_model_id: string
+  /** Whether a judge-specific API key is stored; the key itself is never returned. */
+  has_judge_api_key: boolean
+  /** Judge gateway; empty = the probe gateway. */
+  judge_base_url: string
   cron_expression: string
   enabled: boolean
   is_public: boolean
@@ -2677,6 +2681,10 @@ export interface CreatePelicanProbePlanRequest {
   test_type?: string
   reasoning_effort?: string
   judge_model_id?: string
+  /** Candy only: judge key bound to the group serving the judge model. */
+  judge_api_key?: string
+  /** Candy only: judge gateway; empty = the probe gateway. */
+  judge_base_url?: string
   cron_expression?: string
   enabled?: boolean
   is_public?: boolean
@@ -2692,6 +2700,9 @@ export interface UpdatePelicanProbePlanRequest {
   test_type?: string
   reasoning_effort?: string
   judge_model_id?: string
+  /** Empty = keep the stored judge key. */
+  judge_api_key?: string
+  judge_base_url?: string
   cron_expression?: string
   enabled?: boolean
   is_public?: boolean

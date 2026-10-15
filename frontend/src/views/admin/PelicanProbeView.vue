@@ -149,26 +149,8 @@
             :key="r.id"
             class="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800"
           >
-            <!-- verdict ribbon -->
-            <div class="relative">
-              <div
-                class="absolute right-3 top-3 z-10 rounded-full px-2.5 py-0.5 text-xs font-semibold shadow"
-                :class="verdictClass(r.verdict)"
-              >
-                {{ verdictLabel(r.verdict) }}
-              </div>
-              <div v-if="r.status === 'failed'" class="flex h-56 items-center justify-center bg-gray-50 p-4 dark:bg-gray-900">
-                <p class="break-all text-xs text-rose-600">{{ r.error_message || t('admin.pelicanProbe.statusFailed') }}</p>
-              </div>
-              <iframe
-                v-else
-                sandbox="allow-scripts"
-                :srcdoc="r.raw_html"
-                class="h-56 w-full bg-white"
-                loading="lazy"
-                title="pelican probe preview"
-              />
-            </div>
+            <!-- verdict ribbon + body (candy answers render as text, pelican as iframe) -->
+            <ProbeResultBody :result="r" :test-type="planTestType(r.plan_id)" preview-class="h-56" />
             <div class="space-y-2 border-t border-gray-100 p-3 dark:border-gray-700/60">
               <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
                 <span class="font-medium text-gray-700 dark:text-gray-200">{{ planLabel(r.plan_id) }}</span>
@@ -180,9 +162,6 @@
                 <span>{{ t('admin.pelicanProbe.tokens') }}: {{ r.prompt_tokens + r.completion_tokens }}</span>
                 <span v-if="r.reviewed_by">{{ t('admin.pelicanProbe.reviewedBy') }}: {{ r.reviewed_by }}</span>
               </div>
-              <p v-if="r.note" class="rounded bg-gray-50 p-1.5 text-xs text-gray-600 dark:bg-gray-900 dark:text-gray-300">
-                {{ r.note }}
-              </p>
               <div class="flex items-center gap-2 pt-1">
                 <button @click="openReview(r, 'pass')" class="btn btn-primary flex-1 py-1 text-xs">
                   {{ t('admin.pelicanProbe.markPass') }}
@@ -265,6 +244,28 @@
             :hint="t('admin.pelicanProbe.judgeModelHint')"
           />
         </div>
+        <div v-if="isCandy" class="sm:col-span-2">
+          <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
+            {{ t('admin.pelicanProbe.judgeKey') }}
+          </label>
+          <Input
+            v-model="planForm.judge_api_key"
+            type="password"
+            :placeholder="planDialog.editing && editingHasJudgeKey ? '••••••••' : 'sk-...'"
+            :hint="planDialog.editing ? t('admin.pelicanProbe.judgeKeyKeepHint') : t('admin.pelicanProbe.judgeKeyHint')"
+          />
+          <p class="input-hint mt-0.5">{{ t('admin.pelicanProbe.judgeKeyGroupHint') }}</p>
+        </div>
+        <div v-if="isCandy" class="sm:col-span-2">
+          <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
+            {{ t('admin.pelicanProbe.judgeBaseUrl') }}
+          </label>
+          <Input
+            v-model="planForm.judge_base_url"
+            placeholder="https://your-domain.com"
+            :hint="t('admin.pelicanProbe.judgeBaseUrlHint')"
+          />
+        </div>
         <div class="sm:col-span-2">
           <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
             {{ t('admin.pelicanProbe.probeKey') }}
@@ -337,12 +338,11 @@
       @close="reviewDialog.show = false"
     >
       <div class="space-y-3">
-        <iframe
-          v-if="reviewDialog.result && reviewDialog.result.status === 'success'"
-          sandbox="allow-scripts"
-          :srcdoc="reviewDialog.result.raw_html"
-          class="h-80 w-full rounded-lg border border-gray-200 bg-white dark:border-gray-700"
-          title="pelican probe review preview"
+        <ProbeResultBody
+          v-if="reviewDialog.result"
+          :result="reviewDialog.result"
+          :test-type="planTestType(reviewDialog.result.plan_id)"
+          preview-class="h-80"
         />
         <div>
           <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
@@ -417,6 +417,7 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Select, { type SelectOption } from '@/components/common/Select.vue'
 import Input from '@/components/common/Input.vue'
 import Toggle from '@/components/common/Toggle.vue'
+import ProbeResultBody from '@/components/pelican/ProbeResultBody.vue'
 import { Icon } from '@/components/icons'
 import { adminAPI } from '@/api/admin'
 import { useAppStore } from '@/stores/app'
@@ -471,6 +472,10 @@ const planLabel = (planId: number) => {
   const p = plans.value.find((x) => x.id === planId)
   return p ? `${p.name || `#${p.id}`} · ${p.model_id}` : `#${planId}`
 }
+// Results carry only plan_id; the candy/pelican rendering branch comes from the
+// plan. Unknown plans fall back to the pelican (iframe) preview.
+const planTestType = (planId: number) =>
+  plans.value.find((x) => x.id === planId)?.test_type || 'pelican'
 
 const stats = computed(() => ({
   total: results.value.length,
@@ -480,27 +485,6 @@ const stats = computed(() => ({
 }))
 
 const formatTime = (v: string | null) => (v ? formatDateTime(v) : '—')
-
-const verdictLabel = (v: string) => {
-  switch (v) {
-    case 'pass':
-      return t('admin.pelicanProbe.verdictPass')
-    case 'degraded':
-      return t('admin.pelicanProbe.verdictDegraded')
-    default:
-      return t('admin.pelicanProbe.verdictPending')
-  }
-}
-const verdictClass = (v: string) => {
-  switch (v) {
-    case 'pass':
-      return 'bg-emerald-600 text-white'
-    case 'degraded':
-      return 'bg-rose-700 text-white'
-    default:
-      return 'bg-amber-500 text-white'
-  }
-}
 
 // apiClient converts axios timeouts into plain objects shaped like
 // { status: 0, code: 'ECONNABORTED', ... }.
@@ -563,6 +547,9 @@ const handleFilterChange = () => {
 // --- plan dialog ---
 const planDialog = reactive({ show: false, editing: false, id: 0 })
 const planSaving = ref(false)
+// Whether the plan being edited already stores a judge key (drives the
+// "leave blank to keep it" placeholder).
+const editingHasJudgeKey = ref(false)
 const planForm = reactive({
   name: '',
   group_id: null as number | null,
@@ -573,6 +560,8 @@ const planForm = reactive({
   test_type: 'pelican',
   reasoning_effort: '',
   judge_model_id: '',
+  judge_api_key: '',
+  judge_base_url: '',
   schedule_preset: '0 */4 * * *',
   cron_custom: '',
   enabled: true,
@@ -607,11 +596,14 @@ const resetPlanForm = () => {
   planForm.test_type = 'pelican'
   planForm.reasoning_effort = ''
   planForm.judge_model_id = ''
+  planForm.judge_api_key = ''
+  planForm.judge_base_url = ''
   planForm.schedule_preset = '0 */4 * * *'
   planForm.cron_custom = ''
   planForm.enabled = true
   planForm.is_public = false
   planForm.max_results = '50'
+  editingHasJudgeKey.value = false
 }
 const openCreateDialog = () => {
   resetPlanForm()
@@ -629,6 +621,9 @@ const openEditDialog = (plan: PelicanProbePlan) => {
   planForm.test_type = plan.test_type || 'pelican'
   planForm.reasoning_effort = plan.reasoning_effort || ''
   planForm.judge_model_id = plan.judge_model_id || ''
+  planForm.judge_api_key = ''
+  planForm.judge_base_url = plan.judge_base_url || ''
+  editingHasJudgeKey.value = !!plan.has_judge_api_key
   if ((schedulePresets.map((p) => p.value) as readonly string[]).includes(plan.cron_expression)) {
     planForm.schedule_preset = plan.cron_expression
     planForm.cron_custom = ''
@@ -669,7 +664,12 @@ const savePlan = async () => {
       }
       if (planForm.api_key.trim()) payload.api_key = planForm.api_key.trim()
       if (!isCandy.value && planForm.prompt.trim()) payload.prompt = planForm.prompt.trim()
-      if (isCandy.value) payload.judge_model_id = planForm.judge_model_id.trim()
+      if (isCandy.value) {
+        payload.judge_model_id = planForm.judge_model_id.trim()
+        // Empty judge key = keep the stored one (same contract as api_key).
+        if (planForm.judge_api_key.trim()) payload.judge_api_key = planForm.judge_api_key.trim()
+        payload.judge_base_url = planForm.judge_base_url.trim()
+      }
       await adminAPI.pelicanProbe.updatePlan(planDialog.id, payload)
       appStore.showSuccess(t('admin.pelicanProbe.updateSuccess'))
     } else {
@@ -683,6 +683,8 @@ const savePlan = async () => {
         test_type: planForm.test_type,
         reasoning_effort: planForm.reasoning_effort || undefined,
         judge_model_id: isCandy.value ? planForm.judge_model_id.trim() : undefined,
+        judge_api_key: isCandy.value ? planForm.judge_api_key.trim() || undefined : undefined,
+        judge_base_url: isCandy.value ? planForm.judge_base_url.trim() || undefined : undefined,
         cron_expression: cron || undefined,
         enabled: planForm.enabled,
         is_public: planForm.is_public,

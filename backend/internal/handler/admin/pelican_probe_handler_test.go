@@ -118,8 +118,11 @@ func (r handlerResultRepo) PruneOldResults(_ context.Context, _ int64, _ int) er
 
 func newProbeRunRouter(state *handlerProbeState) *gin.Engine {
 	gin.SetMode(gin.TestMode)
+	// The judge validation lookups are only exercised by the plan CRUD paths;
+	// the async run-now endpoint under test needs none of them.
 	svc := service.NewPelicanProbeService(
 		handlerPlanRepo{state}, handlerResultRepo{state}, handlerProbeEncryptor{}, nil, nil,
+		service.PelicanJudgeEnv{},
 	)
 	router := gin.New()
 	router.POST("/admin/pelican-probe-plans/:id/run", NewPelicanProbeHandler(svc).RunNow)
