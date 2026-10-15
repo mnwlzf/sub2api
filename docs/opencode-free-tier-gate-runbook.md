@@ -20,7 +20,9 @@
 │        ──► 轮换服务自己的探测请求也没过门禁 → §3.1（先修这个，否则轮换 100% 失败）
 ├─ HTTP 426 + "UpgradeRequired" ──► UA 版本低于下界 1.18.0 → §1.3
 ├─ HTTP 400 + "encrypted_content … was not issued to this caller"
-│   ──► 回放的加密推理块不属于当前 caller → §1.5（已有自愈，仅需确认是否触发）
+│   ──► 回放的加密推理块不属于当前 caller（绑**出口 IP**）→ §1.5（三级阶梯自愈）
+├─ HTTP 400 + "Referenced reasoning item … was not found or has expired"
+│   ──► 同级问题：删了密文却留着 `id` → 悬空引用 → §1.5（阶梯 S2 修它）
 └─ 其它（400 / 403 RegionError / 500）──► §1.4
 ```
 
@@ -103,93 +105,176 @@ version >= 1.18.34  -> 403 FreeTierError     ← 注意：是 403，不是 426�
 | `400` + ``only `"auto"` is supported for `tool_choice` `` | `/responses` 端点只接受 `tool_choice:"auto"` | 别在 Responses/Anthropic 方言注入 `tool_choice` |
 | `400` + `Recursive JSON schemas are not currently supported` | `/responses` 拒绝带 `$ref` 等 JSON Schema 引用关键字的工具 | 查客户端带来的工具 schema（门禁注入的是扁平 schema） |
 | `403` + `RegionError` | 地理封锁（如 `muse-spark-*` 在某些网络） | 换出口或换模型；**不是门禁失败** |
-| `400` + ``reasoning `encrypted_content` was not issued to this caller`` | 回放的加密推理块不属于当前 caller；**多账号 failover 是主假设、机制未证**（见 §1.5） | §1.5（已有自愈：丢加密项 + 重试一次） |
+| `400` + ``reasoning `encrypted_content` was not issued to this caller`` | 回放的加密推理块不属于当前 caller（**绑出口 IP**，2026-10-15 实测确认） | §1.5（三级阶梯自愈：S1 丢密文 → S2 再丢 `id` → S3 整项删） |
+| `400` + `Referenced reasoning item 'rs_…' was not found or has expired.` | 删了 `encrypted_content` 但留着 `id` → 悬空引用；同一族的第二条 | §1.5（阶梯 S2 修它） |
 | `500` | 上游模型侧故障（如 `jev-1.13-free` 在 chat/responses 均 500） | 换模型 |
 
-### 1.5 `400` + ``reasoning `encrypted_content` was not issued to this caller`` —— 加密推理块不属于当前 caller
+### 1.5 `400` 加密推理块的两条拒绝（``was not issued to this caller`` / `not found or has expired`）—— 绑定到**出口 IP**
 
 ```json
 {"error":{"code":null,"message":"reasoning `encrypted_content` was not issued to this caller","param":null,"type":"invalid_request_error"},"model":"muse-spark-1.3-contributor-free"}
 ```
 
 **含义**：请求体里回放的**加密推理块**（Responses `input` 中 `type:"reasoning"` / `type:"compaction"` 的 `encrypted_content`）
-是由**另一个账号**（另一把上游 API key）签发的。上游把密文绑定到签发它的 caller，本账号重放别人的密文 → 整条请求被 400 拒绝。
+不属于当前 caller。上游把密文绑定到签发它的 caller —— **2026-10-15 的 6 组变体实测确认这个 caller 就是出口 IP**
+（同出口换账号重放 → 200；换出口重放 → 这条 400）。
 
-**成因（区分「已证」与「推测」）**：
+#### 1.5.1 两条报错的关系（同族、两个阶段）
 
-- **上游语义（已证）**：上游把 `encrypted_content` 绑定到「拿到它的那个 caller」；重放一个不是发给你的密文即整条请求 400。
-  报文本身只说了这一层。
-- **多账号 failover 是主假设（相关性已证，机制未证）**：sub2api 对同一把客户端 key 做多账号负载均衡/failover，
-  同一条会话的多个回合会先后落在不同账号上。生产实例：`account_id=31589`（`opencode-lnyocly2`）
-  在 2026-10-15 11:07:48 收到该 400（`body_bytes=3131111`），而该会话此前 10-14 19:2x–10-15 10:42 的成功回合
-  **全在 `31568`**（`opencode-lnyocly`）——失败账号 ≠ 此前成功账号，这是目前最强的相关性证据。
-- **⚠️ 但「密文绑定到上游 API key」这一具体机制未被证实，且有反证**：2026-10-15 实测把账号 `31589` 签发的
-  `reasoning.encrypted_content`（1426 字符）连同 `id`/`summary` 一起重放，请求被调度到 **`31588`**
-  （`opencode-zf`，与 31589 的 `credentials->>'api_key'` md5 不同：`f7b74d876d` vs `72ef2c06fc`），
-  **4/4 次都返回 200**，没有触发该 400。
-  也就是说：**跨账号重放 `reasoning` 项的密文，本身并不必然失败。** 可能的解释（均未验证）：
-  ① 绑定的粒度是上游 opencode 账号/组织而非单个 API key（四个账号可能是同一 opencode 账号下的四把 key）；
-  ② 被拒的密文其实来自 **`compaction` / `compaction_summary`** 项而不是 `reasoning` 项
-  （`context_management:[{"type":"compaction",...}]` 在本上游被忽略，拿不到 compaction 项，故无法验证）；
-  ③ 绑定到会话/`previous_response_id` 等其它作用域。
-- **结论**：修复的价值不依赖成因的精确性 —— 只要上游报这条错，丢掉加密推理项就是正确的补救；
-  但**不要把「跨账号 = 必然失败」当成已证事实**，也不要据此去摘账号。
+| # | 上游消息 | 我们的 body 形态 | 机制 |
+| --- | --- | --- | --- |
+| **A** | ``reasoning `encrypted_content` was not issued to this caller`` | 回放别人的密文（`encrypted_content` + `id` 都在） | 密文不是本 caller 签发的 |
+| **B** | `Referenced reasoning item 'rs_…' was not found or has expired.` | 删了 `encrypted_content`、**留着 `id`** | `id` 变成**悬空引用**：上游按 id 找不到内容 |
+
+两条的 `error.code` **都是 `null`**（上游这两个响应只有消息），所以判据只能走消息文本。
+
+#### 1.5.2 绑定语义：**绑到出口 IP**（不是账号，也不是 key）
+
+| # | 变体 | 出口 | 结果 |
+|---|---|---|---|
+| 1 | 取新鲜密文 R | 当前 | 200 |
+| 2 | 只清 `encrypted_content`、**保留 `id`** | 同出口 | **400** `Referenced reasoning item 'rs_…' was not found or has expired.` |
+| 3 | 清 `encrypted_content` + **去掉 `id`**、保留 `summary` | 同出口 | **200** ✅ |
+| 4 | 原样重放（带密文） | **新出口** | **400** `reasoning encrypted_content was not issued to this caller` |
+| 5 | 清密文、保留 `id` | 新出口 | **400** `not found or has expired` |
+| 6 | 清密文 + 去 `id`、保留 summary | 新出口 | **200** ✅ |
+
+**关键判读**：同一份密文，**同出口重放 200（即使换账号）**；**换出口重放 → `not issued to this caller`**。
+
+- 所以**「跨账号 failover」不是主因** —— 旧版 §1.5 的「跨账号重放 4/4 次 200」反证在这里得到解释：
+  那 4 次重放走的是**同一个出口**，账号不同无影响。
+- **真正的放大器是出口轮换**：我们在 429 时轮换 WARP 出口（§3 / §4.4），
+  **每轮换一次，客户端历史里所有旧密文就全部作废**，下一个回合的 compact/replay 必然踩 A。
+  这才是 compaction 频繁踩这个 400 的根因。
+- 推论：**摘账号无效**。某账号长期失败先看它是否总在轮换后立刻失败。
+
+#### 1.5.3 精确变换（逐字采用，实测 200）
+
+```json
+// 之前
+{"type":"reasoning","id":"rs_6ad05224…:rs_01a13dc0…","status":"completed","summary":[…],"encrypted_content":"<1426 字节>"}
+// 之后（去掉 id 与 encrypted_content，保留 status / summary）
+{"type":"reasoning","status":"completed","summary":[…]}
+```
+
+- ⚠️ **只删 `encrypted_content` 不够**：留着 `id` 会引用一个内容已不可用的项 → 变 B。
+- ⚠️ **`summary` 往往是空的**（`"summary":[]`）：保留它只是保留**空壳/占位**（维持 item 顺序/占位），
+  空壳上游照样接受（200）。不要以为「保留了 summary」= 保留了推理上下文。
+
+#### 1.5.4 成因（旧版记录，保留作教训）
+
+**多账号 failover 曾为主假设（相关性已证、机制已证伪）**：sub2api 对同一把客户端 key 做多账号负载均衡/failover，
+同一条会话的多个回合会先后落在不同账号上。生产实例：`account_id=31589`（`opencode-lnyocly2`）
+在 2026-10-15 11:07:48 收到该 400（`body_bytes=3131111`），而该会话此前 10-14 19:2x–10-15 10:42 的成功回合
+**全在 `31568`**（`opencode-lnyocly`）——失败账号 ≠ 此前成功账号，这是当时最强的相关性证据。
+**2026-10-15 的出口对照实验把这一假设降级**：账号不同不影响结果，出口不同才影响。见 §1.5.2。
 
 **⚠️ 关键点：`code` 为 `null`。** 上游这条报错**不带错误码**，只有消息。
 
-**现有自愈机制**（`backend/internal/service/openai_gateway_forward.go`，`Forward()` 的 HTTP/非 WSv2 路径）：
+**现有自愈机制 —— 三级降级阶梯**（2026-10-15 实现；`backend/internal/service/openai_gateway_forward.go`
+`Forward()` 的非 WSv2 HTTP 路径，判据变量 `invalidEncryptedContentError` 命中后的恢复分支，约 1132 行起；
+阶梯本体在 `backend/internal/service/openai_gateway_encrypted_reasoning_stage.go`）：
 
-- 判据变量 `invalidEncryptedContentError`，命中后走 1137 行起的恢复分支；
-- 恢复动作 = `trimOpenAIEncryptedReasoningItems(decoded)`：
-  - `type:"reasoning"` → 只删 `encrypted_content` 字段（保留 `id` / `summary`），顺带删 `content: null`；
-  - `type:"compaction"` / `"compaction_summary"` → 连整项一起删；
-  - 删完只剩 1 个键的项 → 整项丢弃；
-  - 若删空了 `input` → 删掉 `input` 键。
-- 然后重新序列化 → `continue` 重试**一次**，`httpInvalidEncryptedContentRetryTried` 保证「只重试一次」，并记 lineage。
-- **守卫**：`trimOpenAIEncryptedReasoningItems` 返回 `false`（没有可删的加密推理项）→ **不重试**，只打日志
-  `[OpenAI] Skip non-WSv2 invalid_encrypted_content retry because encrypted reasoning items are missing`。
+| 阶段 | 变换 | 修哪条 | 日志 action |
+| --- | --- | --- | --- |
+| **S1** | 删 `reasoning` 项的 `encrypted_content`（**保留 `id` / `summary`**） | A | `drop_encrypted_content` |
+| **S2** | 在 S1 基础上**再删 `id`**（保留 `status` / `summary`） | B（通常在这里 200） | `drop_reasoning_id` |
+| **S3** | 整项全删（兜底） | A/B 都不灵时 | `drop_reasoning_item` |
+
+- **每级只做一次**（`openAIEncryptedReasoningLadder.attempts` 计数器，不是单个 bool），**总重试上限 3 次**。
+- **变换累积**：S2 的 body 含 S1 的改动，S3 含前两级；每级从**同一份已解码 request body** 上继续改。
+- S1 复用既有的 `trimOpenAIEncryptedReasoningItems`（`compaction` / `compaction_summary` 项连整项删；
+  删完只剩 1 个键的项整项丢；删空 `input` 就删掉 `input` 键）。
+- S2 是**新函数** `dropOpenAIReasoningItemIDs`，S3 是 `dropOpenAIReasoningInputItems`；
+  ⚠️ `trimOpenAIEncryptedReasoningItems` / `sanitizeEncryptedReasoningInputItem` /
+  `dropOpenAIEncryptedReasoningInputItems` 的**默认语义未被改动**（多 provider 共用）。
+
+**触发条件**：`resp.StatusCode == 400` 且满足以下之一：
+
+- `upstreamCode == "invalid_encrypted_content"`；
+- `upstreamCode == "thinking_signature_invalid"` + 消息含 `The encrypted content` + `could not be verified`
+  + `could not be decrypted or parsed`；
+- 消息含 `encrypted_content` + `was not issued to this caller`（A，旧版 2026-10-15 加）；
+- **新增**：消息含 `Referenced reasoning item` + `was not found or has expired`（B）。
+
+**守卫**：某一级的目标项不存在（没有可删的字段）→ **跳过该级、不为它花一次上游请求**，直接试下一级；
+三级都无法改动 → **不重试**，退化到原错误。
+
+**日志字符串（下次判读就 grep 这几行）**：
+
+```
+# 实际走到了哪一级（每级最多出现一次）
+Retrying non-WSv2 request after invalid_encrypted_content escalating to stage=2 action=drop_reasoning_id
+# 某一级没有目标项，被跳过（不花上游请求）
+Skip non-WSv2 invalid_encrypted_content retry stage=1 action=drop_encrypted_content because its target reasoning items are missing
+# 三级都没得改 → 不重试
+Skip non-WSv2 invalid_encrypted_content retry because encrypted reasoning items are missing
+```
+
+⚠️ 旧字符串 `Retrying non-WSv2 request once after invalid_encrypted_content` 已被上面第一条替换；
+翻旧日志时注意。`stage=1` 出现后不再出现 `stage=2` → 说明上游接受了 S1，阶梯到此为止（正常）。
 
 **为什么原来不触发**：原判据只认 `error.code` —— `upstreamCode == "invalid_encrypted_content"`，
-或 `upstreamCode == "thinking_signature_invalid" && …`。这条报错的 `code` 是 `null`
+或 `upstreamCode == "thinking_signature_invalid" && …`。A 这条报错的 `code` 是 `null`
 （`extractUpstreamErrorCode` 读 `error.code`，null → 空串），两个分支都不匹配 → 自愈被跳过，客户端直接收到 400。
-修复（2026-10-15）把消息判据 `encrypted_content` + `was not issued to this caller` 加进同一个
-`invalidEncryptedContentError`，**复用**同一套丢弃 + 重试逻辑，不新增动作。
+2026-10-15 的第一次修复把消息判据加进 `invalidEncryptedContentError`，**但恢复动作只删 `encrypted_content`、
+保留 `id`** → 按变体 2/5 仍然 400，只是错误消息从 A 变成 B。**这就是本次「分级加深」的原因。**
 
-**判别法（确认是否真的是这个问题）**：
+**判别法（确认命中的是哪一条、走到了哪一级）**：
 
-1. 报错文本：`ops_error_logs.upstream_error_detail LIKE '%was not issued to this caller%'`，
-   且 `error_phase='upstream'`、`upstream_status_code=400`；`upstream_errors` 里 `error.code` 为 `null`。
-2. **看该会话前后尝试的 `account_id` 是否不同**（这是**相关性证据，不是充分证据** —— 见上文反证）：
+1. 报错文本（都用 `upstream_error_detail` 列）：
+   - A：`ops_error_logs.upstream_error_detail LIKE '%was not issued to this caller%'`
+   - B：`ops_error_logs.upstream_error_detail LIKE '%not found or has expired%'`
+
+   两者都要求 `error_phase='upstream'`、`upstream_status_code=400`；`upstream_errors` 里 `error.code` 为 `null`。
+2. 容器日志 grep 阶梯深度：
+
+   ```bash
+   docker logs sub2api 2>&1 | grep 'escalating to stage=' | tail
+   ```
+
+   `stage=1` 之后没有 `stage=2` → S1 就修好了；
+   出现 `stage=2` → 走到了删 `id`（说明第一次修复不够，本次改造的直接动因）；
+   出现 `stage=3` → 连整项都删了（兜底）。再用
+   `grep 'Skip non-WSv2 invalid_encrypted_content retry stage='` 看有没有级被跳过。
+3. **看该时间窗内是否发生 WARP 出口轮换**（§3.1 / `opencode_warp_rotate` 事件 / §4.4）：
+   轮换记录见 §3.1 的 ops 事件与 `/var/log/warp-rotate-api.log`（表名以实际部署为准）。
+   轮换后紧接着的 A 类 400 是本绑定机制的直接指纹；轮换前后的 400 计数对比是最直观的证据。
+4. **不要再用「前后回合 account_id 不同」来确诊**（旧版 §1.5 的判别法 2）——账号不同已被证伪为非充分：
+   同出口换账号重放 200。该 SQL 仅作参考：
 
    ```sql
-   -- ① 失败回合的账号
    SELECT to_char(created_at,'MM-DD HH24:MI:SS') AS t, account_id, model, upstream_status_code
    FROM ops_error_logs
    WHERE upstream_error_detail LIKE '%was not issued to this caller%'
    ORDER BY created_at DESC;
-
-   -- ② 同一 user/key 在相近时间的成功回合落在哪个账号
-   SELECT to_char(created_at,'MM-DD HH24:MI:SS') AS t, account_id, model
-   FROM usage_logs
-   WHERE user_id = <uid> AND model = 'muse-spark-1.3-contributor-free'
-   ORDER BY created_at DESC LIMIT 20;
    ```
-
-   若最近的成功回合与失败回合**分属不同 `account_id`** → 确诊跨账号密文。
-3. 对照容器日志：`openai.account_selected` 给出本次 `account_id`；
-   若**没有** `Retrying non-WSv2 request once after invalid_encrypted_content` → 说明自愈确实没触发（修复前即如此）。
 
 **处置**：
 
-- **单次偶发**：无需人工干预。自愈重试会丢掉密文重发（代价：该轮丢失加密推理上下文，但仍能出结果）。
-- **某账号长期只失败不成功**（如 `31589` 在 30h 内 0 次成功）：考虑把它从该分组摘掉，或核对它的 key / 出口。
-- ⚠️ 该报错**不封 key**（与 §1.2 的 403 同理，已受控实测）；但仍要克制请求数。
+- **单次偶发**：无需人工干预。阶梯会自愈（代价：最多丢加密推理上下文 + 最多 3 次上游请求）。
+- **某账号长期只失败不成功**（如 `31589` 在 30h 内 0 次成功）：**先看它是不是总在出口轮换后立刻失败**；
+  若是，问题在出口稳定性（§3.1 / §4.4），**摘账号无效**。
+- ⚠️ 这两条报错**不封 key**（与 §1.2 的 403 同理，已受控实测）；但仍要克制请求数。
 
-**已知未覆盖（本次有意留白）**：WSv2 路径的错误分类 `classifyOpenAIWSErrorEventFromRaw`
-（`openai_ws_forwarder_support.go`）只匹配 `invalid_encrypted_content` 与
-`encrypted content` + `could not be verified`，同样**不匹配**这条消息。
-本次实测的 8 次失败全部走 **HTTP** 路径（容器日志 `openai routing decision` → `"transport": "http"`），
-故本次只修 HTTP 路径。若将来在 WS 路径看到同款 400，需要在 `classifyOpenAIWSErrorEventFromRaw` 补同样的消息判据。
+**上游实测（2026-10-15，本次实现产出的 body 原样发出）**：
+
+- 从出口 `2a09:bac5:a5fb:31f5::4fa:e` 铸造 R（`encrypted_content` 1426 字符、`summary=[]`、`status=completed`）。
+- 变体对照（同一出口，同一次脚本内完成）：原样 R → **200**；S1 → **400** `Referenced reasoning item 'rs_6ad059d3…' was not found or has expired.`；S2 → **200** ✅。
+- 再用**我们实现产出的 body 逐字节**发两次：S1 body → **400**（同上 B 消息）；S2 body → **200** ✅（出口仍为铸造出口）。
+- 两个 body 的 `input[1]` 规范 JSON 与上面变体表里手工构造的完全一致
+  （S1 规范 sha256[:16] = `77aec4c04b887658`，S2 = `7dec2165b8ced945`）。
+
+**已知未覆盖（本次有意留白）**：
+
+- generic 400 `The request contains invalid parameters`（观察窗内 42 条）是**另一条消息**，
+  与本节判据无关，**本修复不覆盖**，需要单独定位。
+- WSv2 路径的错误分类 `classifyOpenAIWSErrorEventFromRaw`（`openai_ws_forwarder_support.go`）
+  只匹配 `invalid_encrypted_content` 与 `encrypted content` + `could not be verified`，
+  **不匹配** A / B 两条消息，也**不走本三级阶梯**（阶梯只接在 HTTP 路径上）。
+  本次实测的失败全部走 **HTTP** 路径（容器日志 `openai routing decision` → `"transport": "http"`）。
+  若将来在 WS 路径看到同款 400，需要在 `classifyOpenAIWSErrorEventFromRaw` 补消息判据，
+  并把阶梯接过去（`openai_ws_forwarder_v2.go` 的 `recoverInvalidEncryptedContent`）。
 
 ---
 
@@ -724,6 +809,7 @@ print("mintedAt =", E - 1 - (hexv >> 12))      # 反推铸造时刻（应是一�
 | **2026-10-15** | **（生产阻塞修复）`openCodeUpstreamUserAgent` 由 `1.19.0` 回落到带内 `1.18.31`** | 修复前 `1.19.0` → **403 FreeTierError**；修复后 `1.18.31` → **200**（SSE `response.created`） | 单变量实测（同 key / body / 出口，间隔 22 s）：`1.19.0 ai-sdk/…bun/1.3.14` → `403`（`cf-ray a4ab483e6aa67d78-ORD`）；`1.18.31 ai-sdk/…bun/1.3.14` → `200`（`cf-ray a4ab489f1f847d78-ORD`）。同步：常量注释、`openai_opencode_freetier.go` 信号 2、新增 `TestOpenCodeUpstreamUserAgentVersionBand`（已用变异测试确认能拦住 `1.19.0`） |
 | **2026-10-15** | **（结论修正）上界二分确定**：`1.18.32` / `1.18.33` → 200；`1.18.34` / `1.18.35` → 403；`1.17.9` → 426 | 划出闭区间 `[1.18.0, 1.18.33]` | 24 请求单变量消融（含 8 个 403，无封禁） |
 | **2026-10-15** | **（生产阻塞修复）`400 reasoning `encrypted_content` was not issued to this caller` 未触发自愈**：该报错 `error.code` 为 `null`，原判据只认 code，两个分支都不匹配 → 恢复被跳过。改为按消息匹配（`encrypted_content` + `was not issued to this caller`），复用既有「丢加密推理项 + 重试一次」逻辑 | compact / 长历史重放时 `400`，客户端直接失败；`ops_error_logs` 5 天内 8 条（10-10 起，账号 31568/31585/31589，全部 `muse-spark-1.3-contributor-free`，全部 `upstream_status_code=400`） | 相关性证据（非充分）：失败回合账号 ≠ 同会话早前成功回合账号（如 10-15 11:07:48 失败于 `31589`，此前成功全在 `31568`）；反证见 §1.5；容器日志 `transport:"http"`、无 `Retrying non-WSv2` 行。见 §1.5 |
+| **2026-10-15** | **（根因修正 + 二次修复）绑定语义确定为「绑出口 IP」；单级恢复不够，改为三级降级阶梯**：`httpInvalidEncryptedContentRetryTried`（单 bool）→ `openAIEncryptedReasoningLadder`（每级计数器，S1 丢 `encrypted_content` / S2 再去 `id` / S3 整项删，各级最多一次、总上限 3 次）；新增 B 类判据 `Referenced reasoning item` + `was not found or has expired`；新增 `dropOpenAIReasoningItemIDs`、`rewriteOpenAIInputItems`（`dropOpenAIEncryptedReasoningInputItems` 改为复用同一 walker，默认语义不变） | 修复前：#23 的恢复只删密文、保留 `id` → 按变体 2/5 仍 `400`，只是消息从 A 变成 B（`not found or has expired`）；且出口轮换后必然复发 | 6 组变体实测（同出口换账号 200 / 换出口 `not issued to this caller`）；本次复现：同出口 原样→200、S1→400 B 类、S2→200；并用**实现产出的 body 逐字节**重发上游：S1 body→400、S2 body→200。见 §1.5 |
 
 ### ⚠️ 教训：**「顺手把版本号升到最新」是危险操作**
 

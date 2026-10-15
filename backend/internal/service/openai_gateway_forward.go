@@ -1049,7 +1049,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		firstOutputTimeout = s.openAIFirstOutputTimeout(reasoningEffortValue)
 	}
 
-	httpInvalidEncryptedContentRetryTried := false
+	// Bounded ladder: at most one retry per rung, three rungs in total. The counters
+	// live in the ladder so a rung cannot be replayed even if the upstream keeps
+	// answering with the same shape.
+	encryptedReasoningLadder := &openAIEncryptedReasoningLadder{}
 	compactModelFallbackRetried := false
 	agentTaskRecoveryTried := false
 	rejectedFieldRetryState := openAIResponsesRejectedFieldRetryStateForRequest(c, body)
@@ -1129,44 +1132,59 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			}
 			respBody = s.redactAgentIdentitySensitiveBody(ctx, account, respBody)
 			resp.Body = io.NopCloser(bytes.NewReader(respBody))
-			// "reasoning `encrypted_content` was not issued to this caller" is the third
-			// shape of the same upstream rejection, and it needs its own matcher because
-			// the upstream sends it with error.code == null
-			// ({"error":{"code":null,"message":"...","param":null,"type":"invalid_request_error"}}),
-			// so upstreamCode is empty and the code-based branch cannot fire. The cause is
-			// the same encrypted-reasoning lineage problem: an encrypted reasoning block is
-			// bound to the account/API key that issued it, and multi-account failover means a
-			// replayed history can carry blocks minted by a different account than the one
-			// serving this attempt, so compaction/replay re-sends them and the upstream
-			// rejects the whole request. Recovery is identical: drop the encrypted reasoning
-			// items and retry once.
+			// Four shapes of the same upstream rejection, all caused by an encrypted
+			// reasoning block whose lineage is broken (the blob is bound to the caller
+			// that minted it, and WARP exit rotation / account failover invalidates every
+			// blob already sitting in the client's replayed history):
+			//
+			//  1. code=invalid_encrypted_content
+			//  2. code=thinking_signature_invalid + "The encrypted content ... could not be
+			//     verified ... could not be decrypted or parsed"
+			//  3. code=null + "reasoning `encrypted_content` was not issued to this caller"
+			//     (error.code is null, so only the message can match it —
+			//     {"error":{"code":null,"message":"...","param":null,"type":"invalid_request_error"}})
+			//  4. "Referenced reasoning item 'rs_...' was not found or has expired" — the
+			//     shape the upstream answers with after shape 1-3 was "fixed" by dropping
+			//     encrypted_content while keeping the now-dangling reasoning id.
+			//
+			// Recovery is a graded ladder rather than a single retry, because shape 2/3
+			// and shape 4 need different, cumulatively deeper bodies. See
+			// openAIEncryptedReasoningLadder for the rungs; each rung runs at most once.
 			invalidEncryptedContentError := upstreamCode == "invalid_encrypted_content" ||
 				(upstreamCode == "thinking_signature_invalid" &&
 					strings.Contains(upstreamMsg, "The encrypted content") &&
 					strings.Contains(upstreamMsg, "could not be verified") &&
 					strings.Contains(upstreamMsg, "could not be decrypted or parsed")) ||
 				(strings.Contains(upstreamMsg, "encrypted_content") &&
-					strings.Contains(upstreamMsg, "was not issued to this caller"))
-			if !httpInvalidEncryptedContentRetryTried && resp.StatusCode == http.StatusBadRequest && invalidEncryptedContentError {
+					strings.Contains(upstreamMsg, "was not issued to this caller")) ||
+				(strings.Contains(upstreamMsg, "Referenced reasoning item") &&
+					strings.Contains(upstreamMsg, "was not found or has expired"))
+			if resp.StatusCode == http.StatusBadRequest && invalidEncryptedContentError {
 				decoded, decodeErr := ensureReqBody()
 				if decodeErr != nil {
 					return nil, decodeErr
 				}
-				invalidDigests := collectOpenAIEncryptedContentDigestsRaw(lineageEntryBody)
-				if trimOpenAIEncryptedReasoningItems(decoded) {
+				stage, action, skippedStages := encryptedReasoningLadder.escalate(decoded)
+				for _, skipped := range skippedStages {
+					logger.LegacyPrintf("service.openai_gateway",
+						"[OpenAI] Skip non-WSv2 invalid_encrypted_content retry stage=%d action=%s because its target reasoning items are missing (account: %s)",
+						int(skipped.Stage), skipped.Action, account.Name)
+				}
+				if stage != openAIEncryptedReasoningStageNone {
 					body, err = marshalOpenAIUpstreamJSON(decoded)
 					if err != nil {
 						return nil, fmt.Errorf("serialize invalid_encrypted_content retry body: %w", err)
 					}
-					if len(invalidDigests) > 0 {
+					if invalidDigests := collectOpenAIEncryptedContentDigestsRaw(lineageEntryBody); len(invalidDigests) > 0 {
 						if lineageSessionHash == "" {
 							lineageSessionHash = s.GenerateSessionHash(c, lineageEntryBody)
 						}
 						s.markOpenAIWSInvalidEncryptedContentLineage(lineageGroupID, lineageSessionHash, invalidDigests)
 					}
-					httpInvalidEncryptedContentRetryTried = true
 					rejectedFieldRetryState.remember(body)
-					logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Retrying non-WSv2 request once after invalid_encrypted_content (account: %s)", account.Name)
+					logger.LegacyPrintf("service.openai_gateway",
+						"[OpenAI] Retrying non-WSv2 request after invalid_encrypted_content escalating to stage=%d action=%s (account: %s)",
+						int(stage), action, account.Name)
 					continue
 				}
 				logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Skip non-WSv2 invalid_encrypted_content retry because encrypted reasoning items are missing (account: %s)", account.Name)
