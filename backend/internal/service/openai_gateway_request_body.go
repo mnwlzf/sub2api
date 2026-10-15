@@ -505,61 +505,12 @@ func SanitizeOpenAICrossModeFailoverReasoning(body []byte) (sanitized []byte, ch
 // trimOpenAIEncryptedReasoningItems, which only strips fields while keeping the
 // reasoning item skeleton.
 func dropOpenAIEncryptedReasoningInputItems(reqBody map[string]any) bool {
-	if len(reqBody) == 0 {
-		return false
-	}
-	inputValue, has := reqBody["input"]
-	if !has {
-		return false
-	}
-	switch input := inputValue.(type) {
-	case []any:
-		filtered := input[:0]
-		changed := false
-		for _, item := range input {
-			if isOpenAIEncryptedReasoningInputItem(item) {
-				changed = true
-				continue
-			}
-			filtered = append(filtered, item)
+	return rewriteOpenAIInputItems(reqBody, func(item any) (next any, changed bool, keep bool) {
+		if isOpenAIEncryptedReasoningInputItem(item) {
+			return nil, true, false
 		}
-		if !changed {
-			return false
-		}
-		if len(filtered) == 0 {
-			delete(reqBody, "input")
-			return true
-		}
-		reqBody["input"] = filtered
-		return true
-	case []map[string]any:
-		filtered := input[:0]
-		changed := false
-		for _, item := range input {
-			if isOpenAIEncryptedReasoningInputItem(item) {
-				changed = true
-				continue
-			}
-			filtered = append(filtered, item)
-		}
-		if !changed {
-			return false
-		}
-		if len(filtered) == 0 {
-			delete(reqBody, "input")
-			return true
-		}
-		reqBody["input"] = filtered
-		return true
-	case map[string]any:
-		if isOpenAIEncryptedReasoningInputItem(input) {
-			delete(reqBody, "input")
-			return true
-		}
-		return false
-	default:
-		return false
-	}
+		return item, false, true
+	})
 }
 
 func isOpenAIEncryptedReasoningInputItem(item any) bool {
