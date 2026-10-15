@@ -1,0 +1,677 @@
+<template>
+  <AppLayout>
+    <div class="space-y-6 p-4 sm:p-6">
+      <!-- Header -->
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 class="text-xl font-semibold text-gray-900 dark:text-gray-100">
+            {{ t('admin.pelicanProbe.title') }}
+          </h1>
+          <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            {{ t('admin.pelicanProbe.description') }}
+          </p>
+        </div>
+        <div class="flex items-center gap-2">
+          <label class="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
+            <Toggle :model-value="globalEnabled" @update:model-value="toggleGlobal" />
+            {{ t('admin.pelicanProbe.globalSwitch') }}
+          </label>
+          <Select
+            v-model="groupFilter"
+            :options="groupFilterOptions"
+            class="w-52"
+            @change="handleFilterChange"
+          />
+          <button @click="reloadAll" class="btn btn-secondary flex items-center gap-1.5 text-sm">
+            <Icon name="refresh" size="sm" :stroke-width="2" />
+            {{ t('admin.pelicanProbe.refresh') }}
+          </button>
+          <button
+            @click="openCreateDialog"
+            class="btn btn-primary flex items-center gap-1.5 text-sm"
+          >
+            <Icon name="plus" size="sm" :stroke-width="2" />
+            {{ t('admin.pelicanProbe.addPlan') }}
+          </button>
+        </div>
+      </div>
+
+      <!-- Stats -->
+      <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div class="rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
+          <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.pelicanProbe.statsTotal') }}</div>
+          <div class="mt-1 text-xl font-semibold text-gray-900 dark:text-gray-100">{{ stats.total }}</div>
+        </div>
+        <div class="rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
+          <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.pelicanProbe.statsPending') }}</div>
+          <div class="mt-1 text-xl font-semibold text-amber-600">{{ stats.pending }}</div>
+        </div>
+        <div class="rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
+          <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.pelicanProbe.statsPass') }}</div>
+          <div class="mt-1 text-xl font-semibold text-emerald-600">{{ stats.pass }}</div>
+        </div>
+        <div class="rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
+          <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.pelicanProbe.statsDegraded') }}</div>
+          <div class="mt-1 text-xl font-semibold text-rose-600">{{ stats.degraded }}</div>
+        </div>
+      </div>
+
+      <!-- Plans -->
+      <div class="rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+        <div class="border-b border-gray-200 px-4 py-3 dark:border-gray-700">
+          <span class="text-sm font-medium text-gray-900 dark:text-gray-100">
+            {{ t('admin.pelicanProbe.plans') }}
+          </span>
+        </div>
+        <div v-if="plansLoading" class="p-6 text-center text-sm text-gray-500">…</div>
+        <div v-else-if="plans.length === 0" class="p-6 text-center text-sm text-gray-500 dark:text-gray-400">
+          {{ t('admin.pelicanProbe.noPlans') }}
+        </div>
+        <div v-else class="overflow-x-auto">
+          <table class="w-full min-w-[760px] text-left text-sm">
+            <thead>
+              <tr class="border-b border-gray-200 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                <th class="px-4 py-2.5 font-medium">{{ t('admin.pelicanProbe.planName') }}</th>
+                <th class="px-4 py-2.5 font-medium">{{ t('admin.pelicanProbe.group') }}</th>
+                <th class="px-4 py-2.5 font-medium">{{ t('admin.pelicanProbe.model') }}</th>
+                <th class="px-4 py-2.5 font-medium">{{ t('admin.pelicanProbe.cronExpression') }}</th>
+                <th class="px-4 py-2.5 font-medium">{{ t('admin.pelicanProbe.enabled') }}</th>
+                <th class="px-4 py-2.5 font-medium">{{ t('admin.pelicanProbe.public') }}</th>
+                <th class="px-4 py-2.5 font-medium">{{ t('admin.pelicanProbe.lastRun') }}</th>
+                <th class="px-4 py-2.5 font-medium">{{ t('admin.pelicanProbe.nextRun') }}</th>
+                <th class="px-4 py-2.5 text-right font-medium">{{ t('admin.pelicanProbe.actions') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="plan in plans"
+                :key="plan.id"
+                class="border-b border-gray-100 last:border-0 hover:bg-gray-50 dark:border-gray-700/50 dark:hover:bg-gray-700/30"
+              >
+                <td class="px-4 py-2.5 font-medium text-gray-900 dark:text-gray-100">
+                  {{ plan.name || `#${plan.id}` }}
+                </td>
+                <td class="px-4 py-2.5 text-gray-600 dark:text-gray-300">{{ groupName(plan.group_id) }}</td>
+                <td class="px-4 py-2.5 font-mono text-xs text-gray-600 dark:text-gray-300">{{ plan.model_id }}</td>
+                <td class="px-4 py-2.5 font-mono text-xs text-gray-600 dark:text-gray-300">{{ plan.cron_expression }}</td>
+                <td class="px-4 py-2.5">
+                  <Toggle :model-value="plan.enabled" @update:model-value="togglePlan(plan, $event)" />
+                </td>
+                <td class="px-4 py-2.5">
+                  <Toggle :model-value="plan.is_public" @update:model-value="togglePublic(plan, $event)" />
+                </td>
+                <td class="px-4 py-2.5 text-xs text-gray-500">{{ formatTime(plan.last_run_at) }}</td>
+                <td class="px-4 py-2.5 text-xs text-gray-500">{{ formatTime(plan.next_run_at) }}</td>
+                <td class="px-4 py-2.5">
+                  <div class="flex items-center justify-end gap-1.5">
+                    <button
+                      @click="runPlan(plan)"
+                      :disabled="runningPlanId === plan.id"
+                      class="btn btn-secondary px-2.5 py-1 text-xs disabled:opacity-50"
+                    >
+                      {{ runningPlanId === plan.id ? t('admin.pelicanProbe.running') : t('admin.pelicanProbe.runNow') }}
+                    </button>
+                    <button @click="openEditDialog(plan)" class="btn btn-secondary px-2.5 py-1 text-xs">
+                      {{ t('admin.pelicanProbe.editPlan') }}
+                    </button>
+                    <button @click="askDelete(plan)" class="btn btn-danger px-2.5 py-1 text-xs">
+                      {{ t('admin.pelicanProbe.deletePlan') }}
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Results wall -->
+      <div>
+        <div class="mb-3 flex items-center justify-between">
+          <span class="text-sm font-medium text-gray-900 dark:text-gray-100">
+            {{ t('admin.pelicanProbe.resultsWall') }}
+          </span>
+        </div>
+        <div v-if="resultsLoading" class="py-8 text-center text-sm text-gray-500">…</div>
+        <div v-else-if="results.length === 0" class="rounded-xl border border-dashed border-gray-300 py-10 text-center text-sm text-gray-500 dark:border-gray-600 dark:text-gray-400">
+          {{ t('admin.pelicanProbe.noResults') }}
+        </div>
+        <div v-else class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div
+            v-for="r in results"
+            :key="r.id"
+            class="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800"
+          >
+            <!-- verdict ribbon -->
+            <div class="relative">
+              <div
+                class="absolute right-3 top-3 z-10 rounded-full px-2.5 py-0.5 text-xs font-semibold shadow"
+                :class="verdictClass(r.verdict)"
+              >
+                {{ verdictLabel(r.verdict) }}
+              </div>
+              <div v-if="r.status === 'failed'" class="flex h-56 items-center justify-center bg-gray-50 p-4 dark:bg-gray-900">
+                <p class="break-all text-xs text-rose-600">{{ r.error_message || t('admin.pelicanProbe.statusFailed') }}</p>
+              </div>
+              <iframe
+                v-else
+                sandbox="allow-scripts"
+                :srcdoc="r.raw_html"
+                class="h-56 w-full bg-white"
+                loading="lazy"
+                title="pelican probe preview"
+              />
+            </div>
+            <div class="space-y-2 border-t border-gray-100 p-3 dark:border-gray-700/60">
+              <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+                <span class="font-medium text-gray-700 dark:text-gray-200">{{ planLabel(r.plan_id) }}</span>
+                <span>·</span>
+                <span>{{ formatTime(r.created_at) }}</span>
+              </div>
+              <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+                <span>{{ t('admin.pelicanProbe.latency') }}: {{ (r.latency_ms / 1000).toFixed(1) }}s</span>
+                <span>{{ t('admin.pelicanProbe.tokens') }}: {{ r.prompt_tokens + r.completion_tokens }}</span>
+                <span v-if="r.reviewed_by">{{ t('admin.pelicanProbe.reviewedBy') }}: {{ r.reviewed_by }}</span>
+              </div>
+              <p v-if="r.note" class="rounded bg-gray-50 p-1.5 text-xs text-gray-600 dark:bg-gray-900 dark:text-gray-300">
+                {{ r.note }}
+              </p>
+              <div class="flex items-center gap-2 pt-1">
+                <button @click="openReview(r, 'pass')" class="btn btn-primary flex-1 py-1 text-xs">
+                  {{ t('admin.pelicanProbe.markPass') }}
+                </button>
+                <button @click="openReview(r, 'degraded')" class="btn btn-danger flex-1 py-1 text-xs">
+                  {{ t('admin.pelicanProbe.markDegraded') }}
+                </button>
+                <button @click="viewSource(r)" class="btn btn-secondary px-2.5 py-1 text-xs">
+                  {{ t('admin.pelicanProbe.viewSource') }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Create/Edit plan dialog -->
+    <BaseDialog
+      :show="planDialog.show"
+      :title="planDialog.editing ? t('admin.pelicanProbe.editPlan') : t('admin.pelicanProbe.addPlan')"
+      width="wide"
+      @close="planDialog.show = false"
+    >
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div>
+          <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
+            {{ t('admin.pelicanProbe.planName') }}
+          </label>
+          <Input v-model="planForm.name" :placeholder="t('admin.pelicanProbe.planNamePlaceholder')" />
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
+            {{ t('admin.pelicanProbe.group') }}
+          </label>
+          <Select v-model="planForm.group_id" :options="groupOptions" :disabled="planDialog.editing" />
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
+            {{ t('admin.pelicanProbe.model') }}
+          </label>
+          <Input v-model="planForm.model_id" placeholder="gpt-5 / claude-..." />
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
+            {{ t('admin.pelicanProbe.cronExpression') }}
+          </label>
+          <Input v-model="planForm.cron_expression" placeholder="0 */4 * * *" />
+        </div>
+        <div class="sm:col-span-2">
+          <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
+            {{ t('admin.pelicanProbe.probeKey') }}
+          </label>
+          <Input
+            v-model="planForm.api_key"
+            type="password"
+            :placeholder="planDialog.editing ? '••••••••' : 'sk-...'"
+            :hint="planDialog.editing ? t('admin.pelicanProbe.probeKeyKeepHint') : t('admin.pelicanProbe.probeKeyHint')"
+          />
+        </div>
+        <div class="sm:col-span-2">
+          <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
+            {{ t('admin.pelicanProbe.baseUrl') }}
+          </label>
+          <Input
+            v-model="planForm.base_url"
+            placeholder="https://your-domain.com"
+            :hint="t('admin.pelicanProbe.baseUrlHint')"
+          />
+        </div>
+        <div class="sm:col-span-2">
+          <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
+            {{ t('admin.pelicanProbe.prompt') }}
+          </label>
+          <textarea
+            v-model="planForm.prompt"
+            rows="2"
+            :placeholder="defaultPrompt"
+            class="input w-full"
+          />
+          <p class="input-hint mt-1.5">{{ t('admin.pelicanProbe.promptHint') }}</p>
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
+            {{ t('admin.pelicanProbe.maxResults') }}
+          </label>
+          <Input v-model="planForm.max_results" type="number" placeholder="50" />
+        </div>
+        <div class="flex items-end gap-4 pb-1">
+          <label class="flex items-center gap-2 text-xs font-medium text-gray-600 dark:text-gray-400">
+            <Toggle v-model="planForm.enabled" />
+            {{ t('admin.pelicanProbe.enabled') }}
+          </label>
+          <label class="flex items-center gap-2 text-xs font-medium text-gray-600 dark:text-gray-400" :title="t('admin.pelicanProbe.publicHint')">
+            <Toggle v-model="planForm.is_public" />
+            {{ t('admin.pelicanProbe.public') }}
+          </label>
+        </div>
+      </div>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <button @click="planDialog.show = false" class="btn btn-secondary text-sm">
+            {{ t('admin.pelicanProbe.close') }}
+          </button>
+          <button @click="savePlan" :disabled="planSaving" class="btn btn-primary text-sm disabled:opacity-50">
+            {{ planDialog.editing ? t('admin.pelicanProbe.editPlan') : t('admin.pelicanProbe.addPlan') }}
+          </button>
+        </div>
+      </template>
+    </BaseDialog>
+
+    <!-- Review dialog -->
+    <BaseDialog
+      :show="reviewDialog.show"
+      :title="t('admin.pelicanProbe.reviewTitle')"
+      width="wide"
+      @close="reviewDialog.show = false"
+    >
+      <div class="space-y-3">
+        <iframe
+          v-if="reviewDialog.result && reviewDialog.result.status === 'success'"
+          sandbox="allow-scripts"
+          :srcdoc="reviewDialog.result.raw_html"
+          class="h-80 w-full rounded-lg border border-gray-200 bg-white dark:border-gray-700"
+          title="pelican probe review preview"
+        />
+        <div>
+          <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
+            {{ t('admin.pelicanProbe.reviewNote') }}
+          </label>
+          <textarea
+            v-model="reviewDialog.note"
+            rows="2"
+            :placeholder="t('admin.pelicanProbe.reviewNotePlaceholder')"
+            class="input w-full"
+          />
+        </div>
+      </div>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <button @click="reviewDialog.show = false" class="btn btn-secondary text-sm">
+            {{ t('admin.pelicanProbe.close') }}
+          </button>
+          <button
+            v-if="reviewDialog.verdict === 'pass'"
+            @click="submitReview"
+            :disabled="reviewSaving"
+            class="btn btn-primary text-sm disabled:opacity-50"
+          >
+            {{ t('admin.pelicanProbe.markPass') }}
+          </button>
+          <button
+            v-else
+            @click="submitReview"
+            :disabled="reviewSaving"
+            class="btn btn-danger text-sm disabled:opacity-50"
+          >
+            {{ t('admin.pelicanProbe.markDegraded') }}
+          </button>
+        </div>
+      </template>
+    </BaseDialog>
+
+    <!-- Source dialog -->
+    <BaseDialog
+      :show="sourceDialog.show"
+      :title="t('admin.pelicanProbe.viewSource')"
+      width="wide"
+      @close="sourceDialog.show = false"
+    >
+      <pre class="max-h-[60vh] overflow-auto rounded-lg bg-gray-900 p-3 text-xs text-gray-100">{{ sourceDialog.html }}</pre>
+      <template #footer>
+        <div class="flex justify-end">
+          <button @click="sourceDialog.show = false" class="btn btn-secondary text-sm">
+            {{ t('admin.pelicanProbe.close') }}
+          </button>
+        </div>
+      </template>
+    </BaseDialog>
+
+    <ConfirmDialog
+      :show="deleteDialog.show"
+      :title="t('admin.pelicanProbe.deletePlan')"
+      :message="t('admin.pelicanProbe.confirmDelete')"
+      @confirm="confirmDelete"
+      @cancel="deleteDialog.show = false"
+    />
+  </AppLayout>
+</template>
+
+<script setup lang="ts">
+import { ref, reactive, computed, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
+import AppLayout from '@/components/layout/AppLayout.vue'
+import BaseDialog from '@/components/common/BaseDialog.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import Select, { type SelectOption } from '@/components/common/Select.vue'
+import Input from '@/components/common/Input.vue'
+import Toggle from '@/components/common/Toggle.vue'
+import { Icon } from '@/components/icons'
+import { adminAPI } from '@/api/admin'
+import { useAppStore } from '@/stores/app'
+import { formatDateTime } from '@/utils/format'
+import type { PelicanProbePlan, PelicanProbeResult, AdminGroup } from '@/types'
+
+const { t } = useI18n()
+const appStore = useAppStore()
+
+const defaultPrompt = '创建一个HTML，内容是SVG绘制一个鹈鹕骑自行车的2D动画'
+
+// --- filter / data ---
+const groupFilter = ref<number | null>(null)
+const groups = ref<AdminGroup[]>([])
+const plans = ref<PelicanProbePlan[]>([])
+const results = ref<PelicanProbeResult[]>([])
+const plansLoading = ref(false)
+const resultsLoading = ref(false)
+const runningPlanId = ref<number | null>(null)
+
+const groupFilterOptions = computed<SelectOption[]>(() => [
+  { value: null, label: t('admin.pelicanProbe.allGroups') },
+  ...groups.value.map((g) => ({ value: g.id, label: g.name }))
+])
+const groupOptions = computed<SelectOption[]>(() =>
+  groups.value.map((g) => ({ value: g.id, label: g.name }))
+)
+
+const groupName = (id: number) => groups.value.find((g) => g.id === id)?.name ?? `#${id}`
+const planLabel = (planId: number) => {
+  const p = plans.value.find((x) => x.id === planId)
+  return p ? `${p.name || `#${p.id}`} · ${p.model_id}` : `#${planId}`
+}
+
+const stats = computed(() => ({
+  total: results.value.length,
+  pending: results.value.filter((r) => r.verdict === 'pending').length,
+  pass: results.value.filter((r) => r.verdict === 'pass').length,
+  degraded: results.value.filter((r) => r.verdict === 'degraded').length
+}))
+
+const formatTime = (v: string | null) => (v ? formatDateTime(v) : '—')
+
+const verdictLabel = (v: string) => {
+  switch (v) {
+    case 'pass':
+      return t('admin.pelicanProbe.verdictPass')
+    case 'degraded':
+      return t('admin.pelicanProbe.verdictDegraded')
+    default:
+      return t('admin.pelicanProbe.verdictPending')
+  }
+}
+const verdictClass = (v: string) => {
+  switch (v) {
+    case 'pass':
+      return 'bg-emerald-600 text-white'
+    case 'degraded':
+      return 'bg-rose-700 text-white'
+    default:
+      return 'bg-amber-500 text-white'
+  }
+}
+
+const globalEnabled = ref(true)
+const loadGlobal = async () => {
+  try {
+    const status = await adminAPI.pelicanProbe.getGlobalStatus()
+    globalEnabled.value = status.enabled
+  } catch {
+    globalEnabled.value = true
+  }
+}
+const toggleGlobal = async (enabled: boolean) => {
+  try {
+    const status = await adminAPI.pelicanProbe.setGlobalStatus(enabled)
+    globalEnabled.value = status.enabled
+    appStore.showSuccess(t('admin.pelicanProbe.updateSuccess'))
+  } catch (e: unknown) {
+    appStore.showError(e instanceof Error ? e.message : String(e))
+  }
+}
+
+const loadGroups = async () => {
+  try {
+    groups.value = await adminAPI.groups.getAll()
+  } catch {
+    groups.value = []
+  }
+}
+const loadPlans = async () => {
+  plansLoading.value = true
+  try {
+    plans.value = await adminAPI.pelicanProbe.listPlans(groupFilter.value ?? undefined)
+  } catch (e: unknown) {
+    appStore.showError(e instanceof Error ? e.message : String(e))
+  } finally {
+    plansLoading.value = false
+  }
+}
+const loadResults = async () => {
+  resultsLoading.value = true
+  try {
+    results.value = await adminAPI.pelicanProbe.listRecent(groupFilter.value ?? undefined, 60)
+  } catch (e: unknown) {
+    appStore.showError(e instanceof Error ? e.message : String(e))
+  } finally {
+    resultsLoading.value = false
+  }
+}
+const reloadAll = async () => {
+  await Promise.all([loadPlans(), loadResults()])
+}
+const handleFilterChange = () => {
+  void reloadAll()
+}
+
+// --- plan dialog ---
+const planDialog = reactive({ show: false, editing: false, id: 0 })
+const planSaving = ref(false)
+const planForm = reactive({
+  name: '',
+  group_id: null as number | null,
+  model_id: '',
+  api_key: '',
+  base_url: '',
+  prompt: '',
+  cron_expression: '0 */4 * * *',
+  enabled: true,
+  is_public: false,
+  max_results: '50'
+})
+const resetPlanForm = () => {
+  planForm.name = ''
+  planForm.group_id = groupFilter.value
+  planForm.model_id = ''
+  planForm.api_key = ''
+  planForm.base_url = ''
+  planForm.prompt = ''
+  planForm.cron_expression = '0 */4 * * *'
+  planForm.enabled = true
+  planForm.is_public = false
+  planForm.max_results = '50'
+}
+const openCreateDialog = () => {
+  resetPlanForm()
+  planDialog.editing = false
+  planDialog.id = 0
+  planDialog.show = true
+}
+const openEditDialog = (plan: PelicanProbePlan) => {
+  planForm.name = plan.name
+  planForm.group_id = plan.group_id
+  planForm.model_id = plan.model_id
+  planForm.api_key = ''
+  planForm.base_url = plan.base_url
+  planForm.prompt = ''
+  planForm.cron_expression = plan.cron_expression
+  planForm.enabled = plan.enabled
+  planForm.is_public = plan.is_public
+  planForm.max_results = String(plan.max_results)
+  planDialog.editing = true
+  planDialog.id = plan.id
+  planDialog.show = true
+}
+const savePlan = async () => {
+  if (!planForm.group_id || !planForm.model_id.trim()) return
+  if (!planDialog.editing && !planForm.api_key.trim()) return
+  planSaving.value = true
+  try {
+    if (planDialog.editing) {
+      const payload: Record<string, unknown> = {
+        name: planForm.name.trim(),
+        model_id: planForm.model_id.trim(),
+        base_url: planForm.base_url.trim(),
+        cron_expression: planForm.cron_expression.trim(),
+        enabled: planForm.enabled,
+        is_public: planForm.is_public,
+        max_results: parseInt(planForm.max_results, 10) || 50
+      }
+      if (planForm.api_key.trim()) payload.api_key = planForm.api_key.trim()
+      if (planForm.prompt.trim()) payload.prompt = planForm.prompt.trim()
+      await adminAPI.pelicanProbe.updatePlan(planDialog.id, payload)
+      appStore.showSuccess(t('admin.pelicanProbe.updateSuccess'))
+    } else {
+      await adminAPI.pelicanProbe.createPlan({
+        name: planForm.name.trim(),
+        group_id: planForm.group_id,
+        model_id: planForm.model_id.trim(),
+        api_key: planForm.api_key.trim(),
+        base_url: planForm.base_url.trim() || undefined,
+        prompt: planForm.prompt.trim() || undefined,
+        cron_expression: planForm.cron_expression.trim() || undefined,
+        enabled: planForm.enabled,
+        is_public: planForm.is_public,
+        max_results: parseInt(planForm.max_results, 10) || 50
+      })
+      appStore.showSuccess(t('admin.pelicanProbe.createSuccess'))
+    }
+    planDialog.show = false
+    await reloadAll()
+  } catch (e: unknown) {
+    appStore.showError(e instanceof Error ? e.message : String(e))
+  } finally {
+    planSaving.value = false
+  }
+}
+const togglePlan = async (plan: PelicanProbePlan, enabled: boolean) => {
+  try {
+    await adminAPI.pelicanProbe.updatePlan(plan.id, { enabled })
+    plan.enabled = enabled
+  } catch (e: unknown) {
+    appStore.showError(e instanceof Error ? e.message : String(e))
+  }
+}
+const togglePublic = async (plan: PelicanProbePlan, isPublic: boolean) => {
+  try {
+    await adminAPI.pelicanProbe.updatePlan(plan.id, { is_public: isPublic })
+    plan.is_public = isPublic
+  } catch (e: unknown) {
+    appStore.showError(e instanceof Error ? e.message : String(e))
+  }
+}
+const runPlan = async (plan: PelicanProbePlan) => {
+  runningPlanId.value = plan.id
+  try {
+    await adminAPI.pelicanProbe.runNow(plan.id)
+    appStore.showSuccess(t('admin.pelicanProbe.runSuccess'))
+    await reloadAll()
+  } catch (e: unknown) {
+    appStore.showError(e instanceof Error ? e.message : String(e))
+  } finally {
+    runningPlanId.value = null
+  }
+}
+
+// --- delete ---
+const deleteDialog = reactive({ show: false, plan: null as PelicanProbePlan | null })
+const askDelete = (plan: PelicanProbePlan) => {
+  deleteDialog.plan = plan
+  deleteDialog.show = true
+}
+const confirmDelete = async () => {
+  if (!deleteDialog.plan) return
+  try {
+    await adminAPI.pelicanProbe.deletePlan(deleteDialog.plan.id)
+    appStore.showSuccess(t('admin.pelicanProbe.deleteSuccess'))
+    deleteDialog.show = false
+    await reloadAll()
+  } catch (e: unknown) {
+    appStore.showError(e instanceof Error ? e.message : String(e))
+  }
+}
+
+// --- review ---
+const reviewDialog = reactive({
+  show: false,
+  result: null as PelicanProbeResult | null,
+  verdict: 'pass' as 'pass' | 'degraded',
+  note: ''
+})
+const reviewSaving = ref(false)
+const openReview = (r: PelicanProbeResult, verdict: 'pass' | 'degraded') => {
+  reviewDialog.result = r
+  reviewDialog.verdict = verdict
+  reviewDialog.note = r.note ?? ''
+  reviewDialog.show = true
+}
+const submitReview = async () => {
+  if (!reviewDialog.result) return
+  reviewSaving.value = true
+  try {
+    const updated = await adminAPI.pelicanProbe.reviewResult(reviewDialog.result.id, {
+      verdict: reviewDialog.verdict,
+      note: reviewDialog.note.trim()
+    })
+    const idx = results.value.findIndex((r) => r.id === updated.id)
+    if (idx >= 0) results.value[idx] = updated
+    appStore.showSuccess(t('admin.pelicanProbe.reviewSuccess'))
+    reviewDialog.show = false
+  } catch (e: unknown) {
+    appStore.showError(e instanceof Error ? e.message : String(e))
+  } finally {
+    reviewSaving.value = false
+  }
+}
+
+// --- source ---
+const sourceDialog = reactive({ show: false, html: '' })
+const viewSource = (r: PelicanProbeResult) => {
+  sourceDialog.html = r.raw_html
+  sourceDialog.show = true
+}
+
+onMounted(async () => {
+  await loadGroups()
+  await loadGlobal()
+  await reloadAll()
+})
+</script>

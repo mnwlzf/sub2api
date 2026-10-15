@@ -655,6 +655,28 @@ func ProvideScheduledTestService(
 	return NewScheduledTestService(planRepo, resultRepo)
 }
 
+// ProvidePelicanProbeService creates PelicanProbeService.
+func ProvidePelicanProbeService(
+	planRepo PelicanProbePlanRepository,
+	resultRepo PelicanProbeResultRepository,
+	encryptor SecretEncryptor,
+	settingRepo SettingRepository,
+	cfg *config.Config,
+) *PelicanProbeService {
+	return NewPelicanProbeService(planRepo, resultRepo, encryptor, settingRepo, cfg)
+}
+
+// ProvidePelicanProbeRunnerService creates and starts PelicanProbeRunnerService.
+func ProvidePelicanProbeRunnerService(
+	planRepo PelicanProbePlanRepository,
+	probeSvc *PelicanProbeService,
+	cfg *config.Config,
+) *PelicanProbeRunnerService {
+	svc := NewPelicanProbeRunnerService(planRepo, probeSvc, cfg)
+	svc.Start()
+	return svc
+}
+
 // ProvideScheduledTestRunnerService creates and starts ScheduledTestRunnerService.
 func ProvideScheduledTestRunnerService(
 	planRepo ScheduledTestPlanRepository,
@@ -971,6 +993,8 @@ var ProviderSet = wire.NewSet(
 	ProvideIdempotencyCleanupService,
 	ProvideScheduledTestService,
 	ProvideScheduledTestRunnerService,
+	ProvidePelicanProbeService,
+	ProvidePelicanProbeRunnerService,
 	NewGroupCapacityService,
 	NewChannelService,
 	wire.Bind(new(ChannelCacheInvalidator), new(*ChannelService)),

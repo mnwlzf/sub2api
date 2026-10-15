@@ -2608,6 +2608,84 @@ export interface UpdateScheduledTestPlanRequest {
   auto_recover?: boolean
 }
 
+// ==================== Pelican Probe Types ====================
+
+export interface PelicanProbePlan {
+  id: number
+  name: string
+  group_id: number
+  model_id: string
+  base_url: string
+  has_api_key: boolean
+  cron_expression: string
+  enabled: boolean
+  is_public: boolean
+  group_name?: string
+  max_results: number
+  last_run_at: string | null
+  next_run_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface PelicanProbeResult {
+  id: number
+  plan_id: number
+  status: string
+  raw_html: string
+  verdict: string
+  note: string
+  reviewed_by: string
+  reviewed_at: string | null
+  error_message: string
+  latency_ms: number
+  prompt_tokens: number
+  completion_tokens: number
+  started_at: string
+  finished_at: string
+  created_at: string
+}
+
+export interface CreatePelicanProbePlanRequest {
+  name?: string
+  group_id: number
+  model_id: string
+  base_url?: string
+  api_key: string
+  prompt?: string
+  cron_expression?: string
+  enabled?: boolean
+  is_public?: boolean
+  max_results?: number
+}
+
+export interface UpdatePelicanProbePlanRequest {
+  name?: string
+  model_id?: string
+  base_url?: string
+  api_key?: string
+  prompt?: string
+  cron_expression?: string
+  enabled?: boolean
+  is_public?: boolean
+  max_results?: number
+}
+
+export interface ReviewPelicanProbeResultRequest {
+  verdict: 'pass' | 'degraded'
+  note?: string
+}
+
+export interface PelicanProbeGlobalStatus {
+  enabled: boolean
+}
+
+export interface PelicanProbePublicStatus {
+  enabled: boolean
+  plans: PelicanProbePlan[]
+  results: PelicanProbeResult[]
+}
+
 // Payment types
 export type { SubscriptionPlan, PaymentOrder, CheckoutInfoResponse } from './payment'
 

@@ -439,6 +439,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/ops/pelican-probe',
+    name: 'AdminPelicanProbe',
+    component: () => import('@/views/admin/PelicanProbeView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'IQ Probe',
+      titleKey: 'admin.pelicanProbe.title',
+      descriptionKey: 'admin.pelicanProbe.description'
+    }
+  },
+  {
     path: '/admin/audit-logs',
     name: 'AdminAuditLogs',
     component: () => import('@/views/admin/AuditLogView.vue'),
@@ -511,6 +523,17 @@ const routes: RouteRecordRaw[] = [
       requiresAdmin: false,
       title: 'Channel Status',
       titleKey: 'nav.channelStatus'
+    }
+  },
+  {
+    path: '/iq-status',
+    name: 'IQStatus',
+    component: () => import('@/views/user/IQStatusView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'IQ Status',
+      titleKey: 'nav.iqStatus'
     }
   },
   {

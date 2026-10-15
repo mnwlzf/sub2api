@@ -115,6 +115,9 @@ func RegisterAdminRoutes(
 		// 定时测试计划
 		registerScheduledTestRoutes(admin, h)
 
+		// 鹈鹕智商探针（分组级降智监控）
+		registerPelicanProbeRoutes(admin, h)
+
 		// 渠道管理
 		registerChannelRoutes(admin, h)
 
@@ -743,6 +746,22 @@ func registerScheduledTestRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	}
 	// Nested under accounts
 	admin.GET("/accounts/:id/scheduled-test-plans", h.Admin.ScheduledTest.ListByAccount)
+}
+
+func registerPelicanProbeRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	plans := admin.Group("/pelican-probe-plans")
+	{
+		plans.GET("", h.Admin.PelicanProbe.ListPlans)
+		plans.POST("", h.Admin.PelicanProbe.CreatePlan)
+		plans.PUT("/:id", h.Admin.PelicanProbe.UpdatePlan)
+		plans.DELETE("/:id", h.Admin.PelicanProbe.DeletePlan)
+		plans.POST("/:id/run", h.Admin.PelicanProbe.RunNow)
+		plans.GET("/:id/results", h.Admin.PelicanProbe.ListResults)
+	}
+	admin.GET("/pelican-probe-results", h.Admin.PelicanProbe.ListRecent)
+	admin.POST("/pelican-probe-results/:id/review", h.Admin.PelicanProbe.Review)
+	admin.GET("/pelican-probe-status", h.Admin.PelicanProbe.GetGlobalStatus)
+	admin.PUT("/pelican-probe-status", h.Admin.PelicanProbe.SetGlobalStatus)
 }
 
 func registerErrorPassthroughRoutes(admin *gin.RouterGroup, h *handler.Handlers) {

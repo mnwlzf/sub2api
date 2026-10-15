@@ -29,6 +29,8 @@ func RegisterUserRoutes(
 		user := authenticated.Group("/user")
 		{
 			user.GET("/profile", h.User.GetProfile)
+			// 鹈鹕智商探针公开状态（只读，仅返回管理员标记公开的计划）
+			user.GET("/pelican-probe/status", h.Admin.PelicanProbe.ListPublicStatus)
 			user.PUT("/password", h.User.ChangePassword)
 			user.PUT("", h.User.UpdateProfile)
 			user.GET("/aff", h.User.GetAffiliate)
