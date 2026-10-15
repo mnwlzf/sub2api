@@ -501,8 +501,13 @@ type OpenAIGatewayService struct {
 	openaiOAuth429RetryStartedAt        sync.Map // key: int64(accountID), value: time.Time
 	// openCodeWarpRotateMu / openCodeWarpRotate 惰性持有 WARP 出口轮换的
 	// singleflight 与最小间隔状态（见 opencode_warp_rotate.go）。
-	openCodeWarpRotateMu                sync.Mutex
-	openCodeWarpRotate                  *openCodeWarpRotateState
+	openCodeWarpRotateMu sync.Mutex
+	openCodeWarpRotate   *openCodeWarpRotateState
+	// openAILearnedBlipMu / openAILearnedBlip 惰性持有「学习型代理抖动窗口」状态
+	// （见 openai_learned_proxy_blip_window.go）。与上面的轮换窗口状态刻意分离：
+	// 那边表达「我们知道自己在轮换」，这边表达「从错误形状反推代理层抖动」。
+	openAILearnedBlipMu                 sync.Mutex
+	openAILearnedBlip                   *openAILearnedBlipState
 	grokCredentialMutationLocks         sync.Map // key: int64(accountID), value: *sync.Mutex
 	openaiOAuth429WindowStartUnixNano   atomic.Int64
 	openaiOAuth429WindowCount           atomic.Int64

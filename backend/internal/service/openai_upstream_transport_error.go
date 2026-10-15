@@ -109,7 +109,13 @@ func isClientCanceledTransportError(ctx context.Context, err error) bool {
 //     the WARP exit-rotation window for that account's proxy, in which case the
 //     cooldown is suppressed (see
 //     suppressOpenAITransportTempUnschedDuringWarpRotation) because the blip was
-//     caused by our own rotation, not by a durable fault;
+//     caused by our own rotation, not by a durable fault. Failures that miss
+//     that window are given one bounded grace by the learned proxy-blip window
+//     when their shape is a proxy-path failure (DNS not-found /
+//     ECONNREFUSED / EHOSTUNREACH / ENETUNREACH), which covers rotation sources
+//     sub2api cannot see (e.g. the host's systemd warp-rotate.timer) — see
+//     suppressOpenAITransportTempUnschedDuringLearnedProxyBlip; outside both
+//     windows the classification semantics are unchanged;
 //  3. returns an error that is *UpstreamFailoverError (so the handler fails over
 //     to a healthy account) for all non-canceled errors, or a plain error for
 //     context.Canceled (client gone — no failover, no eviction).
@@ -155,10 +161,18 @@ func (s *OpenAIGatewayService) handleOpenAIUpstreamTransportError(ctx context.Co
 	}
 
 	if classifyUpstreamTransportError(err).Persistent {
-		// 轮换预期窗口内：错误由我们自己的 WARP 出口轮换（出口容器重启、隧道中断）
-		// 造成，是瞬时抖动而非持久故障。抑制冷却（不写 DB、不设内存 block），
-		// 但仍照常 failover 到下一个账号。
-		if !s.suppressOpenAITransportTempUnschedDuringWarpRotation(ctx, account, safeErr) {
+		// 两支抑制来源，按精确度排序（任一命中都抑制；都不命中才照常冷却）：
+		//
+		//  1. 轮换预期窗口：错误由我们自己的 WARP 出口轮换（出口容器重启、隧道中断）
+		//     造成，是瞬时抖动而非持久故障。精确——本进程确知自己在轮换。
+		//  2. 学习型代理抖动窗口：兜底——覆盖 sub2api 不可见的轮换来源（宿主机
+		//     systemd warp-rotate.timer 等）。从错误形状反推「代理路径瞬时失败」，
+		//     首次给 30s 宽限，5 分钟内不重复给，因此真坏代理仍会被冷却。
+		//     见 openai_learned_proxy_blip_window.go。
+		//
+		// 抑制只影响冷却（不写 DB、不设内存 block），failover 与错误事件照常。
+		if !s.suppressOpenAITransportTempUnschedDuringWarpRotation(ctx, account, safeErr) &&
+			!s.suppressOpenAITransportTempUnschedDuringLearnedProxyBlip(ctx, account, err, safeErr) {
 			s.tempUnscheduleOpenAITransportError(ctx, account, safeErr)
 		}
 	}
