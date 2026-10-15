@@ -115,10 +115,25 @@ version >= 1.18.34  -> 403 FreeTierError     ← 注意：是 403，不是 426�
 **含义**：请求体里回放的**加密推理块**（Responses `input` 中 `type:"reasoning"` / `type:"compaction"` 的 `encrypted_content`）
 是由**另一个账号**（另一把上游 API key）签发的。上游把密文绑定到签发它的 caller，本账号重放别人的密文 → 整条请求被 400 拒绝。
 
-**成因**：sub2api 对同一把客户端 key 做**多账号 failover / 负载均衡**。同一条会话的多个回合可能先后落在不同账号上，
-而客户端（尤其是 **compact** 时重放整段历史）会把**所有**历史密文一起发上来，必然混有非当前账号签发的块。
-生产实例：`account_id=31589`（`opencode-lnyocly2`）在 2026-10-15 11:07:48 收到该 400（`body_bytes=3131111`），
-而该会话此前 10-14 19:2x–10-15 10:42 的成功回合**全在 `31568`**（`opencode-lnyocly`）。
+**成因（区分「已证」与「推测」）**：
+
+- **上游语义（已证）**：上游把 `encrypted_content` 绑定到「拿到它的那个 caller」；重放一个不是发给你的密文即整条请求 400。
+  报文本身只说了这一层。
+- **多账号 failover 是主假设（相关性已证，机制未证）**：sub2api 对同一把客户端 key 做多账号负载均衡/failover，
+  同一条会话的多个回合会先后落在不同账号上。生产实例：`account_id=31589`（`opencode-lnyocly2`）
+  在 2026-10-15 11:07:48 收到该 400（`body_bytes=3131111`），而该会话此前 10-14 19:2x–10-15 10:42 的成功回合
+  **全在 `31568`**（`opencode-lnyocly`）——失败账号 ≠ 此前成功账号，这是目前最强的相关性证据。
+- **⚠️ 但「密文绑定到上游 API key」这一具体机制未被证实，且有反证**：2026-10-15 实测把账号 `31589` 签发的
+  `reasoning.encrypted_content`（1426 字符）连同 `id`/`summary` 一起重放，请求被调度到 **`31588`**
+  （`opencode-zf`，与 31589 的 `credentials->>'api_key'` md5 不同：`f7b74d876d` vs `72ef2c06fc`），
+  **4/4 次都返回 200**，没有触发该 400。
+  也就是说：**跨账号重放 `reasoning` 项的密文，本身并不必然失败。** 可能的解释（均未验证）：
+  ① 绑定的粒度是上游 opencode 账号/组织而非单个 API key（四个账号可能是同一 opencode 账号下的四把 key）；
+  ② 被拒的密文其实来自 **`compaction` / `compaction_summary`** 项而不是 `reasoning` 项
+  （`context_management:[{"type":"compaction",...}]` 在本上游被忽略，拿不到 compaction 项，故无法验证）；
+  ③ 绑定到会话/`previous_response_id` 等其它作用域。
+- **结论**：修复的价值不依赖成因的精确性 —— 只要上游报这条错，丢掉加密推理项就是正确的补救；
+  但**不要把「跨账号 = 必然失败」当成已证事实**，也不要据此去摘账号。
 
 **⚠️ 关键点：`code` 为 `null`。** 上游这条报错**不带错误码**，只有消息。
 
@@ -144,7 +159,7 @@ version >= 1.18.34  -> 403 FreeTierError     ← 注意：是 403，不是 426�
 
 1. 报错文本：`ops_error_logs.upstream_error_detail LIKE '%was not issued to this caller%'`，
    且 `error_phase='upstream'`、`upstream_status_code=400`；`upstream_errors` 里 `error.code` 为 `null`。
-2. **看该会话前后尝试的 `account_id` 是否不同**（这是本问题的确诊依据）：
+2. **看该会话前后尝试的 `account_id` 是否不同**（这是**相关性证据，不是充分证据** —— 见上文反证）：
 
    ```sql
    -- ① 失败回合的账号
