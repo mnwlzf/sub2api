@@ -127,6 +127,20 @@ export default {
       judgeModelPlaceholder: 'deepseek-chat / gpt-4o-mini',
       judgeModelHint: 'The judge model auto-grades the candy quiz answer. Required: enter an available model id (e.g. a deepseek model)',
       judgeModelRequired: 'A judge model is required for the candy quiz',
+      judgeKey: 'Judge Key',
+      judgeKeyHint:
+        'Optional. Blank = reuse the probe key. Use a key bound to the group that serves the judge model',
+      judgeKeyKeepHint: 'Leave blank to keep the existing judge key',
+      judgeKeyGroupHint:
+        'The key must be bound to a group that serves the judge model (e.g. the key of the group that model lives in)',
+      judgeBaseUrl: 'Judge Gateway URL',
+      judgeBaseUrlHint:
+        'Optional. Blank = reuse the probe gateway. Set this when the judge model is served by another gateway',
+      candyAnswerLabel: 'Model answer',
+      candyVerdictPass: 'Judged 21 ✓',
+      candyVerdictDegraded: 'Not judged 21 ✗',
+      candyVerdictPending: 'Awaiting judge / review',
+      resultUnavailable: 'This probe did not produce a valid result',
       effort: 'Reasoning effort',
       effortUnspecified: 'Unspecified',
       effortHint: 'Probe requests include a reasoning_effort field; omitted when unspecified',

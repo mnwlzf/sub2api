@@ -1,0 +1,166 @@
+<template>
+  <div class="relative">
+    <!-- verdict ribbon: candy gets its own "judged 21 / not judged 21" wording -->
+    <div
+      v-if="showVerdict"
+      class="absolute right-3 top-3 z-10 rounded-full px-2.5 py-0.5 text-xs font-semibold shadow"
+      :class="verdictClass"
+    >
+      {{ verdictLabel }}
+    </div>
+
+    <!-- failure -->
+    <div
+      v-if="isFailed"
+      class="flex items-center justify-center bg-gray-50 p-4 dark:bg-gray-900"
+      :class="previewClass"
+    >
+      <p class="break-all text-xs text-rose-600">{{ failureText }}</p>
+    </div>
+
+    <!-- candy: the model answered in prose, so render text — never an iframe -->
+    <div v-else-if="isCandy" class="space-y-2 p-3">
+      <div class="text-xs font-medium text-gray-500 dark:text-gray-400">
+        {{ t('admin.pelicanProbe.candyAnswerLabel') }}
+      </div>
+      <!-- Vue interpolation escapes the answer; raw_html must never be v-html'd. -->
+      <pre
+        class="overflow-auto whitespace-pre-wrap break-words rounded-lg bg-gray-50 p-2.5 font-mono text-xs leading-relaxed text-gray-800 dark:bg-gray-900 dark:text-gray-200"
+        :class="previewClass"
+      >{{ result.raw_html }}</pre>
+      <div class="rounded-lg px-2.5 py-1.5 text-xs font-semibold" :class="candyVerdictClass">
+        {{ candyVerdictText }}
+      </div>
+    </div>
+
+    <!-- pelican: the model produced an HTML/SVG document, preview it -->
+    <iframe
+      v-else
+      sandbox="allow-scripts"
+      :srcdoc="result.raw_html"
+      class="w-full bg-white"
+      :class="previewClass"
+      loading="lazy"
+      title="pelican probe preview"
+    />
+
+    <p
+      v-if="displayNote"
+      class="mx-3 mb-2 mt-1 rounded bg-gray-50 p-1.5 text-xs text-gray-600 dark:bg-gray-900 dark:text-gray-300"
+    >
+      {{ displayNote }}
+    </p>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+import type { PelicanProbeResult } from '@/types'
+
+// ProbeResultBody renders one probe result body. It exists so the admin results
+// wall and the user-facing status page share a single branch:
+//
+//   * candy  → the model produced a prose answer; render it as (escaped) text
+//              and surface the judge verdict. Rendering it in an iframe showed
+//              raw text as a broken web page.
+//   * pelican → the model produced HTML/SVG; keep the sandboxed iframe preview.
+//   * failed  → admin keeps the raw upstream error, users get a plain sentence
+//              (raw errors embed internal endpoints such as
+//              `Post "http://127.0.0.1:8080/v1/chat/completions"`).
+
+// test_type is not part of the plan-result payload yet; when a backend starts
+// sending it, prefer it over the plan lookup.
+type ResultWithTestType = PelicanProbeResult & { test_type?: string }
+
+const props = withDefaults(
+  defineProps<{
+    result: PelicanProbeResult
+    /** Plan test type ('candy' | 'pelican'); empty falls back to result.test_type. */
+    testType?: string
+    /** 'user' hides raw upstream errors; 'admin' keeps them verbatim. */
+    variant?: 'admin' | 'user'
+    /** Height/scroll classes for the iframe or the text answer box. */
+    previewClass?: string
+    /**
+     * Whether to draw the verdict ribbon. Views that already render their own
+     * status badge (the user-facing status cards) turn it off.
+     */
+    showVerdict?: boolean
+  }>(),
+  { testType: '', variant: 'admin', previewClass: 'h-56', showVerdict: true }
+)
+
+const { t } = useI18n()
+
+const isCandy = computed(
+  () =>
+    ((props.testType || (props.result as ResultWithTestType).test_type || '') as string).toLowerCase() ===
+    'candy'
+)
+
+const isFailed = computed(() => props.result.status === 'failed')
+
+const failureText = computed(() => {
+  if (props.variant === 'user') {
+    return t('admin.pelicanProbe.resultUnavailable')
+  }
+  return props.result.error_message || t('admin.pelicanProbe.statusFailed')
+})
+
+// Judge notes double as diagnostics ("auto-judge skipped: judge HTTP 404: …")
+// and can embed the internal gateway URL, so the user-facing view keeps only
+// plain human notes.
+const displayNote = computed(() => {
+  const note = (props.result.note || '').trim()
+  if (!note) return ''
+  if (props.variant !== 'user') return note
+  if (/^auto-judge skipped/i.test(note) || /https?:\/\//i.test(note)) return ''
+  return note
+})
+
+const verdictClass = computed(() => {
+  switch (props.result.verdict) {
+    case 'pass':
+      return 'bg-emerald-600 text-white'
+    case 'degraded':
+      return 'bg-rose-700 text-white'
+    default:
+      return 'bg-amber-500 text-white'
+  }
+})
+
+const verdictLabel = computed(() => {
+  if (isCandy.value) return candyVerdictText.value
+  switch (props.result.verdict) {
+    case 'pass':
+      return t('admin.pelicanProbe.verdictPass')
+    case 'degraded':
+      return t('admin.pelicanProbe.verdictDegraded')
+    default:
+      return t('admin.pelicanProbe.verdictPending')
+  }
+})
+
+const candyVerdictText = computed(() => {
+  switch (props.result.verdict) {
+    case 'pass':
+      return t('admin.pelicanProbe.candyVerdictPass')
+    case 'degraded':
+      return t('admin.pelicanProbe.candyVerdictDegraded')
+    default:
+      return t('admin.pelicanProbe.candyVerdictPending')
+  }
+})
+
+const candyVerdictClass = computed(() => {
+  switch (props.result.verdict) {
+    case 'pass':
+      return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+    case 'degraded':
+      return 'bg-rose-50 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300'
+    default:
+      return 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+  }
+})
+</script>

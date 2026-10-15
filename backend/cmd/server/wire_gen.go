@@ -266,7 +266,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	scheduledTestHandler := admin.NewScheduledTestHandler(scheduledTestService)
 	pelicanProbePlanRepository := repository.NewPelicanProbePlanRepository(db)
 	pelicanProbeResultRepository := repository.NewPelicanProbeResultRepository(db)
-	pelicanProbeService := service.ProvidePelicanProbeService(pelicanProbePlanRepository, pelicanProbeResultRepository, secretEncryptor, settingRepository, configConfig)
+	pelicanProbeService := service.ProvidePelicanProbeService(pelicanProbePlanRepository, pelicanProbeResultRepository, secretEncryptor, settingRepository, configConfig, gatewayService, groupRepository, apiKeyRepository)
 	pelicanProbeHandler := admin.NewPelicanProbeHandler(pelicanProbeService)
 	channelHandler := admin.NewChannelHandler(channelService, billingService, pricingService)
 	channelMonitorHandler := admin.NewChannelMonitorHandler(channelMonitorService)

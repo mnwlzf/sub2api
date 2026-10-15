@@ -91,24 +91,30 @@ const PelicanJudgeCandidateMaxRunes = 4000
 
 // PelicanProbePlan represents a group-level IQ probe plan.
 type PelicanProbePlan struct {
-	ID              int64      `json:"id"`
-	Name            string     `json:"name"`
-	GroupID         int64      `json:"group_id"`
-	ModelID         string     `json:"model_id"`
-	BaseURL         string     `json:"base_url"`
-	HasAPIKey       bool       `json:"has_api_key"`
-	TestType        string     `json:"test_type"`
-	ReasoningEffort string     `json:"reasoning_effort"`
-	JudgeModelID    string     `json:"judge_model_id"`
-	CronExpression  string     `json:"cron_expression"`
-	Enabled         bool       `json:"enabled"`
-	IsPublic        bool       `json:"is_public"`
-	GroupName       string     `json:"group_name,omitempty"`
-	MaxResults      int        `json:"max_results"`
-	LastRunAt       *time.Time `json:"last_run_at"`
-	NextRunAt       *time.Time `json:"next_run_at"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
+	ID              int64  `json:"id"`
+	Name            string `json:"name"`
+	GroupID         int64  `json:"group_id"`
+	ModelID         string `json:"model_id"`
+	BaseURL         string `json:"base_url"`
+	HasAPIKey       bool   `json:"has_api_key"`
+	TestType        string `json:"test_type"`
+	ReasoningEffort string `json:"reasoning_effort"`
+	JudgeModelID    string `json:"judge_model_id"`
+	// HasJudgeAPIKey reports whether a judge-specific API key is stored. The key
+	// itself is never serialized (same contract as HasAPIKey).
+	HasJudgeAPIKey bool `json:"has_judge_api_key"`
+	// JudgeBaseURL is the gateway the judge call goes to; empty = the probe
+	// gateway. Not a secret, so it round-trips verbatim.
+	JudgeBaseURL   string     `json:"judge_base_url"`
+	CronExpression string     `json:"cron_expression"`
+	Enabled        bool       `json:"enabled"`
+	IsPublic       bool       `json:"is_public"`
+	GroupName      string     `json:"group_name,omitempty"`
+	MaxResults     int        `json:"max_results"`
+	LastRunAt      *time.Time `json:"last_run_at"`
+	NextRunAt      *time.Time `json:"next_run_at"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
 }
 
 // PelicanProbePlanRow is the internal representation including secrets.
@@ -117,6 +123,9 @@ type PelicanProbePlanRow struct {
 	PelicanProbePlan
 	Prompt          string
 	APIKeyEncrypted string
+	// JudgeAPIKeyEncrypted is the candy judge key ciphertext ("" = the judge
+	// reuses the probe key). Never leaves the process in plaintext.
+	JudgeAPIKeyEncrypted string
 }
 
 // PelicanProbeResult represents a single probe execution result.
