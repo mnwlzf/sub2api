@@ -78,6 +78,8 @@ export default {
       updateSuccess: '计划更新成功',
       deleteSuccess: '计划删除成功',
       runSuccess: '探测完成，请评审结果',
+      runStarted: '探测已启动，完成后会自动刷新',
+      probing: '探测中…',
       runFailed: '探测失败',
       noResults: '暂无探测结果',
       verdictPending: '待评审',
@@ -129,7 +131,16 @@ export default {
       effortUnspecified: '不指定',
       effortHint: '探测请求附带 reasoning_effort 字段；不指定则不传',
       viewHistory: '查看历史（{n}）',
-      hideHistory: '收起历史'
+      hideHistory: '收起历史',
+      statusNormal: '正常',
+      statusDegraded: '降智',
+      statusPending: '待评审',
+      statusNoData: '无有效结果',
+      failureUpstream: '上游服务暂时不可用',
+      failureTimeout: '探测超时，未在时限内返回',
+      failureConcurrency: '网关繁忙，请稍后重试',
+      failureConfig: '探测配置有误',
+      failureUnknown: '本次探测未获得有效结果'
     },
 
     // Proxies Management

@@ -78,6 +78,8 @@ export default {
       updateSuccess: 'Plan updated successfully',
       deleteSuccess: 'Plan deleted successfully',
       runSuccess: 'Probe finished, please review the result',
+      runStarted: 'Probe started; this page refreshes automatically when it finishes',
+      probing: 'Probing…',
       runFailed: 'Probe failed',
       noResults: 'No probe results yet',
       verdictPending: 'Pending',
@@ -129,7 +131,16 @@ export default {
       effortUnspecified: 'Unspecified',
       effortHint: 'Probe requests include a reasoning_effort field; omitted when unspecified',
       viewHistory: 'View history ({n})',
-      hideHistory: 'Hide history'
+      hideHistory: 'Hide history',
+      statusNormal: 'Normal',
+      statusDegraded: 'Degraded',
+      statusPending: 'Pending review',
+      statusNoData: 'No valid result',
+      failureUpstream: 'Upstream service is temporarily unavailable',
+      failureTimeout: 'Probe timed out before it returned',
+      failureConcurrency: 'Gateway is busy, please try again later',
+      failureConfig: 'Probe configuration is invalid',
+      failureUnknown: 'No valid result from this probe'
     },
 
     // Proxies
