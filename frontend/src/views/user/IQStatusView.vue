@@ -65,10 +65,51 @@
             </span>
           </div>
 
-          <!-- Recent results -->
-          <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <!-- Latest result (large card) -->
+          <div v-if="latestByPlan(plan.id)" class="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+            <div class="relative">
+              <div
+                class="absolute right-3 top-3 z-10 rounded-full px-2.5 py-0.5 text-xs font-semibold shadow"
+                :class="verdictClass(latestByPlan(plan.id)!.verdict)"
+              >
+                {{ verdictLabel(latestByPlan(plan.id)!.verdict) }}
+              </div>
+              <div v-if="latestByPlan(plan.id)!.status === 'failed'" class="flex h-40 items-center justify-center bg-gray-50 p-4 dark:bg-gray-900">
+                <p class="break-all text-xs text-rose-600">{{ latestByPlan(plan.id)!.error_message || t('admin.pelicanProbe.statusFailed') }}</p>
+              </div>
+              <iframe
+                v-else
+                sandbox="allow-scripts"
+                :srcdoc="latestByPlan(plan.id)!.raw_html"
+                class="h-80 w-full bg-white"
+                loading="lazy"
+                title="pelican probe preview"
+              />
+            </div>
+            <div class="space-y-1.5 border-t border-gray-100 p-3 dark:border-gray-700/60">
+              <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+                <span>{{ formatTime(latestByPlan(plan.id)!.created_at) }}</span>
+                <span>·</span>
+                <span>{{ t('admin.pelicanProbe.latency') }}: {{ (latestByPlan(plan.id)!.latency_ms / 1000).toFixed(1) }}s</span>
+              </div>
+              <p v-if="latestByPlan(plan.id)!.note" class="rounded bg-gray-50 p-1.5 text-xs text-gray-600 dark:bg-gray-900 dark:text-gray-300">
+                {{ latestByPlan(plan.id)!.note }}
+              </p>
+            </div>
+          </div>
+          <p v-else class="text-xs text-gray-400">{{ t('admin.pelicanProbe.noResults') }}</p>
+
+          <!-- History toggle -->
+          <div v-if="historyByPlan(plan.id).length > 0" class="mt-3">
+            <button @click="toggleHistory(plan.id)" class="btn btn-secondary px-3 py-1.5 text-xs">
+              {{ expandedHistory[plan.id] ? t('admin.pelicanProbe.hideHistory') : t('admin.pelicanProbe.viewHistory', { n: historyByPlan(plan.id).length }) }}
+            </button>
+          </div>
+
+          <!-- History results -->
+          <div v-if="expandedHistory[plan.id]" class="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             <div
-              v-for="r in resultsByPlan(plan.id)"
+              v-for="r in historyByPlan(plan.id)"
               :key="r.id"
               class="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800"
             >
@@ -79,14 +120,14 @@
                 >
                   {{ verdictLabel(r.verdict) }}
                 </div>
-                <div v-if="r.status === 'failed'" class="flex h-56 items-center justify-center bg-gray-50 p-4 dark:bg-gray-900">
+                <div v-if="r.status === 'failed'" class="flex h-48 items-center justify-center bg-gray-50 p-4 dark:bg-gray-900">
                   <p class="break-all text-xs text-rose-600">{{ r.error_message || t('admin.pelicanProbe.statusFailed') }}</p>
                 </div>
                 <iframe
                   v-else
                   sandbox="allow-scripts"
                   :srcdoc="r.raw_html"
-                  class="h-56 w-full bg-white"
+                  class="h-48 w-full bg-white"
                   loading="lazy"
                   title="pelican probe preview"
                 />
@@ -110,7 +151,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Select, { type SelectOption } from '@/components/common/Select.vue'
@@ -118,6 +159,7 @@ import { Icon } from '@/components/icons'
 import { getPublicStatus } from '@/api/pelicanProbe'
 import { useAppStore } from '@/stores/app'
 import { formatDateTime } from '@/utils/format'
+import { extractApiErrorMessage } from '@/utils/apiError'
 import type { PelicanProbePublicStatus, PelicanProbeResult } from '@/types'
 
 const { t } = useI18n()
@@ -145,10 +187,21 @@ const filteredPlans = computed(() => {
 })
 
 const resultsByPlan = (planId: number): PelicanProbeResult[] =>
-  (status.value?.results ?? []).filter((r) => r.plan_id === planId)
+  (status.value?.results ?? [])
+    .filter((r) => r.plan_id === planId)
+    .slice()
+    .sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at))
 
 const latestByPlan = (planId: number): PelicanProbeResult | undefined =>
   resultsByPlan(planId)[0]
+
+const historyByPlan = (planId: number): PelicanProbeResult[] =>
+  resultsByPlan(planId).slice(1)
+
+const expandedHistory = reactive<Record<number, boolean>>({})
+const toggleHistory = (planId: number) => {
+  expandedHistory[planId] = !expandedHistory[planId]
+}
 
 const formatTime = (v: string | null) => (v ? formatDateTime(v) : '—')
 
@@ -182,7 +235,7 @@ const load = async () => {
   try {
     status.value = await getPublicStatus()
   } catch (e: unknown) {
-    appStore.showError(e instanceof Error ? e.message : String(e))
+    appStore.showError(extractApiErrorMessage(e, t('common.error')))
   } finally {
     loading.value = false
   }

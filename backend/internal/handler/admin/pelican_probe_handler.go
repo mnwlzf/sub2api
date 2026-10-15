@@ -21,28 +21,34 @@ func NewPelicanProbeHandler(probeSvc *service.PelicanProbeService) *PelicanProbe
 }
 
 type createPelicanProbePlanRequest struct {
-	Name           string `json:"name"`
-	GroupID        int64  `json:"group_id" binding:"required"`
-	ModelID        string `json:"model_id" binding:"required"`
-	BaseURL        string `json:"base_url"`
-	APIKey         string `json:"api_key" binding:"required"`
-	Prompt         string `json:"prompt"`
-	CronExpression string `json:"cron_expression"`
-	Enabled        *bool  `json:"enabled"`
-	IsPublic       *bool  `json:"is_public"`
-	MaxResults     int    `json:"max_results"`
+	Name            string `json:"name"`
+	GroupID         int64  `json:"group_id" binding:"required"`
+	ModelID         string `json:"model_id" binding:"required"`
+	BaseURL         string `json:"base_url"`
+	APIKey          string `json:"api_key" binding:"required"`
+	Prompt          string `json:"prompt"`
+	TestType        string `json:"test_type"`
+	ReasoningEffort string `json:"reasoning_effort"`
+	JudgeModelID    string `json:"judge_model_id"`
+	CronExpression  string `json:"cron_expression"`
+	Enabled         *bool  `json:"enabled"`
+	IsPublic        *bool  `json:"is_public"`
+	MaxResults      int    `json:"max_results"`
 }
 
 type updatePelicanProbePlanRequest struct {
-	Name           *string `json:"name"`
-	ModelID        *string `json:"model_id"`
-	BaseURL        *string `json:"base_url"`
-	APIKey         string  `json:"api_key"`
-	Prompt         *string `json:"prompt"`
-	CronExpression *string `json:"cron_expression"`
-	Enabled        *bool   `json:"enabled"`
-	IsPublic       *bool   `json:"is_public"`
-	MaxResults     *int    `json:"max_results"`
+	Name            *string `json:"name"`
+	ModelID         *string `json:"model_id"`
+	BaseURL         *string `json:"base_url"`
+	APIKey          string  `json:"api_key"`
+	Prompt          *string `json:"prompt"`
+	TestType        *string `json:"test_type"`
+	ReasoningEffort *string `json:"reasoning_effort"`
+	JudgeModelID    *string `json:"judge_model_id"`
+	CronExpression  *string `json:"cron_expression"`
+	Enabled         *bool   `json:"enabled"`
+	IsPublic        *bool   `json:"is_public"`
+	MaxResults      *int    `json:"max_results"`
 }
 
 type setPelicanProbeEnabledRequest struct {
@@ -81,15 +87,18 @@ func (h *PelicanProbeHandler) CreatePlan(c *gin.Context) {
 		return
 	}
 	in := service.CreatePlanInput{
-		Name:           req.Name,
-		GroupID:        req.GroupID,
-		ModelID:        req.ModelID,
-		BaseURL:        req.BaseURL,
-		APIKey:         req.APIKey,
-		Prompt:         req.Prompt,
-		CronExpression: req.CronExpression,
-		Enabled:        true,
-		MaxResults:     req.MaxResults,
+		Name:            req.Name,
+		GroupID:         req.GroupID,
+		ModelID:         req.ModelID,
+		BaseURL:         req.BaseURL,
+		APIKey:          req.APIKey,
+		Prompt:          req.Prompt,
+		TestType:        req.TestType,
+		ReasoningEffort: req.ReasoningEffort,
+		JudgeModelID:    req.JudgeModelID,
+		CronExpression:  req.CronExpression,
+		Enabled:         true,
+		MaxResults:      req.MaxResults,
 	}
 	if req.Enabled != nil {
 		in.Enabled = *req.Enabled
@@ -118,15 +127,18 @@ func (h *PelicanProbeHandler) UpdatePlan(c *gin.Context) {
 		return
 	}
 	in := service.UpdatePlanInput{
-		Name:           req.Name,
-		ModelID:        req.ModelID,
-		BaseURL:        req.BaseURL,
-		APIKey:         req.APIKey,
-		Prompt:         req.Prompt,
-		CronExpression: req.CronExpression,
-		Enabled:        req.Enabled,
-		IsPublic:       req.IsPublic,
-		MaxResults:     req.MaxResults,
+		Name:            req.Name,
+		ModelID:         req.ModelID,
+		BaseURL:         req.BaseURL,
+		APIKey:          req.APIKey,
+		Prompt:          req.Prompt,
+		TestType:        req.TestType,
+		ReasoningEffort: req.ReasoningEffort,
+		JudgeModelID:    req.JudgeModelID,
+		CronExpression:  req.CronExpression,
+		Enabled:         req.Enabled,
+		IsPublic:        req.IsPublic,
+		MaxResults:      req.MaxResults,
 	}
 	updated, err := h.probeSvc.UpdatePlan(c.Request.Context(), planID, in)
 	if err != nil {

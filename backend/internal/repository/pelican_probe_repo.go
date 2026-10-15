@@ -10,6 +10,7 @@ import (
 
 // pelicanProbePlanColumns is the full column list for plan scans (incl. secrets).
 const pelicanProbePlanColumns = `id, name, group_id, model_id, base_url, api_key_encrypted, prompt,
+	test_type, reasoning_effort, judge_model_id,
 	cron_expression, enabled, is_public, max_results, last_run_at, next_run_at, created_at, updated_at`
 
 // --- Plan Repository ---
@@ -25,10 +26,12 @@ func NewPelicanProbePlanRepository(db *sql.DB) service.PelicanProbePlanRepositor
 func (r *pelicanProbePlanRepository) Create(ctx context.Context, plan *service.PelicanProbePlanRow) (*service.PelicanProbePlanRow, error) {
 	row := r.db.QueryRowContext(ctx, `
 		INSERT INTO pelican_probe_plans (name, group_id, model_id, base_url, api_key_encrypted, prompt,
+			test_type, reasoning_effort, judge_model_id,
 			cron_expression, enabled, is_public, max_results, next_run_at, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW(), NOW())
 		RETURNING `+pelicanProbePlanColumns+`
 	`, plan.Name, plan.GroupID, plan.ModelID, plan.BaseURL, plan.APIKeyEncrypted, plan.Prompt,
+		plan.TestType, plan.ReasoningEffort, plan.JudgeModelID,
 		plan.CronExpression, plan.Enabled, plan.IsPublic, plan.MaxResults, plan.NextRunAt)
 	return scanPelicanProbePlan(row)
 }
@@ -84,10 +87,12 @@ func (r *pelicanProbePlanRepository) Update(ctx context.Context, plan *service.P
 	row := r.db.QueryRowContext(ctx, `
 		UPDATE pelican_probe_plans
 		SET name = $2, model_id = $3, base_url = $4, api_key_encrypted = $5, prompt = $6,
-			cron_expression = $7, enabled = $8, is_public = $9, max_results = $10, next_run_at = $11, updated_at = NOW()
+			test_type = $7, reasoning_effort = $8, judge_model_id = $9,
+			cron_expression = $10, enabled = $11, is_public = $12, max_results = $13, next_run_at = $14, updated_at = NOW()
 		WHERE id = $1
 		RETURNING `+pelicanProbePlanColumns+`
 	`, plan.ID, plan.Name, plan.ModelID, plan.BaseURL, plan.APIKeyEncrypted, plan.Prompt,
+		plan.TestType, plan.ReasoningEffort, plan.JudgeModelID,
 		plan.CronExpression, plan.Enabled, plan.IsPublic, plan.MaxResults, plan.NextRunAt)
 	return scanPelicanProbePlan(row)
 }
@@ -95,6 +100,7 @@ func (r *pelicanProbePlanRepository) Update(ctx context.Context, plan *service.P
 func (r *pelicanProbePlanRepository) ListPublic(ctx context.Context) ([]*service.PelicanProbePlanRow, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT p.id, p.name, p.group_id, p.model_id, p.base_url, p.api_key_encrypted, p.prompt,
+			p.test_type, p.reasoning_effort, p.judge_model_id,
 			p.cron_expression, p.enabled, p.is_public, p.max_results, p.last_run_at, p.next_run_at,
 			p.created_at, p.updated_at, g.name
 		FROM pelican_probe_plans p
@@ -112,6 +118,7 @@ func (r *pelicanProbePlanRepository) ListPublic(ctx context.Context) ([]*service
 		p := &service.PelicanProbePlanRow{}
 		if err := rows.Scan(
 			&p.ID, &p.Name, &p.GroupID, &p.ModelID, &p.BaseURL, &p.APIKeyEncrypted, &p.Prompt,
+			&p.TestType, &p.ReasoningEffort, &p.JudgeModelID,
 			&p.CronExpression, &p.Enabled, &p.IsPublic, &p.MaxResults,
 			&p.LastRunAt, &p.NextRunAt, &p.CreatedAt, &p.UpdatedAt, &p.GroupName,
 		); err != nil {
@@ -268,6 +275,7 @@ func scanPelicanProbePlan(row scannable) (*service.PelicanProbePlanRow, error) {
 	p := &service.PelicanProbePlanRow{}
 	if err := row.Scan(
 		&p.ID, &p.Name, &p.GroupID, &p.ModelID, &p.BaseURL, &p.APIKeyEncrypted, &p.Prompt,
+		&p.TestType, &p.ReasoningEffort, &p.JudgeModelID,
 		&p.CronExpression, &p.Enabled, &p.IsPublic, &p.MaxResults,
 		&p.LastRunAt, &p.NextRunAt, &p.CreatedAt, &p.UpdatedAt,
 	); err != nil {
