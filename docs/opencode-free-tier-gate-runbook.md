@@ -148,7 +148,41 @@ version >= 1.18.34  -> 403 FreeTierError     ← 注意：是 403，不是 426�
   这才是 compaction 频繁踩这个 400 的根因。
 - 推论：**摘账号无效**。某账号长期失败先看它是否总在轮换后立刻失败。
 
-#### 1.5.3 精确变换（逐字采用，实测 200）
+**⚠️ 这是「lineage/归属」检查，不是「密文完整性」检查（2026-10-15 实测）**：
+
+| 探针（都在**同一个**出口上发出） | 结果 |
+|---|---|
+| 把密文中段 64 个字符改掉（保持 base64 形状与长度），`id` 不变 | **200** |
+| 真实密文 + **伪造 `id`**（`rs_bogus:rs_bogus`） | **200** |
+| 把**另一个出口**签发的真实密文原样重放 | **400** A |
+
+即：**只有「签发出口 ≠ 发送出口」才会被拒**；同出口下密文被篡改、或 `id` 被换成不存在的值，上游都不报错。
+所以**复现 A/B 的唯一可靠办法是换出口**（或拿一个别处签发的密文）——做「复现验证」时不要用「改密文 / 改 id」
+去尝试构造失败，那构造不出来。
+
+#### 1.5.3 生产端到端验证（部署后实测，2026-10-15）
+
+部署 `265741d7b`（本阶梯）后，用**跨出口签发的密文**打真实网关，完整走了两级：
+
+1. 从**服务器直连出口** `107.175.132.14` 铸造密文 R2（与网关的 WARP 出口 `2a09:bac5:a5fb:31f5::4fa:e` 不同）。
+2. 直接重放 R2 → **400** A（`was not issued to this caller`）——确认 R2 是「别人的密文」。
+3. 把 `[u1, R2, a1, u2]` 通过**已部署的网关** `POST /v1/responses`（`muse-spark-1.3-contributor-free`）：
+
+   ```
+   13:37:47.752  Retrying non-WSv2 request after invalid_encrypted_content escalating to stage=1 action=drop_encrypted_content
+   13:37:48.983  Retrying non-WSv2 request after invalid_encrypted_content escalating to stage=2 action=drop_reasoning_id
+   → 客户端 HTTP 200（SSE response.completed，无 error 事件）；stage=3 未用到
+   ```
+
+   **修复前**（只删密文、保留 `id`）这一步会返回 400 B —— 这就是本阶梯的价值。
+
+⚠️ **重要副作用：阶梯自愈成功时，`ops_error_logs` 里不会出现 A/B 行**（重试路径不落终态错误）。
+所以「部署后 A/B 计数 = 0」**不是**有效验收信号 —— 即使阶梯天天在救，计数也仍可能是 0。
+**正确的验收信号是容器日志里的 `escalating to stage=`**，以及 `ops_error_logs` 里**没有新增**的 400
+（而不是「A/B 计数为 0」）。本次观察窗内：A 计数 0 / B 计数 0 / 任意 400 0（窗口很短，本身是弱证据），
+而 `stage=1` 1 次、`stage=2` 1 次（强证据）。
+
+#### 1.5.4 精确变换（逐字采用，实测 200）
 
 ```json
 // 之前
@@ -161,7 +195,7 @@ version >= 1.18.34  -> 403 FreeTierError     ← 注意：是 403，不是 426�
 - ⚠️ **`summary` 往往是空的**（`"summary":[]`）：保留它只是保留**空壳/占位**（维持 item 顺序/占位），
   空壳上游照样接受（200）。不要以为「保留了 summary」= 保留了推理上下文。
 
-#### 1.5.4 成因（旧版记录，保留作教训）
+#### 1.5.5 成因（旧版记录，保留作教训）
 
 **多账号 failover 曾为主假设（相关性已证、机制已证伪）**：sub2api 对同一把客户端 key 做多账号负载均衡/failover，
 同一条会话的多个回合会先后落在不同账号上。生产实例：`account_id=31589`（`opencode-lnyocly2`）
@@ -810,6 +844,7 @@ print("mintedAt =", E - 1 - (hexv >> 12))      # 反推铸造时刻（应是一�
 | **2026-10-15** | **（结论修正）上界二分确定**：`1.18.32` / `1.18.33` → 200；`1.18.34` / `1.18.35` → 403；`1.17.9` → 426 | 划出闭区间 `[1.18.0, 1.18.33]` | 24 请求单变量消融（含 8 个 403，无封禁） |
 | **2026-10-15** | **（生产阻塞修复）`400 reasoning `encrypted_content` was not issued to this caller` 未触发自愈**：该报错 `error.code` 为 `null`，原判据只认 code，两个分支都不匹配 → 恢复被跳过。改为按消息匹配（`encrypted_content` + `was not issued to this caller`），复用既有「丢加密推理项 + 重试一次」逻辑 | compact / 长历史重放时 `400`，客户端直接失败；`ops_error_logs` 5 天内 8 条（10-10 起，账号 31568/31585/31589，全部 `muse-spark-1.3-contributor-free`，全部 `upstream_status_code=400`） | 相关性证据（非充分）：失败回合账号 ≠ 同会话早前成功回合账号（如 10-15 11:07:48 失败于 `31589`，此前成功全在 `31568`）；反证见 §1.5；容器日志 `transport:"http"`、无 `Retrying non-WSv2` 行。见 §1.5 |
 | **2026-10-15** | **（根因修正 + 二次修复）绑定语义确定为「绑出口 IP」；单级恢复不够，改为三级降级阶梯**：`httpInvalidEncryptedContentRetryTried`（单 bool）→ `openAIEncryptedReasoningLadder`（每级计数器，S1 丢 `encrypted_content` / S2 再去 `id` / S3 整项删，各级最多一次、总上限 3 次）；新增 B 类判据 `Referenced reasoning item` + `was not found or has expired`；新增 `dropOpenAIReasoningItemIDs`、`rewriteOpenAIInputItems`（`dropOpenAIEncryptedReasoningInputItems` 改为复用同一 walker，默认语义不变） | 修复前：#23 的恢复只删密文、保留 `id` → 按变体 2/5 仍 `400`，只是消息从 A 变成 B（`not found or has expired`）；且出口轮换后必然复发 | 6 组变体实测（同出口换账号 200 / 换出口 `not issued to this caller`）；本次复现：同出口 原样→200、S1→400 B 类、S2→200；并用**实现产出的 body 逐字节**重发上游：S1 body→400、S2 body→200。见 §1.5 |
+| **2026-10-15** | **（部署验证）三级阶梯在生产端到端跑通**：跨出口签发的密文打已部署网关 → 日志 `escalating to stage=1` → `stage=2` → 客户端 **HTTP 200**（stage=3 未用） | 修复前同样输入返回 400 B | squash `265741d7b`，revision/health/restart 全对；并实测确认「同出口篡改密文 / 伪造 `id` 仍 200、换出口才 400」——复现 A/B 必须换出口。另：阶梯自愈时 `ops_error_logs` **不落** A/B 行，验收要看 `escalating to stage=`。见 §1.5.2 / §1.5.3 |
 
 ### ⚠️ 教训：**「顺手把版本号升到最新」是危险操作**
 
