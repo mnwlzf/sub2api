@@ -20,7 +20,7 @@
 │        ──► 轮换服务自己的探测请求也没过门禁 → §3.1（先修这个，否则轮换 100% 失败）
 ├─ HTTP 426 + "UpgradeRequired" ──► UA 版本低于下界 1.18.0 → §1.3
 ├─ HTTP 400 + "encrypted_content … was not issued to this caller"
-│   ──► 回放的加密推理块不属于当前账号（多账号 failover）→ §1.5（已有自愈，仅需确认是否触发）
+│   ──► 回放的加密推理块不属于当前 caller → §1.5（已有自愈，仅需确认是否触发）
 └─ 其它（400 / 403 RegionError / 500）──► §1.4
 ```
 
@@ -103,10 +103,10 @@ version >= 1.18.34  -> 403 FreeTierError     ← 注意：是 403，不是 426�
 | `400` + ``only `"auto"` is supported for `tool_choice` `` | `/responses` 端点只接受 `tool_choice:"auto"` | 别在 Responses/Anthropic 方言注入 `tool_choice` |
 | `400` + `Recursive JSON schemas are not currently supported` | `/responses` 拒绝带 `$ref` 等 JSON Schema 引用关键字的工具 | 查客户端带来的工具 schema（门禁注入的是扁平 schema） |
 | `403` + `RegionError` | 地理封锁（如 `muse-spark-*` 在某些网络） | 换出口或换模型；**不是门禁失败** |
-| `400` + ``reasoning `encrypted_content` was not issued to this caller`` | 回放的加密推理块**由别的账号签发**（多账号 failover 造成），不属于当前 caller | §1.5（已有自愈：丢加密项 + 重试一次） |
+| `400` + ``reasoning `encrypted_content` was not issued to this caller`` | 回放的加密推理块不属于当前 caller；**多账号 failover 是主假设、机制未证**（见 §1.5） | §1.5（已有自愈：丢加密项 + 重试一次） |
 | `500` | 上游模型侧故障（如 `jev-1.13-free` 在 chat/responses 均 500） | 换模型 |
 
-### 1.5 `400` + ``reasoning `encrypted_content` was not issued to this caller`` —— 跨账号回放的加密推理块
+### 1.5 `400` + ``reasoning `encrypted_content` was not issued to this caller`` —— 加密推理块不属于当前 caller
 
 ```json
 {"error":{"code":null,"message":"reasoning `encrypted_content` was not issued to this caller","param":null,"type":"invalid_request_error"},"model":"muse-spark-1.3-contributor-free"}
@@ -723,7 +723,7 @@ print("mintedAt =", E - 1 - (hexv >> 12))      # 反推铸造时刻（应是一�
 | **2026-10-15** | **（结论修正）403 不封 key、不封 IP —— 「封 15 分钟」的因果被证伪** | 受控实测 4 组 403→200 间隔仅 **21–33 秒**；24 请求二分全程无 429/超时/5xx | 同 key / 同出口交错对照（`01:46:44→01:47:17`、`01:48:20→01:48:41`、`01:49:02→01:49:23`、`01:54:03→01:54:24` UTC）。15 分钟仅作操作纪律保留。见 §1.2 |
 | **2026-10-15** | **（生产阻塞修复）`openCodeUpstreamUserAgent` 由 `1.19.0` 回落到带内 `1.18.31`** | 修复前 `1.19.0` → **403 FreeTierError**；修复后 `1.18.31` → **200**（SSE `response.created`） | 单变量实测（同 key / body / 出口，间隔 22 s）：`1.19.0 ai-sdk/…bun/1.3.14` → `403`（`cf-ray a4ab483e6aa67d78-ORD`）；`1.18.31 ai-sdk/…bun/1.3.14` → `200`（`cf-ray a4ab489f1f847d78-ORD`）。同步：常量注释、`openai_opencode_freetier.go` 信号 2、新增 `TestOpenCodeUpstreamUserAgentVersionBand`（已用变异测试确认能拦住 `1.19.0`） |
 | **2026-10-15** | **（结论修正）上界二分确定**：`1.18.32` / `1.18.33` → 200；`1.18.34` / `1.18.35` → 403；`1.17.9` → 426 | 划出闭区间 `[1.18.0, 1.18.33]` | 24 请求单变量消融（含 8 个 403，无封禁） |
-| **2026-10-15** | **（生产阻塞修复）`400 reasoning `encrypted_content` was not issued to this caller` 未触发自愈**：该报错 `error.code` 为 `null`，原判据只认 code，两个分支都不匹配 → 恢复被跳过。改为按消息匹配（`encrypted_content` + `was not issued to this caller`），复用既有「丢加密推理项 + 重试一次」逻辑 | compact / 长历史重放时 `400`，客户端直接失败；`ops_error_logs` 5 天内 8 条（10-10 起，账号 31568/31585/31589，全部 `muse-spark-1.3-contributor-free`，全部 `upstream_status_code=400`） | 确诊依据：失败回合账号 ≠ 同会话早前成功回合账号（如 10-15 11:07:48 失败于 `31589`，此前成功全在 `31568`）；容器日志 `transport:"http"`、无 `Retrying non-WSv2` 行。见 §1.5 |
+| **2026-10-15** | **（生产阻塞修复）`400 reasoning `encrypted_content` was not issued to this caller` 未触发自愈**：该报错 `error.code` 为 `null`，原判据只认 code，两个分支都不匹配 → 恢复被跳过。改为按消息匹配（`encrypted_content` + `was not issued to this caller`），复用既有「丢加密推理项 + 重试一次」逻辑 | compact / 长历史重放时 `400`，客户端直接失败；`ops_error_logs` 5 天内 8 条（10-10 起，账号 31568/31585/31589，全部 `muse-spark-1.3-contributor-free`，全部 `upstream_status_code=400`） | 相关性证据（非充分）：失败回合账号 ≠ 同会话早前成功回合账号（如 10-15 11:07:48 失败于 `31589`，此前成功全在 `31568`）；反证见 §1.5；容器日志 `transport:"http"`、无 `Retrying non-WSv2` 行。见 §1.5 |
 
 ### ⚠️ 教训：**「顺手把版本号升到最新」是危险操作**
 
