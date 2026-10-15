@@ -26,6 +26,10 @@ const (
 	warpBlipDNSNotFoundErr = `socks connect tcp warp-test:1080->opencode.ai:443: dial tcp: lookup warp-test on 127.0.0.11:53: no such host`
 	// 容器端口尚未就绪。
 	warpBlipConnRefusedErr = `dial tcp 172.19.0.5:1080: connect: connection refused`
+	// 代理凭据被拒：Persistent，但**不是**代理路径形状（见
+	// isOpenAIProxyPathTransportErrorShape）。学习型代理抖动窗口刻意不覆盖这一类配置型
+	// 持久故障，因此「轮换窗口之外照常冷却」的用例改用它，避免与学习窗口叠加。
+	warpBlipProxyAuthFailedErr = `Post "https://chatgpt.com/backend-api/codex/responses": socks connect tcp 85.255.176.68:12324->chatgpt.com:443: username/password authentication failed`
 )
 
 // ---------------------------------------------------------------------------
@@ -203,7 +207,10 @@ func TestWarpRotationWindow_ExpiredWindowStillTempUnschedules(t *testing.T) {
 
 	ctx, logs := warpBlipObservedContext(t)
 	c, _ := newOpenAITransportErrTestContext()
-	err := svc.handleOpenAIUpstreamTransportError(ctx, c, account, errors.New(warpBlipConnRefusedErr), false)
+	// 用「非代理路径形状」的持久故障：本用例只验证轮换窗口过期后不再保护。
+	// （代理路径形状的 DNS/refused 现在会被学习型代理抖动窗口兜底，见
+	// openai_learned_proxy_blip_window_test.go。）
+	err := svc.handleOpenAIUpstreamTransportError(ctx, c, account, errors.New(warpBlipProxyAuthFailedErr), false)
 
 	var fo *UpstreamFailoverError
 	require.True(t, errors.As(err, &fo))
@@ -211,7 +218,7 @@ func TestWarpRotationWindow_ExpiredWindowStillTempUnschedules(t *testing.T) {
 	calls := repo.snapshot()
 	require.Len(t, calls, 1, "窗口过期后必须照常冷却")
 	require.Equal(t, int64(4627), calls[0].accountID)
-	require.Contains(t, calls[0].reason, "connection refused")
+	require.Contains(t, calls[0].reason, "authentication failed")
 	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
 	require.Empty(t, logs.FilterMessage("openai.account_temp_unscheduled_transport_suppressed").All())
 }
@@ -224,7 +231,9 @@ func TestWarpRotationWindow_OtherProxyAccountUnaffected(t *testing.T) {
 	account := warpBlipAccount(31568, 99, PlatformOpenCodeGo)
 
 	c, _ := newOpenAITransportErrTestContext()
-	err := svc.handleOpenAIUpstreamTransportError(context.Background(), c, account, errors.New(warpBlipDNSNotFoundErr), false)
+	// 同样用非代理路径形状：本用例验证的是「轮换窗口按 proxyID 生效」，
+	// 不应被学习窗口（proxy 99 的首次代理路径失败会拿到自己的宽限）干扰。
+	err := svc.handleOpenAIUpstreamTransportError(context.Background(), c, account, errors.New(warpBlipProxyAuthFailedErr), false)
 
 	var fo *UpstreamFailoverError
 	require.True(t, errors.As(err, &fo))
@@ -239,7 +248,10 @@ func TestWarpRotationWindow_NoWindowStillTempUnschedules(t *testing.T) {
 	account := warpBlipAccount(31588, 17, PlatformOpenCodeGo)
 
 	c, _ := newOpenAITransportErrTestContext()
-	err := svc.handleOpenAIUpstreamTransportError(context.Background(), c, account, errors.New(warpBlipDNSNotFoundErr), false)
+	// 非代理路径形状：无轮换窗口时保持原有冷却语义。代理路径形状（DNS no such host /
+	// connection refused）在无轮换窗口时现在由学习型代理抖动窗口给一次 30s 宽限，
+	// 其边界（过期 / 最小间隔 / 真坏代理）由 openai_learned_proxy_blip_window_test.go 覆盖。
+	err := svc.handleOpenAIUpstreamTransportError(context.Background(), c, account, errors.New(warpBlipProxyAuthFailedErr), false)
 
 	var fo *UpstreamFailoverError
 	require.True(t, errors.As(err, &fo))
@@ -247,6 +259,7 @@ func TestWarpRotationWindow_NoWindowStillTempUnschedules(t *testing.T) {
 
 	// 只读探测不得惰性创建轮换状态（未启用轮换的进程上传输错误路径零副作用）。
 	require.Nil(t, svc.openCodeWarpRotate, "只读窗口探测不得创建轮换状态")
+	require.Nil(t, svc.openAILearnedBlip, "形状不符时也不得创建学习窗口状态")
 }
 
 func TestWarpRotationWindow_NilAndDirectAccountsAreSafe(t *testing.T) {
@@ -406,7 +419,8 @@ func TestWarpRotationWindow_ConcurrentAccountsAndRequests(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			account := warpBlipAccount(int64(2000+i), 99, PlatformOpenAI)
-			_ = svc.handleOpenAIUpstreamTransportError(context.Background(), nil, account, errors.New(warpBlipDNSNotFoundErr), false)
+			// 非代理路径形状：窗口外的账号必须逐个照常冷却，不被学习型代理抖动窗口兜底。
+			_ = svc.handleOpenAIUpstreamTransportError(context.Background(), nil, account, errors.New(warpBlipProxyAuthFailedErr), false)
 		}(i)
 	}
 	// 同时并发读/开/收敛窗口状态本身。
