@@ -206,31 +206,36 @@ func maskOpenCodeProbeHeaderValue(name, value string) string {
 }
 
 // writeOpenCodeProbeSessionDiagnostics 把会话 id 的门禁判定结果写进 dump：
-// 形状、hex 段、低 12 位是否等于 0xFFE，以及官方编码的自洽校验。
-// 排查时先看这几行，能立刻区分「形状问题」与「位不变量问题」。
+// 形状、hex 段、低 12 位是否等于 0xFFE、反解出的铸造时刻与时间窗判定。
+// 排查时先看这几行，能立刻区分「形状问题」「低 12 位问题」与「时间窗问题」。
 func writeOpenCodeProbeSessionDiagnostics(dump *strings.Builder, session string) {
 	fmt.Fprintf(dump, "=== SESSION DIAGNOSTICS ===\n")
 	if session == "" {
 		fmt.Fprintf(dump, "  session: <absent>\n  shape_ok: false\n  gate_ok: false\n")
 		return
 	}
+	now := time.Now().UnixMilli()
 	fmt.Fprintf(dump, "  session: %s\n", session)
 	fmt.Fprintf(dump, "  shape_ok: %v\n", openCodeCanonicalSessionRe.MatchString(session))
-	fmt.Fprintf(dump, "  gate_ok (shape + low12==%s): %v\n", openCodeGateSessionLowHex, isOpenCodeGateSessionID(session))
+	fmt.Fprintf(dump, "  gate_ok (shape + official tA encoding + window): %v\n", isOpenCodeGateSessionID(session))
 	if !openCodeCanonicalSessionRe.MatchString(session) {
 		return
 	}
 	hexPart := session[4:16]
 	fmt.Fprintf(dump, "  hex12: %s\n  low12: %s (required: %s)\n", hexPart, session[13:16], openCodeGateSessionLowHex)
-	if value, perr := strconv.ParseUint(hexPart, 16, 64); perr == nil {
-		derived := int64(value >> 12)
-		// 官方编码的自洽等式：(hex>>12) + mintedAtMillis == epoch - 1。
-		// 若 delta_ms 明显偏离 0（几秒以上），说明这个 id 不是当前时刻铸造的，
-		// 而是复用的历史样本。
-		fmt.Fprintf(dump, "  official encoding check: (hex>>12)+unixMilli = %d, epoch-1 = %d, delta_ms = %d\n",
-			derived+time.Now().UnixMilli(), openCodeGateSessionEpochMillis-1,
-			(openCodeGateSessionEpochMillis-1)-(derived+time.Now().UnixMilli()))
+	mintedAt, ok := openCodeGateSessionMintedAtMillis(session)
+	if !ok {
+		fmt.Fprintf(dump, "  minted_at: <不可反解：低 12 位不是 %s>\n", openCodeGateSessionLowHex)
+		return
 	}
+	// 官方编码的自洽等式：(hex>>12) + mintedAtMillis == epoch - 1，即
+	// minted_at 就是该 id 的铸造时刻。delta_ms = minted_at - now：明显偏离 0 说明
+	// 这是复用的历史样本；超出 [now-maxAge, now+futureSkew] 窗口时会被重铸
+	// （重铸只损失一次 prompt cache 命中，不会产生 403）。
+	fmt.Fprintf(dump, "  minted_at: %d (unix ms)\n", mintedAt)
+	fmt.Fprintf(dump, "  window: [now-%dms, now+%dms], delta_ms = %d, in_window = %v\n",
+		openCodeGateSessionMintMaxAgeMillis, openCodeGateSessionMintFutureSkewMillis,
+		mintedAt-now, isOpenCodeGateSessionID(session))
 }
 
 // maskOpenCodeProbeKey 掩码 API key，**必须**覆盖 oc_sk_ / sk- 两种前缀方案。

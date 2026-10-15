@@ -28,16 +28,27 @@ func openCodeGateTestAccount(credentials map[string]any) *Account {
 	}
 }
 
-// openCodeGateTestSessionID 是一个门禁合法的会话 id 样例。hex 段
-// ecb74175effe 取自 2026-10-13 单变量实测中返回 200 的真实客户端 id，
-// 其低 12 位（末 3 个 hex 字符）为 ffe。
+// openCodeGateTestSessionID 是 2026-10-13 单变量实测中返回 200 的真实客户端 id：
+// hex 段 ecb74175effe 反解出的铸造时刻为 2026-10-13T09:15:46Z，低 12 位为 ffe。
+//
+// 注意：门禁判据自 2026-10-14 起还校验高 36 位（铸造时刻窗口），因此这个样本会
+// 随时间老化。判定它的测试必须用 isOpenCodeGateSessionIDAt 注入参照时刻，不要用
+// 墙钟，否则测试会随时间漂移。需要「当前合法」的样本时用
+// openCodeGateTestSessionIDMintedAt。
 const openCodeGateTestSessionID = "ses_ecb74175effeABCDEFGHIJKLMN"
 
-// openCodeGateRejectedSessionID 是形状合法但**位不合法**的样例：hex 段
+// openCodeGateRejectedSessionID 是形状合法但 hex 段低位不合法的样例：hex 段
 // d1bfaf4aff65 低 12 位为 f65，2026-10-13 实测返回 403 FreeTierError。
 // 任何用 sha256 派生 hex 的实现（含本仓库 2026-10-11 之前的算法）都会产出
 // 这种值，因此必须被识别为非法并重铸。
 const openCodeGateRejectedSessionID = "ses_d1bfaf4aff65ABCDEFGHIJKLMN"
+
+// openCodeGateTestSessionIDMintedAt 用生产铸造函数在指定时刻构造一个门禁合法的
+// 会话 id（后缀固定，只让 hex 段随铸造时刻变化），把「形状 + 完整编码」判据的
+// 时间窗钉成确定性断言。
+func openCodeGateTestSessionIDMintedAt(mintedMillis int64) string {
+	return "ses_" + openCodeGateSessionHexPartAt(mintedMillis) + "ABCDEFGHIJKLMN"
+}
 
 func TestCanonicalOpenCodeIDShape(t *testing.T) {
 	got := canonicalOpenCodeID("ses", "conversation-1")
@@ -73,37 +84,96 @@ func TestCanonicalOpenCodeIDDeterministicAndDistinct(t *testing.T) {
 	)
 }
 
-// TestIsOpenCodeGateSessionID 钉住门禁会话 id 的两段判定：形状（正则）与位不变量
-// （hex 段低 12 位 == ffe）。位不变量是 2026-10-11 上游把 /zen/* 改成薄代理时
-// 引入的；只查形状的实现在那之后必然 403 FreeTierError。
+// TestOpenCodeGateSessionLowHexMatchesValue 钉住字符串常量与数值常量恒等：反解
+// 校验按位比较用数值形式，测试与探针用字符串形式，两者漂移会静默改变判据。
+func TestOpenCodeGateSessionLowHexMatchesValue(t *testing.T) {
+	require.Equal(t, openCodeGateSessionLowHex, fmt.Sprintf("%03x", openCodeGateSessionLowValue))
+}
+
+// TestIsOpenCodeGateSessionID 钉住门禁会话 id 的完整判定：形状（正则）与完整
+// 官方 tA() 编码（hex 段低 12 位 == ffe，且高 36 位反解出的铸造时刻落在窗口内）。
+//
+// 时间窗相关用例通过 nowMillis 注入参照时刻；nowMillis == 0 表示用真实墙钟。
+// 真实客户端样本按各自反解出的铸造时刻求值（它们会老化，墙钟判定会让测试漂移）。
 func TestIsOpenCodeGateSessionID(t *testing.T) {
+	const (
+		// 四枚真实客户端 id（hex 段来自实测抓包 / 二进制样本），反解出的铸造时刻
+		// 见下方 minted* 常量；四者低 12 位均为 ffe。
+		officialSampleECB = "ses_ecb74175effeABCDEFGHIJKLMN"
+		officialSampleF39 = "ses_f390f32e4ffeABCDEFGHIJKLMN"
+		officialSampleFC7 = "ses_fc7b694ecffeABCDEFGHIJKLMN"
+		officialSampleFC4 = "ses_fc42c626effeABCDEFGHIJKLMN"
+
+		mintedECB = int64(1791882946721) // 2026-10-13T09:15:46Z
+		mintedF39 = int64(1790044065051) // 2026-09-22T02:27:45Z
+		mintedFC7 = int64(1787650730771) // 2026-08-25T09:38:50Z
+		mintedFC4 = int64(1787710119313) // 2026-08-26T02:08:39Z
+	)
+	now := time.Now().UnixMilli()
+
 	tests := []struct {
-		name string
-		id   string
-		want bool
+		name      string
+		id        string
+		nowMillis int64 // 0 表示用真实墙钟
+		want      bool
 	}{
-		{"实测返回 200 的真实客户端 id", openCodeGateTestSessionID, true},
-		{"hex 段为 000000000ffe", "ses_000000000ffeABCDEFGHIJKLMN", true},
-		{"hex 段为 fffffffffffe", "ses_fffffffffffeABCDEFGHIJKLMN", true},
-		{"实测返回 403 的真实客户端 id（末 3 位 f65）", openCodeGateRejectedSessionID, false},
-		{"末 3 位 fff", "ses_000000000fffABCDEFGHIJKLMN", false},
-		{"末 3 位全 0", "ses_000000000000ABCDEFGHIJKLMN", false},
-		{"哈希派生值（旧算法输出，末 3 位 9ab）", "ses_0123456789abABCDEFGHIJKLMN", false},
-		{"UUID", "3f2504e0-4f89-11d3-9a0c-0305e82c3301", false},
-		{"短串", "abc", false},
-		{"空串", "", false},
-		{"缺 ses_ 前缀", "msg_ecb74175effeABCDEFGHIJKLMN", false},
-		{"hex 段含大写", "ses_ECB74175EFFEABCDEFGHIJKLMN", false},
-		{"后缀含非字母数字", "ses_ecb74175effeABCDEFGHIJKLM!", false},
-		{"总长不足", "ses_ecb74175effeABCDEFGHIJKLM", false},
-		{"总长超出", "ses_ecb74175effeABCDEFGHIJKLMNO", false},
-		{"前后有空白（不 trim，由调用方负责）", " ses_ecb74175effeABCDEFGHIJKLMN", false},
+		// ── 接受：形状 + 完整官方编码 ─────────────────────────────────
+		{"实测返回 200 的真实客户端 id（按铸造时刻求值）", officialSampleECB, mintedECB, true},
+		{"同上，铸造后约 28 小时被复用（上游实测仍 200，窗口须容纳）", officialSampleECB, mintedECB + 28*60*60*1000, true},
+		{"真实客户端样本 f390f32e4ffe（按铸造时刻求值）", officialSampleF39, mintedF39, true},
+		{"真实客户端样本 fc7b694ecffe（按铸造时刻求值）", officialSampleFC7, mintedFC7, true},
+		{"真实客户端样本 fc42c626effe（按铸造时刻求值）", officialSampleFC4, mintedFC4, true},
+		{"生产铸造函数产出的当前值", openCodeGateTestSessionIDMintedAt(now), now, true},
+		{"窗口内：47 小时前铸造", openCodeGateTestSessionIDMintedAt(now - 47*60*60*1000), now, true},
+		{"窗口内：30 分钟后的未来偏差", openCodeGateTestSessionIDMintedAt(now + 30*60*1000), now, true},
+		{"反解时刻恰为参照时刻", openCodeGateTestSessionIDMintedAt(now), now, true},
+
+		// ── 拒绝：形状合法但高 36 位反解不出合法铸造时刻 ────────────────
+		{"窗口外：49 小时前铸造", openCodeGateTestSessionIDMintedAt(now - 49*60*60*1000), now, false},
+		{"窗口外：2 小时后的未来偏差", openCodeGateTestSessionIDMintedAt(now + 2*60*60*1000), now, false},
+		{"随机 hex 只把末 3 位凑成 ffe（2026-10-14 实测 403）", "ses_012345678ffeABCDEFGHIJKLMN", now, false},
+		{"hex 段 000000000ffe：反解时刻 = epoch-1，远在未来", "ses_000000000ffeABCDEFGHIJKLMN", now, false},
+		{"hex 段 fffffffffffe：反解时刻为 2026-08-13，已过期", "ses_fffffffffffeABCDEFGHIJKLMN", now, false},
+		{"实测返回 403 的真实客户端 id（末 3 位 f65）", openCodeGateRejectedSessionID, now, false},
+		{"末 3 位 fff", "ses_000000000fffABCDEFGHIJKLMN", now, false},
+		{"末 3 位全 0", "ses_000000000000ABCDEFGHIJKLMN", now, false},
+		{"哈希派生值（旧算法输出，末 3 位 9ab）", "ses_0123456789abABCDEFGHIJKLMN", now, false},
+
+		// ── 拒绝：形状非法 ───────────────────────────────────────────
+		{"UUID", "3f2504e0-4f89-11d3-9a0c-0305e82c3301", now, false},
+		{"短串", "abc", now, false},
+		{"空串", "", now, false},
+		{"缺 ses_ 前缀", "msg_ecb74175effeABCDEFGHIJKLMN", now, false},
+		{"hex 段含大写", "ses_ECB74175EFFEABCDEFGHIJKLMN", now, false},
+		{"后缀含非字母数字", "ses_ecb74175effeABCDEFGHIJKLM!", now, false},
+		{"总长不足", "ses_ecb74175effeABCDEFGHIJKLM", now, false},
+		{"总长超出", "ses_ecb74175effeABCDEFGHIJKLMNO", now, false},
+		{"前后有空白（不 trim，由调用方负责）", " ses_ecb74175effeABCDEFGHIJKLMN", now, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, isOpenCodeGateSessionID(tt.id), "isOpenCodeGateSessionID(%q)", tt.id)
+			reference := tt.nowMillis
+			if reference == 0 {
+				reference = time.Now().UnixMilli()
+			}
+			require.Equal(t, tt.want, isOpenCodeGateSessionIDAt(tt.id, reference),
+				"isOpenCodeGateSessionIDAt(%q, %d)", tt.id, reference)
 		})
 	}
+}
+
+// TestIsOpenCodeGateSessionIDRealSamplesAgeOut 说明真实样本在墙钟下的行为：样本
+// 铸造时刻距今超过窗口（48 小时）后会被判为需要重铸。这不是回归——重铸只会损失
+// 一次 prompt cache 命中，绝不会产生 403；把这条行为钉住，避免将来有人误以为
+// 「真实 id 被拒」是 bug 而把窗口放大到失去筛选力。
+func TestIsOpenCodeGateSessionIDRealSamplesAgeOut(t *testing.T) {
+	const mintedECB = int64(1791882946721) // 2026-10-13T09:15:46Z
+
+	require.True(t, isOpenCodeGateSessionIDAt(openCodeGateTestSessionID, mintedECB),
+		"按铸造时刻求值必须合法")
+	require.False(t,
+		isOpenCodeGateSessionIDAt(openCodeGateTestSessionID, mintedECB+49*60*60*1000),
+		"铸造后 49 小时（超出 48 小时窗口）必须判为需重铸")
 }
 
 // assertOpenCodeGateSessionIDValid 断言 id 同时满足形状与位不变量，并用官方算法
@@ -244,6 +314,33 @@ func openCodeGateHashShapedSessionID(t *testing.T) string {
 	return ""
 }
 
+// openCodeGateHashShapedFFESessionID 返回一个由 canonicalOpenCodeID（sha256 派生
+// hex，与上游插件的 canonicalID 同构）产出、hex 段低 12 位**恰好**为 ffe、且高
+// 36 位反解出的铸造时刻落在窗口外的样本。
+//
+// 这正是 2026-10-14 收紧要堵的洞：只查低 12 位的旧判据会把它当合法值原样透传，
+// 而上游实测对这类值返回 403 FreeTierError（封 key 约 15 分钟）。
+//
+// 命中概率 1/4096，因此用搜索而不是硬编码字面量：样本永远与算法保持一致。
+// 来源固定 → 结果是纯函数，不存在抖动。
+func openCodeGateHashShapedFFESessionID(t *testing.T) string {
+	t.Helper()
+	for i := 0; i < 1<<18; i++ {
+		id := canonicalOpenCodeID("ses", "plugin-supplied-ffe-"+strconv.Itoa(i))
+		if !openCodeCanonicalSessionRe.MatchString(id) || id[13:16] != openCodeGateSessionLowHex {
+			continue
+		}
+		// 若该样本反解出的铸造时刻碰巧落在窗口内（概率约 6e-7），换下一个，
+		// 保证断言的是「低 12 位为 ffe 但高 36 位非法」这一形态。
+		if isOpenCodeGateSessionID(id) {
+			continue
+		}
+		return id
+	}
+	t.Fatal("1<<18 个哈希派生样本里没有找到「低 12 位为 ffe 但高 36 位非法」的值（正则或算法已变，需复核）")
+	return ""
+}
+
 // TestCanonicalOpenCodeSessionIDRekeysHashShapedValues 钉住本次修复的核心行为：
 // 形状合法但位不合法的 ses_ 值（任何哈希派生实现的产物，含上游插件）必须被
 // 重铸，绝不能原样透传——否则上游的 403 FreeTierError 会被带进来。
@@ -259,12 +356,34 @@ func TestCanonicalOpenCodeSessionIDRekeysHashShapedValues(t *testing.T) {
 	// 重铸仍须确定：同一来源跨轮次稳定，否则上游 prompt cache 击穿。
 	require.Equal(t, got, canonicalOpenCodeSessionID(hashShaped))
 
-	// 形状合法且位合法时必须原样保留（不破坏调用方自建的会话连续性）。
-	require.Equal(t, openCodeGateTestSessionID, canonicalOpenCodeSessionID(openCodeGateTestSessionID))
+	// 形状合法且编码完整（含时间窗）时必须原样保留（不破坏调用方自建的会话
+	// 连续性）。用生产铸造函数产出的当前值，避免依赖会老化的历史样本。
+	official := openCodeGateTestSessionIDMintedAt(time.Now().UnixMilli())
+	require.Equal(t, official, canonicalOpenCodeSessionID(official))
 	// 非 ses_ 形状同样要重铸。
 	require.True(t, isOpenCodeGateSessionID(canonicalOpenCodeSessionID("3f2504e0-4f89-11d3-9a0c-0305e82c3301")))
 	// 空来源不铸造（由调用方决定是否兜底）。
 	require.Empty(t, canonicalOpenCodeSessionID("   "))
+}
+
+// TestCanonicalOpenCodeSessionIDRekeysHashShapedFFEValues 钉住 2026-10-14 收紧
+// 要堵的那个洞：低 12 位**恰好**为 ffe、但高 36 位是哈希噪声的客户端值必须被
+// 重铸。只查低 12 位的旧判据会原样透传它，而上游实测对这类值返回
+// 403 FreeTierError（会封 key 约 15 分钟）。
+func TestCanonicalOpenCodeSessionIDRekeysHashShapedFFEValues(t *testing.T) {
+	ffeShaped := openCodeGateHashShapedFFESessionID(t)
+	require.True(t, openCodeCanonicalSessionRe.MatchString(ffeShaped), "前提：形状合法")
+	require.Equal(t, openCodeGateSessionLowHex, ffeShaped[13:16],
+		"前提：低 12 位恰为 ffe（旧判据会放行）")
+	require.False(t, isOpenCodeGateSessionID(ffeShaped),
+		"前提：高 36 位反解出的铸造时刻必须落在窗口外")
+
+	got := canonicalOpenCodeSessionID(ffeShaped)
+	require.NotEqual(t, ffeShaped, got, "低 12 位凑成 ffe 的哈希值必须被重铸，不得原样透传")
+	require.True(t, isOpenCodeGateSessionID(got), "重铸结果必须满足门禁，实际 %q", got)
+
+	// 重铸仍须确定：同一来源跨轮次稳定，否则上游 prompt cache 击穿。
+	require.Equal(t, got, canonicalOpenCodeSessionID(ffeShaped))
 }
 
 // TestOpenCodeGateSessionMintCacheStability 钉住缓存语义：同一 source 恒等、
@@ -689,7 +808,8 @@ func TestApplyOpenCodeFreeTierGateBodyToolsNotArrayIsPassthrough(t *testing.T) {
 }
 
 func TestApplyOpenCodeFreeTierGateSession(t *testing.T) {
-	canonical := openCodeGateTestSessionID
+	// 用生产铸造函数产出的当前值，避免依赖会老化的历史样本（判据含时间窗）。
+	canonical := openCodeGateTestSessionIDMintedAt(time.Now().UnixMilli())
 
 	t.Run("客户端已提供合法值时原样保留", func(t *testing.T) {
 		account := openCodeGateTestAccount(nil)
@@ -714,6 +834,24 @@ func TestApplyOpenCodeFreeTierGateSession(t *testing.T) {
 		got := headers.Get(openCodeSessionHeader)
 		require.NotEqual(t, openCodeGateRejectedSessionID, got, "位不合法（f65）的值不得原样透传")
 		require.True(t, isOpenCodeGateSessionID(got), "重铸结果必须满足形状与位不变量，实际 %q", got)
+		require.Equal(t, got, headers.Get(openCodeSessionAffinityHeader))
+		require.Equal(t, got, headers.Get(openCodeSessionIDHeader))
+	})
+
+	// 2026-10-14 收紧堵的洞：低 12 位恰好为 ffe、但高 36 位非法的哈希派生值
+	// 不得透传。只查低 12 位的旧判据会把它原样送出，上游实测 403。
+	t.Run("低 12 位恰为 ffe 的哈希派生值必须重铸", func(t *testing.T) {
+		ffeShaped := openCodeGateHashShapedFFESessionID(t)
+		account := openCodeGateTestAccount(nil)
+		headers := http.Header{}
+		headers.Set(openCodeSessionHeader, ffeShaped)
+		body := []byte(`{"model":"mimo-v2.6-flash-free"}`)
+
+		applyOpenCodeFreeTierGateSession(account, headers, body)
+
+		got := headers.Get(openCodeSessionHeader)
+		require.NotEqual(t, ffeShaped, got, "只把末 3 位凑成 ffe 的值不得原样透传")
+		require.True(t, isOpenCodeGateSessionID(got), "重铸结果必须满足门禁，实际 %q", got)
 		require.Equal(t, got, headers.Get(openCodeSessionAffinityHeader))
 		require.Equal(t, got, headers.Get(openCodeSessionIDHeader))
 	})
@@ -836,7 +974,7 @@ func TestDefaultOpenCodeZenFreeModelIDsRouting(t *testing.T) {
 }
 
 // TestOpenCodeFreeTierGateEndToEndBodyShape 把四项硬要求一起断言，作为门禁的
-// 验收测试：会话形状 + 位不变量、UA 版本下限、bash+read、stream:true。
+// 验收测试：会话形状 + 位不变量、UA 版本带、bash+read、stream:true。
 func TestOpenCodeFreeTierGateEndToEndBodyShape(t *testing.T) {
 	account := openCodeGateTestAccount(nil)
 	headers := http.Header{}
@@ -852,9 +990,8 @@ func TestOpenCodeFreeTierGateEndToEndBodyShape(t *testing.T) {
 	require.True(t, openCodeCanonicalSessionRe.MatchString(session), "会话形状必须合法，实际 %q", session)
 	require.True(t, isOpenCodeGateSessionID(session), "会话位不变量必须满足，实际 %q", session)
 	require.Equal(t, openCodeGateSessionLowHex, session[13:16])
-	// 2. UA 版本下限
-	version := strings.TrimPrefix(strings.Fields(openCodeUpstreamUserAgent)[0], "opencode/")
-	require.True(t, version >= "1.18.0", "UA 版本 %s 必须不低于 1.18.0", version)
+	// 2. UA 版本必须落在上游当前接受的闭区间 [1.18.0, 1.18.33]
+	requireOpenCodeUAVersionInBand(t, openCodeUpstreamUserAgent)
 	// 3. bash + read
 	requireGateTools(t, out, "function.name")
 	// 4. stream:true
@@ -863,4 +1000,99 @@ func TestOpenCodeFreeTierGateEndToEndBodyShape(t *testing.T) {
 	// body 必须是合法 JSON（门禁改写不得破坏载荷）。
 	var decoded map[string]any
 	require.NoError(t, json.Unmarshal(out, &decoded))
+}
+
+// openCodeUAVersionBandLow / High 是上游免费层门禁当前接受的 UA 版本闭区间。
+//
+// 2026-10-15 单变量实测（同一 key / body / 出口，只改 UA 版本号）：
+//
+//	1.17.9                 -> 426 UpgradeRequired
+//	1.18.0/1.18.1/1.18.31/1.18.32/1.18.33 -> 200
+//	1.18.34/1.18.35/1.19.0/1.20.0         -> 403 FreeTierError
+//
+// 上界是上游 2026-10-14 13:45-13:53 UTC 收紧版本带时钉下的，官方最新 1.19.0
+// 客户端同样被拒（上游回归）。**上界会变**：若上游再次调整，必须重测并同时
+// 更新这两个常量、openCodeUpstreamUserAgent 与 runbook。
+var (
+	openCodeUAVersionBandLow  = [3]int{1, 18, 0}
+	openCodeUAVersionBandHigh = [3]int{1, 18, 33}
+)
+
+// TestOpenCodeUpstreamUserAgentVersionBand 拦住「顺手把版本号升到官方最新」
+// 这类危险操作（2026-10-13 正是这样把 UA 升到 1.19.0，次日上游收紧版本带后
+// 全站 403）：常量版本必须落在实测闭区间内。
+func TestOpenCodeUpstreamUserAgentVersionBand(t *testing.T) {
+	requireOpenCodeUAVersionInBand(t, openCodeUpstreamUserAgent)
+
+	// 断言这个测试真的能拦住越界版本（防「断言写松了」导致形同虚设）。
+	require.False(t, openCodeUAVersionInBand("opencode/1.19.0"), "1.19.0 必须被判为越界（上界外）")
+	require.False(t, openCodeUAVersionInBand("opencode/1.18.34"), "1.18.34 必须被判为越界（上界外）")
+	require.False(t, openCodeUAVersionInBand("opencode/1.17.9"), "1.17.9 必须被判为越界（下界外）")
+	require.True(t, openCodeUAVersionInBand("opencode/1.18.0"), "下界闭区间端点必须通过")
+	require.True(t, openCodeUAVersionInBand("opencode/1.18.33"), "上界闭区间端点必须通过")
+	require.True(t, openCodeUAVersionInBand("opencode/1.18.31 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14"),
+		"带后缀的完整身份串必须能解析出版本")
+	require.False(t, openCodeUAVersionInBand("curl/8.0"), "非 opencode/ 形态必须被拒")
+}
+
+// requireOpenCodeUAVersionInBand 断言 UA 中的 opencode/<version> 落在
+// [openCodeUAVersionBandLow, openCodeUAVersionBandHigh] 内。
+func requireOpenCodeUAVersionInBand(t *testing.T, ua string) {
+	t.Helper()
+	version, ok := parseOpenCodeUAVersion(ua)
+	require.True(t, ok, "UA 必须形如 opencode/<major>.<minor>.<patch>，实际 %q", ua)
+	require.GreaterOrEqual(t, compareOpenCodeVersions(version, openCodeUAVersionBandLow), 0,
+		"UA 版本 %v 低于上游下限 %v（上游返回 426 UpgradeRequired）", version, openCodeUAVersionBandLow)
+	require.LessOrEqual(t, compareOpenCodeVersions(version, openCodeUAVersionBandHigh), 0,
+		"UA 版本 %v 高于上游上界 %v（上游返回 403 FreeTierError）：不要顺手把版本号升到官方最新版",
+		version, openCodeUAVersionBandHigh)
+}
+
+// openCodeUAVersionInBand 是 requireOpenCodeUAVersionInBand 的非断言版本，
+// 供测试自证使用。
+func openCodeUAVersionInBand(ua string) bool {
+	version, ok := parseOpenCodeUAVersion(ua)
+	if !ok {
+		return false
+	}
+	return compareOpenCodeVersions(version, openCodeUAVersionBandLow) >= 0 &&
+		compareOpenCodeVersions(version, openCodeUAVersionBandHigh) <= 0
+}
+
+// parseOpenCodeUAVersion 从 UA 首段解析 opencode/<major>.<minor>.<patch>。
+func parseOpenCodeUAVersion(ua string) ([3]int, bool) {
+	fields := strings.Fields(ua)
+	if len(fields) == 0 {
+		return [3]int{}, false
+	}
+	raw := strings.TrimPrefix(fields[0], "opencode/")
+	if raw == fields[0] {
+		return [3]int{}, false
+	}
+	parts := strings.Split(raw, ".")
+	if len(parts) != 3 {
+		return [3]int{}, false
+	}
+	var out [3]int
+	for i, part := range parts {
+		n, err := strconv.Atoi(part)
+		if err != nil || n < 0 {
+			return [3]int{}, false
+		}
+		out[i] = n
+	}
+	return out, true
+}
+
+// compareOpenCodeVersions 按 major/minor/patch 数值比较，返回 -1/0/1。
+func compareOpenCodeVersions(a, b [3]int) int {
+	for i := range a {
+		if a[i] != b[i] {
+			if a[i] < b[i] {
+				return -1
+			}
+			return 1
+		}
+	}
+	return 0
 }

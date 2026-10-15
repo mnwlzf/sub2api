@@ -22,21 +22,33 @@ const (
 	// 凭证类 strike，健康账号因此被自动禁用。取值沿用真实 opencode 客户端的
 	// UA 格式（opencode/<version>）。
 	//
-	// 版本下限：上游对 opencode/<version> 做版本校验，低于下限一律返回
-	// 426 UpgradeRequired（实测 1.17.9 拒绝、1.18.0 通过）。此前取值为
-	// opencode/1.0.0，会稳定触发 426，故对齐到官方客户端实际发送的完整身份串。
+	// **UA 版本是免费层门禁的硬性检查项，且上游只接受一个闭区间：**
 	//
-	// **UA 版本不是免费层门禁的检查项。** 门禁只要求 UA 是 opencode/ 形态且
-	// 不低于版本下限，具体版本号不参与判定（实测上游插件 UA opencode/1.18.31
-	// 与 1.19.0 同样返回 200）。2026-10-13 免费层稳定 403 FreeTierError 的真实
-	// 根因是会话 id 的**位编码**（hex 段低 12 位必须为 0xFFE），与 UA 无关：
+	//	1.18.0 <= version <= 1.18.33  -> 放行（200）
+	//	version <  1.18.0             -> 426 UpgradeRequired
+	//	version >= 1.18.34            -> 403 FreeTierError
+	//
+	// 上界由 2026-10-15 单变量实测二分确定（同一 key / body / 出口，只改 UA
+	// 版本号：1.18.32、1.18.33 -> 200；1.18.34、1.18.35 -> 403；1.18.31 复测
+	// -> 200），UA 的 `ai-sdk/... runtime/bun/...` 后缀对判定无影响（裸
+	// `opencode/1.18.0` 与带后缀同样 200）。下界 1.18.0 见 1.17.9 -> 426。
+	//
+	// 2026-10-14 13:45-13:53 UTC 上游收紧了版本带：此前 1.19.0 可用（2026-10-13
+	// 我们把 UA 从 1.18.31 升到 1.19.0 当时无害），收紧后官方最新版 1.19.0
+	// 落到带外 → 全站 403 FreeTierError。官方 1.19.0 客户端自身同样被拒，
+	// 属**上游回归**。因此「顺手把版本号升到官方最新」是危险操作：上游可能
+	// 反过来只接受旧版本带；改版本号前必须重测当前区间，并同步更新
+	// openai_opencode_freetier_test.go 的版本带断言。
+	//
+	// 取值 1.18.31 的理由：落在带内中段（距下界 31 个 patch，距上界 2 个
+	// patch），且是真实存在的官方 release。子版本取自官方发布产物实测：
+	// ai-sdk/provider-utils 为 4.0.23（二进制内 `var QF="4.0.23"`），
+	// Bun runtime 为 1.3.14（`bun/1.3.14`）。
+	//
+	// 2026-10-13 免费层稳定 403 FreeTierError 还叠加了会话 id **编码**的问题
+	// （hex 段必须是官方 tA() 时间戳编码，低 12 位为 0xFFE 只是其结构推论），
 	// 见 openCodeGateSessionLowHex 与 docs/opencode-free-tier-gate-runbook.md。
-	//
-	// 取值保持为最新官方版本（1.19.0，2026-10-11 发布）只是「保持最新无害」。
-	// 子版本从官方发布产物实测取得：ai-sdk/provider-utils 仍为 4.0.23
-	// （二进制内 `var QF="4.0.23"`），Bun runtime 仍为 1.3.14（`bun/1.3.14`），
-	// 故本次只有主版本号变化。
-	openCodeUpstreamUserAgent = "opencode/1.19.0 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14"
+	openCodeUpstreamUserAgent = "opencode/1.18.31 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14"
 )
 
 // rememberOpenCodeInboundBody keeps the client request body so protocol
