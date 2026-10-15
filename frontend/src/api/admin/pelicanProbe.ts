@@ -50,10 +50,32 @@ export async function deletePlan(id: number): Promise<void> {
 }
 
 /**
- * Trigger an immediate probe run for a plan
+ * New async contract: the endpoint answers HTTP 202 immediately and the probe
+ * keeps running in the background (up to 10 minutes).
  */
-export async function runNow(id: number): Promise<PelicanProbeResult> {
-  const { data } = await apiClient.post<PelicanProbeResult>(`/admin/pelican-probe-plans/${id}/run`)
+export interface PelicanProbeRunStartResponse {
+  started: boolean
+  plan_id: number
+}
+
+/**
+ * Legacy contract returned the finished result inline; the async contract
+ * returns only the acknowledgement. Callers must treat any 2xx as "started"
+ * and poll the results list instead of reading the body.
+ */
+export type PelicanProbeRunResponse = PelicanProbeResult | PelicanProbeRunStartResponse
+
+/**
+ * Trigger an immediate probe run for a plan.
+ *
+ * The response body is intentionally typed as a union and ignored by callers:
+ * whichever backend contract is deployed (legacy synchronous result or new
+ * asynchronous 202 acknowledgement), any 2xx means the probe was launched.
+ */
+export async function runNow(id: number): Promise<PelicanProbeRunResponse> {
+  const { data } = await apiClient.post<PelicanProbeRunResponse>(
+    `/admin/pelican-probe-plans/${id}/run`
+  )
   return data
 }
 

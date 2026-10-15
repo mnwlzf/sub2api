@@ -131,6 +131,13 @@
           <span class="text-sm font-medium text-gray-900 dark:text-gray-100">
             {{ t('admin.pelicanProbe.resultsWall') }}
           </span>
+          <span
+            v-if="runPolling"
+            class="inline-flex items-center gap-1.5 rounded-full bg-sky-50 px-2.5 py-0.5 text-xs font-medium text-sky-700 dark:bg-sky-500/10 dark:text-sky-400"
+          >
+            <Icon name="refresh" size="xs" class="animate-spin" />
+            {{ t('admin.pelicanProbe.probing') }}
+          </span>
         </div>
         <div v-if="resultsLoading" class="py-8 text-center text-sm text-gray-500">…</div>
         <div v-else-if="results.length === 0" class="rounded-xl border border-dashed border-gray-300 py-10 text-center text-sm text-gray-500 dark:border-gray-600 dark:text-gray-400">
@@ -402,7 +409,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -707,24 +714,107 @@ const togglePublic = async (plan: PelicanProbePlan, isPublic: boolean) => {
     appStore.showError(extractApiErrorMessage(e, t('common.error')))
   }
 }
-const runPlan = async (plan: PelicanProbePlan) => {
-  runningPlanId.value = plan.id
+
+// --- immediate run (async contract) ---
+//
+// The backend now answers HTTP 202 immediately and runs the probe in the
+// background (up to 10 minutes), so the response body carries no result. The
+// legacy synchronous contract returned the finished result inline. Both are
+// supported by treating every 2xx as "started" and polling the results list,
+// which is also the only way to observe the async outcome.
+const RUN_POLL_INTERVAL_MS = 10_000
+const RUN_POLL_MAX_MS = 3 * 60 * 1000
+
+const runPolling = ref(false)
+let runPollTimer: ReturnType<typeof setTimeout> | null = null
+let runPollDeadline = 0
+
+const stopRunPolling = () => {
+  if (runPollTimer !== null) {
+    clearTimeout(runPollTimer)
+    runPollTimer = null
+  }
+  runPolling.value = false
+  runningPlanId.value = null
+}
+
+/**
+ * Ids of the results already stored for this plan. Used to detect a *new*
+ * result regardless of timestamp precision; `null` means the lookup failed and
+ * callers must fall back to comparing `created_at` with the click time.
+ */
+const snapshotResultIds = async (planId: number): Promise<Set<number> | null> => {
   try {
+    const rows = await adminAPI.pelicanProbe.listResults(planId, 10)
+    return new Set(rows.map((r) => r.id))
+  } catch {
+    return null
+  }
+}
+
+const startRunPolling = (planId: number, clickedAt: number, baseline: Set<number> | null) => {
+  stopRunPolling()
+  runningPlanId.value = planId
+  runPolling.value = true
+  runPollDeadline = Date.now() + RUN_POLL_MAX_MS
+
+  const tick = async () => {
+    runPollTimer = null
+    let finished = false
+    try {
+      const fresh = await adminAPI.pelicanProbe.listResults(planId, 10)
+      finished = fresh.some(
+        (r) => (baseline ? !baseline.has(r.id) : false) || +new Date(r.created_at) > clickedAt
+      )
+      if (finished) {
+        await reloadAll()
+      } else {
+        await loadResults()
+      }
+    } catch {
+      // Transient read failure: keep polling until the deadline.
+    }
+    if (finished || Date.now() >= runPollDeadline) {
+      stopRunPolling()
+      return
+    }
+    runPollTimer = setTimeout(tick, RUN_POLL_INTERVAL_MS)
+  }
+
+  runPollTimer = setTimeout(tick, RUN_POLL_INTERVAL_MS)
+}
+
+const runPlan = async (plan: PelicanProbePlan) => {
+  if (runningPlanId.value !== null) return
+  runningPlanId.value = plan.id
+  const clickedAt = Date.now()
+  const baseline = await snapshotResultIds(plan.id)
+
+  let started = false
+  try {
+    // Any 2xx means the probe was launched; the body is ignored on purpose
+    // because it differs between the legacy and async contracts.
     await adminAPI.pelicanProbe.runNow(plan.id)
-    appStore.showSuccess(t('admin.pelicanProbe.runSuccess'))
-    await reloadAll()
+    started = true
+    appStore.showSuccess(t('admin.pelicanProbe.runStarted'))
   } catch (e: unknown) {
     if (isTimeoutError(e)) {
-      // Backend persists the result with a detached context, so a refresh
-      // shows it even though this request was cut off at 30s.
+      // Legacy synchronous contract cut off at the 30s axios timeout: the
+      // backend persists the result with a detached context, so keep waiting.
+      started = true
       appStore.showError(t('admin.pelicanProbe.runTimeout'))
-      await reloadAll()
     } else {
       appStore.showError(extractApiErrorMessage(e, t('common.error')))
     }
-  } finally {
-    runningPlanId.value = null
   }
+
+  if (!started) {
+    stopRunPolling()
+    return
+  }
+
+  await loadResults()
+  startRunPolling(plan.id, clickedAt, baseline)
 }
 
 // --- delete ---
@@ -789,5 +879,9 @@ onMounted(async () => {
   await loadGroups()
   await loadGlobal()
   await reloadAll()
+})
+
+onBeforeUnmount(() => {
+  stopRunPolling()
 })
 </script>

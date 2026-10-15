@@ -2631,6 +2631,18 @@ export interface PelicanProbePlan {
   updated_at: string
 }
 
+/**
+ * User-safe classification of a failed probe. The public endpoint maps the raw
+ * backend error into one of these buckets and clears `error_message`, so the
+ * user-facing UI never has to render internal URLs or stack traces.
+ */
+export type PelicanProbeFailureReason =
+  | 'upstream'
+  | 'timeout'
+  | 'concurrency'
+  | 'config'
+  | 'unknown'
+
 export interface PelicanProbeResult {
   id: number
   plan_id: number
@@ -2641,6 +2653,12 @@ export interface PelicanProbeResult {
   reviewed_by: string
   reviewed_at: string | null
   error_message: string
+  /**
+   * Optional on purpose: the backend that classifies failures and the frontend
+   * ship independently, so either contract may be live. When absent, callers
+   * must fall back to a generic message instead of `error_message`.
+   */
+  failure_reason?: PelicanProbeFailureReason
   latency_ms: number
   prompt_tokens: number
   completion_tokens: number
