@@ -2617,6 +2617,9 @@ export interface PelicanProbePlan {
   model_id: string
   base_url: string
   has_api_key: boolean
+  test_type: string
+  reasoning_effort: string
+  judge_model_id: string
   cron_expression: string
   enabled: boolean
   is_public: boolean
@@ -2653,6 +2656,9 @@ export interface CreatePelicanProbePlanRequest {
   base_url?: string
   api_key: string
   prompt?: string
+  test_type?: string
+  reasoning_effort?: string
+  judge_model_id?: string
   cron_expression?: string
   enabled?: boolean
   is_public?: boolean
@@ -2665,6 +2671,9 @@ export interface UpdatePelicanProbePlanRequest {
   base_url?: string
   api_key?: string
   prompt?: string
+  test_type?: string
+  reasoning_effort?: string
+  judge_model_id?: string
   cron_expression?: string
   enabled?: boolean
   is_public?: boolean

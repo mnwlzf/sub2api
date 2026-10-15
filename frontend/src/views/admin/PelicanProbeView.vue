@@ -221,9 +221,42 @@
         </div>
         <div>
           <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
+            {{ t('admin.pelicanProbe.schedule') }}
+          </label>
+          <Select v-model="planForm.schedule_preset" :options="schedulePresetOptions" />
+          <p class="input-hint mt-1.5">
+            <span v-if="!isCustomSchedule" class="font-mono">{{ planForm.schedule_preset }} · </span>{{ selectedScheduleDesc }}
+          </p>
+          <p class="input-hint mt-0.5">{{ t('admin.pelicanProbe.scheduleHint') }}</p>
+        </div>
+        <div v-if="isCustomSchedule" class="sm:col-span-2">
+          <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
             {{ t('admin.pelicanProbe.cronExpression') }}
           </label>
-          <Input v-model="planForm.cron_expression" placeholder="0 */4 * * *" />
+          <Input v-model="planForm.cron_custom" placeholder="0 9 * * *" />
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
+            {{ t('admin.pelicanProbe.testType') }}
+          </label>
+          <Select v-model="planForm.test_type" :options="testTypeOptions" />
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
+            {{ t('admin.pelicanProbe.effort') }}
+          </label>
+          <Select v-model="planForm.reasoning_effort" :options="effortOptions" />
+          <p class="input-hint mt-1.5">{{ t('admin.pelicanProbe.effortHint') }}</p>
+        </div>
+        <div v-if="isCandy" class="sm:col-span-2">
+          <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
+            {{ t('admin.pelicanProbe.judgeModel') }} <span class="text-rose-500">*</span>
+          </label>
+          <Input
+            v-model="planForm.judge_model_id"
+            :placeholder="t('admin.pelicanProbe.judgeModelPlaceholder')"
+            :hint="t('admin.pelicanProbe.judgeModelHint')"
+          />
         </div>
         <div class="sm:col-span-2">
           <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
@@ -251,12 +284,14 @@
             {{ t('admin.pelicanProbe.prompt') }}
           </label>
           <textarea
-            v-model="planForm.prompt"
-            rows="2"
+            :value="isCandy ? candyPrompt : planForm.prompt"
+            :disabled="isCandy"
+            :rows="isCandy ? 8 : 2"
             :placeholder="defaultPrompt"
             class="input w-full"
+            @input="planForm.prompt = ($event.target as HTMLTextAreaElement).value"
           />
-          <p class="input-hint mt-1.5">{{ t('admin.pelicanProbe.promptHint') }}</p>
+          <p class="input-hint mt-1.5">{{ isCandy ? t('admin.pelicanProbe.candyPromptHint') : t('admin.pelicanProbe.promptHint') }}</p>
         </div>
         <div>
           <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
@@ -379,12 +414,33 @@ import { Icon } from '@/components/icons'
 import { adminAPI } from '@/api/admin'
 import { useAppStore } from '@/stores/app'
 import { formatDateTime } from '@/utils/format'
+import { extractApiErrorMessage } from '@/utils/apiError'
 import type { PelicanProbePlan, PelicanProbeResult, AdminGroup } from '@/types'
 
 const { t } = useI18n()
 const appStore = useAppStore()
 
 const defaultPrompt = '创建一个HTML，内容是SVG绘制一个鹈鹕骑自行车的2D动画'
+
+// Fixed candy-test prompt (mirrors backend DefaultCandyPrompt verbatim).
+const candyPrompt = `不使用任何外部工具回答以下问题：
+
+在一个黑色的袋子里放有三种口味的糖果，每种糖果有两种不同的形状（圆形和五角星形，不同的形状靠手感可以分辨）。现已知不同口味的糖和不同形状的数量统计如下表。参赛者需要在活动前决定摸出的糖果数目，那么，最少取出多少个糖果才能保证手中同时拥有不同形状的苹果味和桃子味的糖？（同时手中有圆形苹果味匹配五角星桃子味糖果，或者有圆形桃子味匹配五角星苹果味糖果都满足要求）
+
+        苹果味  桃子味  西瓜味
+圆形       7      9      8
+五角星形   7      6      4`
+
+const schedulePresets = [
+  { value: '*/15 * * * *', labelKey: 'admin.pelicanProbe.schedule15min', descKey: 'admin.pelicanProbe.schedule15minDesc' },
+  { value: '0 * * * *', labelKey: 'admin.pelicanProbe.scheduleHourly', descKey: 'admin.pelicanProbe.scheduleHourlyDesc' },
+  { value: '0 */4 * * *', labelKey: 'admin.pelicanProbe.schedule4h', descKey: 'admin.pelicanProbe.schedule4hDesc' },
+  { value: '0 9 * * *', labelKey: 'admin.pelicanProbe.scheduleDaily', descKey: 'admin.pelicanProbe.scheduleDailyDesc' },
+  { value: '0 9 * * 1', labelKey: 'admin.pelicanProbe.scheduleWeekly', descKey: 'admin.pelicanProbe.scheduleWeeklyDesc' }
+] as const
+const scheduleCustomValue = 'custom'
+
+const reasoningEffortValues = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
 
 // --- filter / data ---
 const groupFilter = ref<number | null>(null)
@@ -439,6 +495,11 @@ const verdictClass = (v: string) => {
   }
 }
 
+// apiClient converts axios timeouts into plain objects shaped like
+// { status: 0, code: 'ECONNABORTED', ... }.
+const isTimeoutError = (e: unknown): boolean =>
+  !!e && typeof e === 'object' && (e as { code?: unknown }).code === 'ECONNABORTED'
+
 const globalEnabled = ref(true)
 const loadGlobal = async () => {
   try {
@@ -454,7 +515,7 @@ const toggleGlobal = async (enabled: boolean) => {
     globalEnabled.value = status.enabled
     appStore.showSuccess(t('admin.pelicanProbe.updateSuccess'))
   } catch (e: unknown) {
-    appStore.showError(e instanceof Error ? e.message : String(e))
+    appStore.showError(extractApiErrorMessage(e, t('common.error')))
   }
 }
 
@@ -470,7 +531,7 @@ const loadPlans = async () => {
   try {
     plans.value = await adminAPI.pelicanProbe.listPlans(groupFilter.value ?? undefined)
   } catch (e: unknown) {
-    appStore.showError(e instanceof Error ? e.message : String(e))
+    appStore.showError(extractApiErrorMessage(e, t('common.error')))
   } finally {
     plansLoading.value = false
   }
@@ -480,7 +541,7 @@ const loadResults = async () => {
   try {
     results.value = await adminAPI.pelicanProbe.listRecent(groupFilter.value ?? undefined, 60)
   } catch (e: unknown) {
-    appStore.showError(e instanceof Error ? e.message : String(e))
+    appStore.showError(extractApiErrorMessage(e, t('common.error')))
   } finally {
     resultsLoading.value = false
   }
@@ -502,11 +563,33 @@ const planForm = reactive({
   api_key: '',
   base_url: '',
   prompt: '',
-  cron_expression: '0 */4 * * *',
+  test_type: 'pelican',
+  reasoning_effort: '',
+  judge_model_id: '',
+  schedule_preset: '0 */4 * * *',
+  cron_custom: '',
   enabled: true,
   is_public: false,
   max_results: '50'
 })
+const isCandy = computed(() => planForm.test_type === 'candy')
+const isCustomSchedule = computed(() => planForm.schedule_preset === scheduleCustomValue)
+const schedulePresetOptions = computed<SelectOption[]>(() => [
+  ...schedulePresets.map((p) => ({ value: p.value, label: t(p.labelKey) })),
+  { value: scheduleCustomValue, label: t('admin.pelicanProbe.scheduleCustom') }
+])
+const selectedScheduleDesc = computed(() => {
+  const hit = schedulePresets.find((p) => p.value === planForm.schedule_preset)
+  return hit ? t(hit.descKey) : t('admin.pelicanProbe.scheduleCustomDesc')
+})
+const testTypeOptions = computed<SelectOption[]>(() => [
+  { value: 'pelican', label: t('admin.pelicanProbe.testTypePelican') },
+  { value: 'candy', label: t('admin.pelicanProbe.testTypeCandy') }
+])
+const effortOptions = computed<SelectOption[]>(() => [
+  { value: '', label: t('admin.pelicanProbe.effortUnspecified') },
+  ...reasoningEffortValues.map((v) => ({ value: v, label: v }))
+])
 const resetPlanForm = () => {
   planForm.name = ''
   planForm.group_id = groupFilter.value
@@ -514,7 +597,11 @@ const resetPlanForm = () => {
   planForm.api_key = ''
   planForm.base_url = ''
   planForm.prompt = ''
-  planForm.cron_expression = '0 */4 * * *'
+  planForm.test_type = 'pelican'
+  planForm.reasoning_effort = ''
+  planForm.judge_model_id = ''
+  planForm.schedule_preset = '0 */4 * * *'
+  planForm.cron_custom = ''
   planForm.enabled = true
   planForm.is_public = false
   planForm.max_results = '50'
@@ -532,7 +619,16 @@ const openEditDialog = (plan: PelicanProbePlan) => {
   planForm.api_key = ''
   planForm.base_url = plan.base_url
   planForm.prompt = ''
-  planForm.cron_expression = plan.cron_expression
+  planForm.test_type = plan.test_type || 'pelican'
+  planForm.reasoning_effort = plan.reasoning_effort || ''
+  planForm.judge_model_id = plan.judge_model_id || ''
+  if ((schedulePresets.map((p) => p.value) as readonly string[]).includes(plan.cron_expression)) {
+    planForm.schedule_preset = plan.cron_expression
+    planForm.cron_custom = ''
+  } else {
+    planForm.schedule_preset = scheduleCustomValue
+    planForm.cron_custom = plan.cron_expression
+  }
   planForm.enabled = plan.enabled
   planForm.is_public = plan.is_public
   planForm.max_results = String(plan.max_results)
@@ -543,6 +639,13 @@ const openEditDialog = (plan: PelicanProbePlan) => {
 const savePlan = async () => {
   if (!planForm.group_id || !planForm.model_id.trim()) return
   if (!planDialog.editing && !planForm.api_key.trim()) return
+  // Candy plans cannot be auto-judged without a judge model: block the submit
+  // and tell the admin instead of silently creating an ungradable plan.
+  if (isCandy.value && !planForm.judge_model_id.trim()) {
+    appStore.showError(t('admin.pelicanProbe.judgeModelRequired'))
+    return
+  }
+  const cron = isCustomSchedule.value ? planForm.cron_custom.trim() : planForm.schedule_preset
   planSaving.value = true
   try {
     if (planDialog.editing) {
@@ -550,13 +653,16 @@ const savePlan = async () => {
         name: planForm.name.trim(),
         model_id: planForm.model_id.trim(),
         base_url: planForm.base_url.trim(),
-        cron_expression: planForm.cron_expression.trim(),
+        test_type: planForm.test_type,
+        reasoning_effort: planForm.reasoning_effort,
+        cron_expression: cron,
         enabled: planForm.enabled,
         is_public: planForm.is_public,
         max_results: parseInt(planForm.max_results, 10) || 50
       }
       if (planForm.api_key.trim()) payload.api_key = planForm.api_key.trim()
-      if (planForm.prompt.trim()) payload.prompt = planForm.prompt.trim()
+      if (!isCandy.value && planForm.prompt.trim()) payload.prompt = planForm.prompt.trim()
+      if (isCandy.value) payload.judge_model_id = planForm.judge_model_id.trim()
       await adminAPI.pelicanProbe.updatePlan(planDialog.id, payload)
       appStore.showSuccess(t('admin.pelicanProbe.updateSuccess'))
     } else {
@@ -566,8 +672,11 @@ const savePlan = async () => {
         model_id: planForm.model_id.trim(),
         api_key: planForm.api_key.trim(),
         base_url: planForm.base_url.trim() || undefined,
-        prompt: planForm.prompt.trim() || undefined,
-        cron_expression: planForm.cron_expression.trim() || undefined,
+        prompt: isCandy.value ? undefined : (planForm.prompt.trim() || undefined),
+        test_type: planForm.test_type,
+        reasoning_effort: planForm.reasoning_effort || undefined,
+        judge_model_id: isCandy.value ? planForm.judge_model_id.trim() : undefined,
+        cron_expression: cron || undefined,
         enabled: planForm.enabled,
         is_public: planForm.is_public,
         max_results: parseInt(planForm.max_results, 10) || 50
@@ -577,7 +686,7 @@ const savePlan = async () => {
     planDialog.show = false
     await reloadAll()
   } catch (e: unknown) {
-    appStore.showError(e instanceof Error ? e.message : String(e))
+    appStore.showError(extractApiErrorMessage(e, t('common.error')))
   } finally {
     planSaving.value = false
   }
@@ -587,7 +696,7 @@ const togglePlan = async (plan: PelicanProbePlan, enabled: boolean) => {
     await adminAPI.pelicanProbe.updatePlan(plan.id, { enabled })
     plan.enabled = enabled
   } catch (e: unknown) {
-    appStore.showError(e instanceof Error ? e.message : String(e))
+    appStore.showError(extractApiErrorMessage(e, t('common.error')))
   }
 }
 const togglePublic = async (plan: PelicanProbePlan, isPublic: boolean) => {
@@ -595,7 +704,7 @@ const togglePublic = async (plan: PelicanProbePlan, isPublic: boolean) => {
     await adminAPI.pelicanProbe.updatePlan(plan.id, { is_public: isPublic })
     plan.is_public = isPublic
   } catch (e: unknown) {
-    appStore.showError(e instanceof Error ? e.message : String(e))
+    appStore.showError(extractApiErrorMessage(e, t('common.error')))
   }
 }
 const runPlan = async (plan: PelicanProbePlan) => {
@@ -605,7 +714,14 @@ const runPlan = async (plan: PelicanProbePlan) => {
     appStore.showSuccess(t('admin.pelicanProbe.runSuccess'))
     await reloadAll()
   } catch (e: unknown) {
-    appStore.showError(e instanceof Error ? e.message : String(e))
+    if (isTimeoutError(e)) {
+      // Backend persists the result with a detached context, so a refresh
+      // shows it even though this request was cut off at 30s.
+      appStore.showError(t('admin.pelicanProbe.runTimeout'))
+      await reloadAll()
+    } else {
+      appStore.showError(extractApiErrorMessage(e, t('common.error')))
+    }
   } finally {
     runningPlanId.value = null
   }
@@ -625,7 +741,7 @@ const confirmDelete = async () => {
     deleteDialog.show = false
     await reloadAll()
   } catch (e: unknown) {
-    appStore.showError(e instanceof Error ? e.message : String(e))
+    appStore.showError(extractApiErrorMessage(e, t('common.error')))
   }
 }
 
@@ -656,7 +772,7 @@ const submitReview = async () => {
     appStore.showSuccess(t('admin.pelicanProbe.reviewSuccess'))
     reviewDialog.show = false
   } catch (e: unknown) {
-    appStore.showError(e instanceof Error ? e.message : String(e))
+    appStore.showError(extractApiErrorMessage(e, t('common.error')))
   } finally {
     reviewSaving.value = false
   }
