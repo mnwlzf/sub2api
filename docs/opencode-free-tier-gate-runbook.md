@@ -310,7 +310,7 @@ Skip non-WSv2 invalid_encrypted_content retry because encrypted reasoning items 
   若将来在 WS 路径看到同款 400，需要在 `classifyOpenAIWSErrorEventFromRaw` 补消息判据，
   并把阶梯接过去（`openai_ws_forwarder_v2.go` 的 `recoverInvalidEncryptedContent`）。
 
-#### 1.5.6 encrypted-reasoning lineage 三项修复（2026-10-15，PR #TBD）
+#### 1.5.6 encrypted-reasoning lineage 三项修复（2026-10-15，PR #27）
 
 **背景**：部署三级阶梯后生产观察：opencode_go 的 `/responses` 请求约一半会走阶梯，
 每次走 3 次上游调用（原始→S1→S2，其中 2 次白跑，每次约 4.5 MB）。定位到两个独立缺陷 + 一个浪费，
@@ -904,7 +904,7 @@ print("mintedAt =", E - 1 - (hexv >> 12))      # 反推铸造时刻（应是一�
 | **2026-10-15** | **（生产阻塞修复）`400 reasoning `encrypted_content` was not issued to this caller` 未触发自愈**：该报错 `error.code` 为 `null`，原判据只认 code，两个分支都不匹配 → 恢复被跳过。改为按消息匹配（`encrypted_content` + `was not issued to this caller`），复用既有「丢加密推理项 + 重试一次」逻辑 | compact / 长历史重放时 `400`，客户端直接失败；`ops_error_logs` 5 天内 8 条（10-10 起，账号 31568/31585/31589，全部 `muse-spark-1.3-contributor-free`，全部 `upstream_status_code=400`） | 相关性证据（非充分）：失败回合账号 ≠ 同会话早前成功回合账号（如 10-15 11:07:48 失败于 `31589`，此前成功全在 `31568`）；反证见 §1.5；容器日志 `transport:"http"`、无 `Retrying non-WSv2` 行。见 §1.5 |
 | **2026-10-15** | **（根因修正 + 二次修复）绑定语义确定为「绑出口 IP」；单级恢复不够，改为三级降级阶梯**：`httpInvalidEncryptedContentRetryTried`（单 bool）→ `openAIEncryptedReasoningLadder`（每级计数器，S1 丢 `encrypted_content` / S2 再去 `id` / S3 整项删，各级最多一次、总上限 3 次）；新增 B 类判据 `Referenced reasoning item` + `was not found or has expired`；新增 `dropOpenAIReasoningItemIDs`、`rewriteOpenAIInputItems`（`dropOpenAIEncryptedReasoningInputItems` 改为复用同一 walker，默认语义不变） | 修复前：#23 的恢复只删密文、保留 `id` → 按变体 2/5 仍 `400`，只是消息从 A 变成 B（`not found or has expired`）；且出口轮换后必然复发 | 6 组变体实测（同出口换账号 200 / 换出口 `not issued to this caller`）；本次复现：同出口 原样→200、S1→400 B 类、S2→200；并用**实现产出的 body 逐字节**重发上游：S1 body→400、S2 body→200。见 §1.5 |
 | **2026-10-15** | **（部署验证）三级阶梯在生产端到端跑通**：跨出口签发的密文打已部署网关 → 日志 `escalating to stage=1` → `stage=2` → 客户端 **HTTP 200**（stage=3 未用） | 修复前同样输入返回 400 B | squash `265741d7b`，revision/health/restart 全对；并实测确认「同出口篡改密文 / 伪造 `id` 仍 200、换出口才 400」——复现 A/B 必须换出口。另：阶梯自愈时 `ops_error_logs` **不落** A/B 行，验收要看 `escalating to stage=`。见 §1.5.2 / §1.5.3 |
-| **2026-10-15** | **（三次修复）lineage 三项修复**：① 摘要集合满 512 后 FIFO 淘汰最旧（不限作用域，保证当前 body 失效项记得上；TTL 仍滑动续期；`capacity_overflow` 日志删除，新增 `fifo_evict`）；② 主动剥离对 opencode_go 产出 S2 形状（新函数 `sanitizeEncryptedReasoningInputItemDropDanglingID`，限 `IsOpenCodeGo`，官方链路 id 保留）；③ 阶梯对 opencode_go 合并首档 S1+S2（限 `IsOpenCodeGo`，S1 生产成功率 0/20，保留 S3 兜底；其余路由 S1→S2→S3 不变） | 约一半 `/responses` 走阶梯、每次 3 上游调用（2 次白跑）；目标降到 1 次 | PR #TBD（squash 待填）。验证：`capacity_overflow`→0、`escalating`→接近0、`shape=s2` 行出现；判读：自愈成功不落库、看日志不看表。见 §1.5.6 |
+| **2026-10-15** | **（三次修复）lineage 三项修复**：① 摘要集合满 512 后 FIFO 淘汰最旧（不限作用域，保证当前 body 失效项记得上；TTL 仍滑动续期；`capacity_overflow` 日志删除，新增 `fifo_evict`）；② 主动剥离对 opencode_go 产出 S2 形状（新函数 `sanitizeEncryptedReasoningInputItemDropDanglingID`，限 `IsOpenCodeGo`，官方链路 id 保留）；③ 阶梯对 opencode_go 合并首档 S1+S2（限 `IsOpenCodeGo`，S1 生产成功率 0/20，保留 S3 兜底；其余路由 S1→S2→S3 不变） | 约一半 `/responses` 走阶梯、每次 3 上游调用（2 次白跑）；目标降到 1 次 | PR #27（squash 待填）。验证：`capacity_overflow`→0、`escalating`→接近0、`shape=s2` 行出现；判读：自愈成功不落库、看日志不看表。见 §1.5.6 |
 
 ### ⚠️ 教训：**「顺手把版本号升到最新」是危险操作**
 
