@@ -53,92 +53,116 @@
           </div>
 
           <div v-for="card in group.cards" :key="card.plan.id" class="space-y-2">
-            <!-- Status card -->
+            <!-- Status card — flat by construction: a left accent bar (a border,
+                 not a nested panel), a two-row header, then one full-width preview
+                 row. There is deliberately no card-inside-a-card anywhere. -->
             <article
               class="overflow-hidden rounded-xl border border-l-4 border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800"
               :class="accentClass[card.view.state]"
             >
-              <div class="flex flex-col gap-4 p-4 sm:flex-row sm:items-center">
-                <!-- Left: large status badge -->
-                <div
-                  class="flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 sm:w-28 sm:flex-col sm:justify-center sm:gap-1.5 sm:self-stretch sm:py-4"
-                  :class="badgeClass[card.view.state]"
-                >
-                  <Icon :name="iconByState[card.view.state]" size="xl" :stroke-width="1.75" class="shrink-0" />
-                  <span class="text-xs font-semibold leading-tight sm:text-center">
+              <div class="space-y-1.5 px-4 py-3">
+                <!-- Row 1: inline status pill + model. The group name is already the
+                     section heading, so the card never repeats it. -->
+                <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span
+                    class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold leading-tight"
+                    :class="badgeClass[card.view.state]"
+                  >
+                    <Icon
+                      :name="iconByState[card.view.state]"
+                      size="xs"
+                      :stroke-width="2"
+                      class="shrink-0"
+                    />
                     {{ card.view.label }}
+                  </span>
+                  <span class="min-w-0 truncate font-mono text-sm font-medium text-gray-900 dark:text-gray-100">
+                    {{ card.plan.model_id }}
                   </span>
                 </div>
 
-                <!-- Middle: group · model + latest probe meta -->
-                <div class="min-w-0 flex-1">
-                  <div class="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">
-                    {{ group.name }}<span class="mx-1 text-gray-300 dark:text-gray-600">·</span><span
-                      class="font-mono text-xs font-normal text-gray-600 dark:text-gray-300"
-                    >{{ card.plan.model_id }}</span>
-                  </div>
-                  <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
-                    <span class="inline-flex items-center gap-1">
-                      <Icon name="clock" size="xs" />
-                      {{ card.latest ? formatTime(card.latest.created_at) : '—' }}
-                    </span>
+                <!-- Row 2: latest probe time · latency, history toggle pushed right -->
+                <div
+                  class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 text-xs text-gray-500 dark:text-gray-400"
+                >
+                  <span class="inline-flex items-center gap-1.5">
+                    <Icon name="clock" size="xs" class="shrink-0" />
+                    <span>{{ card.latest ? formatTime(card.latest.created_at) : '—' }}</span>
                     <template v-if="card.latest">
                       <span aria-hidden="true">·</span>
                       <span>{{ t('admin.pelicanProbe.latency') }} {{ formatLatency(card.latest.latency_ms) }}</span>
                     </template>
-                  </div>
-                </div>
-
-                <!-- Right: the pelican document, or a friendly line when there is
-                     nothing to look at. Candy cards render no body at all — their
-                     verdict is the badge on the left, and the model's answer plus
-                     the judge note are review material for the admin wall. -->
-                <div v-if="card.view.body !== 'none'" class="w-full shrink-0 sm:w-64">
-                  <ProbeResultBody
-                    v-if="card.view.body === 'html'"
-                    :result="card.latest!"
-                    :test-type="card.plan.test_type"
-                    variant="user"
-                    :show-verdict="false"
-                    preview-class="h-[180px] rounded-lg border border-gray-200 dark:border-gray-700"
-                  />
-                  <div
-                    v-else
-                    class="flex items-start gap-2 rounded-lg bg-gray-50 px-3 py-2 text-xs leading-relaxed text-gray-600 dark:bg-gray-900/60 dark:text-gray-300"
+                  </span>
+                  <button
+                    v-if="card.history.length > 0"
+                    class="btn btn-secondary px-2.5 py-1 text-xs"
+                    @click="toggleHistory(card.plan.id)"
                   >
-                    <Icon name="infoCircle" size="sm" class="mt-0.5 shrink-0 text-gray-400" />
-                    <span>{{ card.view.message }}</span>
-                  </div>
+                    {{
+                      expandedHistory[card.plan.id]
+                        ? t('admin.pelicanProbe.hideHistory')
+                        : t('admin.pelicanProbe.viewHistory', { n: card.history.length })
+                    }}
+                  </button>
+                </div>
+              </div>
+
+              <!-- Full-width preview row: the pelican document, or one friendly
+                   sentence when there is nothing to look at. Candy cards stop at
+                   the header above — their verdict is the pill, while the model's
+                   answer and the judge note stay review material for the admin wall. -->
+              <div
+                v-if="card.view.body !== 'none'"
+                class="border-t border-gray-100 dark:border-gray-700/60"
+              >
+                <ProbeResultBody
+                  v-if="card.view.body === 'html'"
+                  :result="card.latest!"
+                  :test-type="card.plan.test_type"
+                  variant="user"
+                  :show-verdict="false"
+                  preview-class="h-[320px]"
+                />
+                <div
+                  v-else
+                  class="flex items-start gap-2 px-4 py-3 text-xs leading-relaxed text-gray-600 dark:text-gray-300"
+                >
+                  <Icon name="infoCircle" size="sm" class="mt-0.5 shrink-0 text-gray-400" />
+                  <span>{{ card.view.message }}</span>
                 </div>
               </div>
             </article>
 
-            <!-- History toggle -->
-            <div v-if="card.history.length > 0">
-              <button class="btn btn-secondary px-3 py-1.5 text-xs" @click="toggleHistory(card.plan.id)">
-                {{
-                  expandedHistory[card.plan.id]
-                    ? t('admin.pelicanProbe.hideHistory')
-                    : t('admin.pelicanProbe.viewHistory', { n: card.history.length })
-                }}
-              </button>
-            </div>
-
-            <!-- History (compact cards) -->
+            <!-- History — the same flat structure, with a shorter preview -->
             <div
               v-if="expandedHistory[card.plan.id]"
-              class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
+              class="grid grid-cols-1 gap-3 lg:grid-cols-2"
             >
               <div
                 v-for="item in card.history"
                 :key="item.result.id"
                 class="overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800"
               >
-                <div class="flex items-center justify-between gap-2 border-b border-gray-100 px-3 py-1.5 dark:border-gray-700/60">
-                  <span class="rounded-full px-2 py-0.5 text-[11px] font-medium" :class="badgeClass[item.view.state]">
+                <div
+                  class="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 border-b border-gray-100 px-3 py-2 dark:border-gray-700/60"
+                >
+                  <span
+                    class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold leading-tight"
+                    :class="badgeClass[item.view.state]"
+                  >
+                    <Icon
+                      :name="iconByState[item.view.state]"
+                      size="xs"
+                      :stroke-width="2"
+                      class="shrink-0"
+                    />
                     {{ item.view.label }}
                   </span>
-                  <span class="text-[11px] text-gray-400">{{ formatTime(item.result.created_at) }}</span>
+                  <span class="text-[11px] text-gray-400">
+                    {{ formatTime(item.result.created_at) }}
+                    <span aria-hidden="true">·</span>
+                    {{ formatLatency(item.result.latency_ms) }}
+                  </span>
                 </div>
                 <ProbeResultBody
                   v-if="item.view.body === 'html'"
@@ -146,7 +170,7 @@
                   :test-type="card.plan.test_type"
                   variant="user"
                   :show-verdict="false"
-                  preview-class="h-32"
+                  preview-class="h-[200px]"
                   preview-title="pelican probe history preview"
                 />
                 <div
@@ -155,9 +179,6 @@
                 >
                   <Icon name="infoCircle" size="xs" class="mt-0.5 shrink-0 text-gray-400" />
                   <span>{{ item.view.message }}</span>
-                </div>
-                <div class="border-t border-gray-100 px-3 py-1.5 text-[11px] text-gray-400 dark:border-gray-700/60">
-                  {{ t('admin.pelicanProbe.latency') }} {{ formatLatency(item.result.latency_ms) }}
                 </div>
               </div>
             </div>
@@ -196,7 +217,7 @@ const iconByState: Record<StatusState, StatusIcon> = {
   nodata: 'questionCircle'
 }
 
-/** Soft block behind the big badge on the left of each card. */
+/** Soft tint behind the inline status pill that leads each card. */
 const badgeClass: Record<StatusState, string> = {
   pass: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400',
   degraded: 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400',
@@ -204,7 +225,8 @@ const badgeClass: Record<StatusState, string> = {
   nodata: 'bg-gray-100 text-gray-600 dark:bg-gray-700/50 dark:text-gray-300'
 }
 
-/** Left accent border so a group of cards is scannable at a glance. */
+/** Left accent border so a group of cards is scannable at a glance. It is a
+ *  border on the card itself, not a nested panel. */
 const accentClass: Record<StatusState, string> = {
   pass: 'border-l-emerald-500',
   degraded: 'border-l-rose-500',
@@ -217,9 +239,10 @@ interface ResultView {
   label: string
   message: string
   /**
-   * What the right-hand column renders: `html` = the pelican document preview,
-   * `message` = one plain sentence about why there is nothing to show, `none` =
-   * nothing at all (a candy card only carries its verdict in the badge).
+   * What the full-width row under the header renders: `html` = the pelican
+   * document preview, `message` = one plain sentence about why there is nothing
+   * to show, `none` = nothing at all (a candy card carries its verdict in the
+   * pill and stops at the header).
    */
   body: 'html' | 'message' | 'none'
 }
