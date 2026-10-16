@@ -248,4 +248,75 @@ describe('IQStatusView (user-facing IQ status)', () => {
     expect(frame.attributes('sandbox')).toBe('allow-scripts')
     expect(frame.attributes('class')).toContain('h-[180px]')
   })
+
+  it('renders the pelican document and no extra text on the card', async () => {
+    const wrapper = await mountView(
+      enabledStatus(
+        [makePlan({ test_type: 'pelican' })],
+        [makeResult({ raw_html: '<svg><rect/></svg>', note: '脚踩空' })]
+      )
+    )
+
+    const frame = wrapper.find('iframe[title="pelican probe preview"]')
+    expect(frame.exists()).toBe(true)
+    expect(frame.attributes('srcdoc')).toBe('<svg><rect/></svg>')
+
+    const card = wrapper.find('article')
+    expect(card.text()).not.toContain('脚踩空')
+    expect(card.find('pre').exists()).toBe(false)
+  })
+
+  // 用户明确要求：糖果卡片只给出「未判为 21 ✗」这类判定，其余一律不显示。
+  it('shows candy cards as the verdict only — no answer, no judge note', async () => {
+    const wrapper = await mountView(
+      enabledStatus(
+        [makePlan({ test_type: 'candy' })],
+        [
+          makeResult({
+            raw_html: '我先想一下……答案是 21',
+            verdict: 'degraded',
+            note: 'judge=deepseek-v4.1-flash: NO'
+          })
+        ]
+      )
+    )
+
+    const card = wrapper.find('article')
+    expect(card.text()).toContain('admin.pelicanProbe.candyVerdictDegraded')
+    expect(card.text()).toContain('gpt-5')
+    expect(card.text()).not.toContain('答案是 21')
+    expect(card.text()).not.toContain('deepseek-v4.1-flash')
+    expect(card.text()).not.toContain('admin.pelicanProbe.candyAnswerLabel')
+    expect(card.find('pre').exists()).toBe(false)
+    expect(card.find('iframe').exists()).toBe(false)
+  })
+
+  it('keeps candy history cards to the verdict pill only', async () => {
+    const wrapper = await mountView(
+      enabledStatus(
+        [makePlan({ test_type: 'candy' })],
+        [
+          makeResult({ id: 103, verdict: 'pass', created_at: '2026-01-03T00:00:00Z' }),
+          makeResult({
+            id: 102,
+            verdict: 'degraded',
+            raw_html: '答案是 21',
+            note: 'judge=deepseek-v4.1-flash: NO',
+            created_at: '2026-01-02T00:00:00Z'
+          })
+        ]
+      )
+    )
+
+    await clickHistoryToggle(wrapper)
+    await flushPromises()
+
+    const html = wrapper.html()
+    expect(html).not.toContain('答案是 21')
+    expect(html).not.toContain('deepseek-v4.1-flash')
+    expect(wrapper.findAll('pre')).toHaveLength(0)
+    expect(wrapper.findAll('iframe')).toHaveLength(0)
+    // 判定仍然可见：历史卡片头部的小徽标
+    expect(wrapper.text()).toContain('admin.pelicanProbe.candyVerdictDegraded')
+  })
 })

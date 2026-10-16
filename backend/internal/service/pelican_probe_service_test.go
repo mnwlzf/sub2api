@@ -13,24 +13,103 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestStripCodeFences(t *testing.T) {
+func TestExtractProbeHTML(t *testing.T) {
+	// production shape: the model narrates, then hands over the document in a
+	// fenced block. The old implementation only stripped a fence when the whole
+	// answer started with one, so this exact input was stored as "prose + code"
+	// and rendered as text inside the iframe.
+	const narrated = "我先看一下工作区现有文件，确认新 HTML 放在哪里。\n\n" +
+		"将以下代码保存为 `pelican-bike.html`：\n\n" +
+		"```html\n<!DOCTYPE html>\n<html><body>bike</body></html>\n```\n"
+
 	cases := []struct {
 		name string
 		in   string
 		want string
 	}{
-		{name: "plain html", in: `<html><body>hi</body></html>`, want: `<html><body>hi</body></html>`},
+		{
+			name: "narrated prose then fenced html",
+			in:   narrated,
+			want: "<!DOCTYPE html>\n<html><body>bike</body></html>",
+		},
+		{name: "plain html untouched", in: `<html><body>hi</body></html>`, want: `<html><body>hi</body></html>`},
 		{name: "fenced html", in: "```html\n<html></html>\n```", want: `<html></html>`},
 		{name: "bare fence", in: "```\n<div/>\n```", want: `<div/>`},
+		{name: "tilde fence", in: "~~~html\n<svg/>\n~~~", want: `<svg/>`},
+		{name: "uppercase language tag", in: "```HTML\n<svg/>\n```", want: `<svg/>`},
+		{name: "indented fence after prose", in: "这是结果：\n\n  ```html\n<svg/>\n  ```\n", want: `<svg/>`},
 		{name: "surrounding whitespace", in: "  ```html\n<a/>\n```  \n", want: `<a/>`},
 		{name: "no closing fence keeps body", in: "```html\n<a/>", want: `<a/>`},
+		{name: "unclosed fence after prose", in: "给你：\n```html\n<svg/>", want: `<svg/>`},
+		{
+			name: "multiple blocks prefers the html-tagged one",
+			in:   "先看这个：\n```\nnot markup\n```\n\n再是这个：\n```html\n<svg/>\n```\n",
+			want: `<svg/>`,
+		},
+		{name: "multiple untagged blocks take the first", in: "```\nA\n```\n```\nB\n```", want: `A`},
+		{name: "empty blocks are skipped", in: "```html\n\n```\n```html\n<svg/>\n```", want: `<svg/>`},
+		{
+			name: "no fence but doctype marker",
+			in:   "这是成品：\n\n<!DOCTYPE html>\n<html><body>x</body></html>\n",
+			want: "<!DOCTYPE html>\n<html><body>x</body></html>",
+		},
+		{name: "no fence but svg marker", in: "这是图：<svg><rect/></svg>", want: `<svg><rect/></svg>`},
+		{name: "marker match is case-insensitive", in: "说点什么<HTML></HTML>", want: `<HTML></HTML>`},
+		{name: "earliest marker wins", in: "a <body>b</body> <svg/>", want: "<body>b</body> <svg/>"},
+		{name: "one-line fenced html drops the stray fence", in: "```html <svg/>```", want: `<svg/>`},
+		{name: "plain prose is kept as-is", in: "答案是 21", want: "答案是 21"},
 		{name: "inline code untouched", in: "use `code` here", want: "use `code` here"},
+		{name: "empty content", in: "", want: ""},
+		{name: "whitespace only", in: "  \n\t ", want: ""},
+		{name: "fence only", in: "```html", want: "```html"},
 	}
+
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.want, stripCodeFences(tc.in))
+			require.Equal(t, tc.want, extractProbeHTML(tc.in))
 		})
 	}
+
+	// Deterministic: the same answer always yields the same document, so a
+	// re-run of a probe never renders something different.
+	t.Run("deterministic", func(t *testing.T) {
+		first := extractProbeHTML(narrated)
+		for i := 0; i < 50; i++ {
+			require.Equal(t, first, extractProbeHTML(narrated))
+		}
+	})
+}
+
+// TestExecuteProbeExtractsHTMLOnlyForPelican pins the asymmetry: the pelican
+// answer becomes a renderable document, while the candy answer is stored
+// verbatim because the judge must read the model's full reply.
+func TestExecuteProbeExtractsHTMLOnlyForPelican(t *testing.T) {
+	const answer = "答案是 21，因为……\n\n```\n21\n```\n"
+
+	t.Run("pelican extracts the fenced document", func(t *testing.T) {
+		var captured map[string]any
+		srv := probeTestServer(t, &captured, answer, false)
+		defer srv.Close()
+		svc, _, _ := probeSvcWithServer(t, srv)
+
+		raw, _, _, _, err := svc.executeProbe(context.Background(), probeRow(srv.URL))
+		require.NoError(t, err)
+		require.Equal(t, "21", raw)
+	})
+
+	t.Run("candy keeps the raw answer", func(t *testing.T) {
+		var captured map[string]any
+		srv := probeTestServer(t, &captured, answer, false)
+		defer srv.Close()
+		svc, _, _ := probeSvcWithServer(t, srv)
+
+		row := probeRow(srv.URL)
+		row.TestType = PelicanTestTypeCandy
+		raw, _, _, _, err := svc.executeProbe(context.Background(), row)
+		require.NoError(t, err)
+		require.Equal(t, strings.TrimSpace(answer), raw)
+		require.Contains(t, raw, "答案是 21")
+	})
 }
 
 func TestPelicanProbeCreatePlanValidation(t *testing.T) {

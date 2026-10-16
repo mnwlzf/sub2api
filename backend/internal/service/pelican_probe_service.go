@@ -1006,25 +1006,221 @@ func (s *PelicanProbeService) executeProbe(ctx context.Context, row *PelicanProb
 	if strings.TrimSpace(content) == "" {
 		return "", promptTokens, completionTokens, latencyMs, fmt.Errorf("empty model content")
 	}
-	return stripCodeFences(content), promptTokens, completionTokens, latencyMs, nil
+	// Only the pelican test renders the answer as a document, so only it needs
+	// the HTML extracted out of the markdown. The candy answer is graded by a
+	// judge that must see the model's full reply, prose included.
+	if row.TestType == PelicanTestTypeCandy {
+		return strings.TrimSpace(content), promptTokens, completionTokens, latencyMs, nil
+	}
+	return extractProbeHTML(content), promptTokens, completionTokens, latencyMs, nil
 }
 
-// stripCodeFences removes a single wrapping markdown code fence if present.
-func stripCodeFences(s string) string {
-	t := strings.TrimSpace(s)
-	if !strings.HasPrefix(t, "```") {
-		return t
+// extractProbeHTML pulls the HTML/SVG document out of a model answer.
+//
+// The pelican probe renders the answer inside a sandboxed iframe, so the string
+// handed to `srcdoc` has to be markup — not the markdown the model actually
+// replies with. Models routinely wrap the document in a fenced code block and
+// introduce it with a sentence of prose ("我先看一下…", "将以下代码保存为…");
+// the previous implementation only stripped a fence when the *whole* answer
+// started with one, so that prose was stored verbatim and the iframe rendered
+// it as plain text.
+//
+// Resolution order:
+//
+//  1. the first non-empty fenced block (``` or ~~~), preferring one tagged
+//     html/svg when the answer contains several;
+//  2. otherwise, everything from the first `<!DOCTYPE`/`<html`/`<svg`/`<body`
+//     marker to the end of the answer;
+//  3. otherwise the answer itself, so a non-markup reply is never lost.
+//
+// The function is pure and deterministic: the same input always yields the
+// same output.
+func extractProbeHTML(s string) string {
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" {
+		return ""
 	}
-	// Drop opening fence line (``` or ```html).
-	if idx := strings.Index(t, "\n"); idx >= 0 {
-		t = t[idx+1:]
-	} else {
-		return t
+	if body, ok := pickProbeFenceBody(trimmed); ok {
+		return body
 	}
-	if idx := strings.LastIndex(t, "```"); idx >= 0 {
-		t = t[:idx]
+	if idx := firstHTMLMarker(trimmed); idx >= 0 {
+		// A fence that opened on the same line as its content leaves a stray
+		// closing fence in the tail; drop it so the iframe stays clean.
+		return trimTrailingFence(strings.TrimSpace(trimmed[idx:]))
 	}
-	return strings.TrimSpace(t)
+	return trimmed
+}
+
+// pickProbeFenceBody returns the body of the fenced block that should be
+// rendered, preferring an html/svg-tagged block over an untagged one.
+func pickProbeFenceBody(s string) (string, bool) {
+	firstNonEmpty := ""
+	foundNonEmpty := false
+	for _, block := range scanProbeFences(s) {
+		body := strings.TrimSpace(block.body)
+		if body == "" {
+			continue
+		}
+		if isHTMLFenceLang(block.lang) {
+			return body, true
+		}
+		if !foundNonEmpty {
+			firstNonEmpty, foundNonEmpty = body, true
+		}
+	}
+	return firstNonEmpty, foundNonEmpty
+}
+
+// probeFenceBlock is one markdown fenced code block found in a model answer.
+type probeFenceBlock struct {
+	body string
+	lang string
+}
+
+// scanProbeFences lists every fenced code block in s, in order. Fences may be
+// indented and may appear after prose; an unterminated fence runs to the end of
+// the answer.
+func scanProbeFences(s string) []probeFenceBlock {
+	var blocks []probeFenceBlock
+	for i := 0; i < len(s); {
+		ch, runLen, ok := probeFenceRunAt(s, i)
+		if !ok {
+			i++
+			continue
+		}
+		info := ""
+		bodyFrom := len(s)
+		if lineEnd := strings.IndexByte(s[i:], '\n'); lineEnd >= 0 {
+			info = s[i+runLen : i+lineEnd]
+			bodyFrom = i + lineEnd + 1
+		} else {
+			// The fence never ends its line: treat the remainder as the info
+			// string, which leaves an empty (and therefore skipped) body.
+			info = s[i+runLen:]
+		}
+		bodyTo, next := findClosingFence(s, bodyFrom, ch, runLen)
+		blocks = append(blocks, probeFenceBlock{body: s[bodyFrom:bodyTo], lang: firstInfoToken(info)})
+		i = next
+	}
+	return blocks
+}
+
+// probeFenceRunAt reports the fence run starting at i, if any. A run must be at
+// least three backticks or tildes and must not be the tail of a longer run.
+func probeFenceRunAt(s string, i int) (byte, int, bool) {
+	ch := s[i]
+	if ch != '`' && ch != '~' {
+		return 0, 0, false
+	}
+	if i > 0 && s[i-1] == ch {
+		return 0, 0, false
+	}
+	j := i
+	for j < len(s) && s[j] == ch {
+		j++
+	}
+	if j-i < 3 {
+		return 0, 0, false
+	}
+	return ch, j - i, true
+}
+
+// findClosingFence locates the fence that closes a block opened at `from`. It
+// returns the offset where the body ends and the offset where scanning should
+// resume; both are len(s) when the fence is never closed.
+func findClosingFence(s string, from int, ch byte, runLen int) (bodyTo, next int) {
+	for i := from; i < len(s); {
+		if s[i] != ch || (i > 0 && s[i-1] == ch) {
+			i++
+			continue
+		}
+		j := i
+		for j < len(s) && s[j] == ch {
+			j++
+		}
+		if j-i < runLen {
+			i = j
+			continue
+		}
+		// The fence must sit on its own line: nothing but indentation before
+		// it and nothing but whitespace after it.
+		lineStart := strings.LastIndexByte(s[:i], '\n') + 1
+		if strings.TrimSpace(s[lineStart:i]) != "" {
+			i = j
+			continue
+		}
+		lineEnd := strings.IndexByte(s[j:], '\n')
+		rest := s[j:]
+		nextOffset := len(s)
+		if lineEnd >= 0 {
+			rest = s[j : j+lineEnd]
+			nextOffset = j + lineEnd + 1
+		}
+		if strings.TrimSpace(rest) != "" {
+			i = j
+			continue
+		}
+		return i, nextOffset
+	}
+	return len(s), len(s)
+}
+
+// firstInfoToken lowercases the language token of a fence info string.
+func firstInfoToken(info string) string {
+	fields := strings.Fields(info)
+	if len(fields) == 0 {
+		return ""
+	}
+	return strings.ToLower(fields[0])
+}
+
+// isHTMLFenceLang reports whether a fence info string tags markup.
+func isHTMLFenceLang(lang string) bool {
+	return lang == "html" || lang == "svg" || lang == "xhtml" ||
+		strings.HasPrefix(lang, "html") || strings.HasPrefix(lang, "svg")
+}
+
+// firstHTMLMarker returns the offset of the first markup opening tag, or -1.
+//
+// The haystack is folded with asciiLower rather than strings.ToLower so offsets
+// always match the original string (Unicode lowercasing can change byte
+// lengths, which would slice the answer at the wrong place).
+func firstHTMLMarker(s string) int {
+	lower := asciiLower(s)
+	first := -1
+	for _, marker := range []string{"<!doctype", "<html", "<svg", "<body"} {
+		idx := strings.Index(lower, marker)
+		if idx < 0 {
+			continue
+		}
+		if first < 0 || idx < first {
+			first = idx
+		}
+	}
+	return first
+}
+
+// trimTrailingFence drops a single closing fence left at the end of a slice.
+func trimTrailingFence(s string) string {
+	t := strings.TrimRight(s, " \t\r\n")
+	for _, fence := range []string{"```", "~~~"} {
+		if strings.HasSuffix(t, fence) {
+			return strings.TrimRight(strings.TrimSuffix(t, fence), " \t\r\n")
+		}
+	}
+	return t
+}
+
+// asciiLower lowercases A-Z only, so the result is byte-for-byte aligned with
+// the input.
+func asciiLower(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		if c >= 'A' && c <= 'Z' {
+			b[i] = c + ('a' - 'A')
+		}
+	}
+	return string(b)
 }
 
 // sanitizePlan strips secrets before returning plans to callers.
