@@ -42,7 +42,10 @@ export default {
 
     pelicanProbe: {
       title: 'IQ Probe',
-      description: 'Group-level pelican test: probe model quality on schedule, human-reviewed',
+      // User-facing subtitle. The previous wording named the internal "pelican"
+      // codename, led with a technical term ("group-level"), and still claimed
+      // "human-reviewed" after candy tests moved to an automatic LLM judge.
+      description: 'Scheduled model-quality probes per group, flagging degradation automatically',
       plans: 'Probe Plans',
       resultsWall: 'Results Wall',
       addPlan: 'Add Plan',
@@ -85,6 +88,10 @@ export default {
       verdictPending: 'Pending',
       verdictPass: 'Pass',
       verdictDegraded: 'Degraded',
+      // The probe itself failed (upstream 5xx / timeout / gateway concurrency
+      // limit), so there is no model output to judge. It must not sit under
+      // "pending review" next to pass/degraded buttons.
+      verdictInvalid: 'Invalid',
       markPass: 'Pass',
       markDegraded: 'Degraded',
       reviewTitle: 'Human Review',
@@ -92,6 +99,7 @@ export default {
       reviewNotePlaceholder: 'e.g. foot missed pedal, broken wheels, off-topic…',
       reviewSuccess: 'Review saved',
       reviewedBy: 'Reviewer',
+      reviewNotApplicable: 'The probe produced no result, nothing to review',
       latency: 'Latency',
       tokens: 'Tokens',
       statusSuccess: 'Success',
@@ -102,6 +110,7 @@ export default {
       statsPending: 'Pending',
       statsPass: 'Pass',
       statsDegraded: 'Degraded',
+      statsInvalid: 'Invalid',
       viewSource: 'View Source',
       close: 'Close',
       runTimeout: 'Probe timed out; the result may appear shortly, please refresh and check',
@@ -140,6 +149,7 @@ export default {
       candyVerdictPass: 'Judged 21 ✓',
       candyVerdictDegraded: 'Not judged 21 ✗',
       candyVerdictPending: 'Awaiting judge / review',
+      candyVerdictInvalid: 'Probe failed (invalid)',
       resultUnavailable: 'This probe did not produce a valid result',
       effort: 'Reasoning effort',
       effortUnspecified: 'Unspecified',

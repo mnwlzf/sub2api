@@ -42,7 +42,10 @@ export default {
 
     pelicanProbe: {
       title: '智商探针',
-      description: '分组级鹈鹕测试：定时探测模型质量，人工评审是否降智',
+      // 用户端副标题。原来的「分组级鹈鹕测试：…人工评审是否降智」有三个问题：
+      // 「鹈鹕」是代码里的内部代号、「分组级」是技术术语、而糖果测试早已改成
+      // LLM 自动裁判，「人工评审」已经与实现不符。这里只说用户能得到什么。
+      description: '定时探测各分组的模型质量，自动判定是否降智',
       plans: '探测计划',
       resultsWall: '结果墙',
       addPlan: '添加计划',
@@ -85,6 +88,9 @@ export default {
       verdictPending: '待评审',
       verdictPass: '通过',
       verdictDegraded: '降智',
+      // 探测本身失败（上游 5xx / 超时 / 网关并发限流）时没有模型输出可评审，
+      // 不能挂在「待评审」下面配通过/降智按钮 —— 否则一次限流会被点成质量结论。
+      verdictInvalid: '无效',
       markPass: '通过',
       markDegraded: '降智',
       reviewTitle: '人工评审',
@@ -92,6 +98,7 @@ export default {
       reviewNotePlaceholder: '例如：脚踩空、车轮错位、跑题…',
       reviewSuccess: '评审已保存',
       reviewedBy: '评审人',
+      reviewNotApplicable: '探测未产出结果，无可评审内容',
       latency: '耗时',
       tokens: 'Token',
       statusSuccess: '成功',
@@ -102,6 +109,7 @@ export default {
       statsPending: '待评审',
       statsPass: '通过',
       statsDegraded: '降智',
+      statsInvalid: '无效',
       viewSource: '查看源码',
       close: '关闭',
       runTimeout: '探测超时，结果可能稍后出现，请刷新查看',
@@ -137,6 +145,7 @@ export default {
       candyVerdictPass: '判为 21 ✓',
       candyVerdictDegraded: '未判为 21 ✗',
       candyVerdictPending: '待裁判/待评审',
+      candyVerdictInvalid: '探测失败（无效）',
       resultUnavailable: '本次探测未获得有效结果',
       effort: '推理强度',
       effortUnspecified: '不指定',

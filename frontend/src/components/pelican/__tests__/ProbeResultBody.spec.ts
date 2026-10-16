@@ -12,6 +12,8 @@ const TRANSLATIONS: Record<string, string> = {
   'admin.pelicanProbe.candyVerdictPass': 'Judged 21 ✓',
   'admin.pelicanProbe.candyVerdictDegraded': 'Not judged 21 ✗',
   'admin.pelicanProbe.candyVerdictPending': 'Awaiting judge / review',
+  'admin.pelicanProbe.candyVerdictInvalid': 'Probe failed (invalid)',
+  'admin.pelicanProbe.verdictInvalid': 'Invalid',
   'admin.pelicanProbe.resultUnavailable': 'This probe did not produce a valid result'
 }
 
@@ -136,6 +138,50 @@ describe('ProbeResultBody (admin results wall)', () => {
     const user = mount(ProbeResultBody, { props: { result: failed, variant: 'user' } })
     expect(user.text()).not.toContain('127.0.0.1')
     expect(user.text()).toContain('This probe did not produce a valid result')
+  })
+
+  // 探测本身失败时没有任何模型输出可评审。它必须读作「无效」，不能顶着
+  // 「待评审」的橙色标签配通过/降智按钮 —— 那会让一次上游限流被点成质量结论。
+  it('marks a failed run invalid instead of leaving it pending review', () => {
+    // 关键回归：新值出现之前落库的行是 status=failed + verdict=pending，
+    // 它们和新的 invalid 一样不可评审。
+    const legacyRow = makeResult({
+      status: 'failed',
+      verdict: 'pending',
+      error_message: 'gateway_concurrency_limit'
+    })
+    const wrapper = mount(ProbeResultBody, { props: { result: legacyRow } })
+
+    expect(wrapper.text()).toContain('Invalid')
+    expect(wrapper.text()).not.toContain('Pending')
+  })
+
+  it('labels a failed candy run as invalid too', () => {
+    const wrapper = mount(ProbeResultBody, {
+      props: {
+        result: makeResult({ status: 'failed', verdict: 'pending' }),
+        testType: 'candy'
+      }
+    })
+
+    // 失败分支优先于 candy 分支：正文只留失败原因，判定走 ribbon，
+    // 模型答案（pre）不会渲染 —— 失败时本来也没有答案。
+    expect(wrapper.text()).toContain('Invalid')
+    expect(wrapper.text()).not.toContain('Awaiting judge / review')
+    expect(wrapper.find('pre').exists()).toBe(false)
+  })
+
+  // 反向保护：真的产出了内容、只是还没裁决的 run 仍然必须读作待评审。
+  it('still reads a real candy result as awaiting judge / review', () => {
+    const wrapper = mount(ProbeResultBody, {
+      props: {
+        result: makeResult({ status: 'success', verdict: 'pending' }),
+        testType: 'candy'
+      }
+    })
+
+    expect(wrapper.text()).toContain('Awaiting judge / review')
+    expect(wrapper.text()).not.toContain('Probe failed (invalid)')
   })
 })
 

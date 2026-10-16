@@ -139,6 +139,10 @@ const displayNote = computed(() => {
 })
 
 const verdictClass = computed(() => {
+  // A failed run carries no judgement, so it never gets the amber "awaiting
+  // review" colour — that badge sits next to pass/degraded buttons and reads as
+  // "someone should decide this".
+  if (isFailed.value) return 'bg-gray-500 text-white'
   switch (props.result.verdict) {
     case 'pass':
       return 'bg-emerald-600 text-white'
@@ -150,6 +154,10 @@ const verdictClass = computed(() => {
 })
 
 const verdictLabel = computed(() => {
+  // Checked before the verdict: rows written before PelicanVerdictInvalid
+  // existed still carry status=failed + verdict=pending, and they are just as
+  // unreviewable as new ones.
+  if (isFailed.value) return t('admin.pelicanProbe.verdictInvalid')
   if (isCandy.value) return candyVerdictText.value
   switch (props.result.verdict) {
     case 'pass':
@@ -162,6 +170,7 @@ const verdictLabel = computed(() => {
 })
 
 const candyVerdictText = computed(() => {
+  if (isFailed.value) return t('admin.pelicanProbe.candyVerdictInvalid')
   switch (props.result.verdict) {
     case 'pass':
       return t('admin.pelicanProbe.candyVerdictPass')
@@ -173,6 +182,9 @@ const candyVerdictText = computed(() => {
 })
 
 const candyVerdictClass = computed(() => {
+  if (isFailed.value) {
+    return 'bg-gray-100 text-gray-600 dark:bg-gray-700/50 dark:text-gray-300'
+  }
   switch (props.result.verdict) {
     case 'pass':
       return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'

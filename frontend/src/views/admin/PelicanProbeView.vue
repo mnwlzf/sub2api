@@ -37,7 +37,7 @@
       </div>
 
       <!-- Stats -->
-      <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <div class="rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
           <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.pelicanProbe.statsTotal') }}</div>
           <div class="mt-1 text-xl font-semibold text-gray-900 dark:text-gray-100">{{ stats.total }}</div>
@@ -53,6 +53,10 @@
         <div class="rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
           <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.pelicanProbe.statsDegraded') }}</div>
           <div class="mt-1 text-xl font-semibold text-rose-600">{{ stats.degraded }}</div>
+        </div>
+        <div class="rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
+          <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.pelicanProbe.statsInvalid') }}</div>
+          <div class="mt-1 text-xl font-semibold text-gray-500 dark:text-gray-400">{{ stats.invalid }}</div>
         </div>
       </div>
 
@@ -163,12 +167,20 @@
                 <span v-if="r.reviewed_by">{{ t('admin.pelicanProbe.reviewedBy') }}: {{ r.reviewed_by }}</span>
               </div>
               <div class="flex items-center gap-2 pt-1">
-                <button @click="openReview(r, 'pass')" class="btn btn-primary flex-1 py-1 text-xs">
-                  {{ t('admin.pelicanProbe.markPass') }}
-                </button>
-                <button @click="openReview(r, 'degraded')" class="btn btn-danger flex-1 py-1 text-xs">
-                  {{ t('admin.pelicanProbe.markDegraded') }}
-                </button>
+                <!-- A failed probe produced no model output, so pass/degraded
+                     have nothing to judge. Offering the buttons anyway let one
+                     click record an upstream rate limit as a quality verdict. -->
+                <template v-if="!isUnreviewable(r)">
+                  <button @click="openReview(r, 'pass')" class="btn btn-primary flex-1 py-1 text-xs">
+                    {{ t('admin.pelicanProbe.markPass') }}
+                  </button>
+                  <button @click="openReview(r, 'degraded')" class="btn btn-danger flex-1 py-1 text-xs">
+                    {{ t('admin.pelicanProbe.markDegraded') }}
+                  </button>
+                </template>
+                <span v-else class="flex-1 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t('admin.pelicanProbe.reviewNotApplicable') }}
+                </span>
                 <button @click="viewSource(r)" class="btn btn-secondary px-2.5 py-1 text-xs">
                   {{ t('admin.pelicanProbe.viewSource') }}
                 </button>
@@ -479,10 +491,22 @@ const planTestType = (planId: number) =>
 
 const stats = computed(() => ({
   total: results.value.length,
-  pending: results.value.filter((r) => r.verdict === 'pending').length,
+  // Failures are counted on their own, never as "pending review": a probe that
+  // returned nothing has no verdict for an operator to give. Rows recorded
+  // before PelicanVerdictInvalid existed still say verdict=pending, so the
+  // status check is what actually keeps them out of the queue.
+  pending: results.value.filter((r) => r.status !== 'failed' && r.verdict === 'pending').length,
   pass: results.value.filter((r) => r.verdict === 'pass').length,
-  degraded: results.value.filter((r) => r.verdict === 'degraded').length
+  degraded: results.value.filter((r) => r.verdict === 'degraded').length,
+  invalid: results.value.filter((r) => r.status === 'failed').length
 }))
+
+/**
+ * A run is unreviewable when the probe itself failed. Deliberately keyed on
+ * `status`, not `verdict`, so the rows written before PelicanVerdictInvalid
+ * existed (status=failed + verdict=pending) are treated the same as new ones.
+ */
+const isUnreviewable = (r: PelicanProbeResult): boolean => r.status === 'failed'
 
 const formatTime = (v: string | null) => (v ? formatDateTime(v) : '—')
 

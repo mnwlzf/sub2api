@@ -10,6 +10,17 @@ const (
 	PelicanVerdictPending  = "pending"
 	PelicanVerdictPass     = "pass"
 	PelicanVerdictDegraded = "degraded"
+	// PelicanVerdictInvalid marks a run that never produced anything to judge:
+	// the probe itself failed (upstream 5xx, timeout, gateway concurrency
+	// limit). There is no model output to review, so it must stay out of the
+	// pending-review queue — otherwise an operator sees a gateway rate limit
+	// behind a "pending review" badge next to the pass/degraded buttons, and one
+	// click turns upstream congestion into a quality verdict.
+	//
+	// Results written before this value existed still carry
+	// status=failed + verdict=pending, so every queue and counter must also
+	// treat status == failed as unreviewable instead of trusting the verdict.
+	PelicanVerdictInvalid = "invalid"
 )
 
 // Pelican probe run status.
