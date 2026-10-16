@@ -105,6 +105,45 @@
                     }}
                   </button>
                 </div>
+
+                <!-- Row 3: compact trend strip + aggregate numbers. Only worth
+                     showing once there is more than the single latest run — one
+                     cell is not a trend, and the pill above already states it. -->
+                <div v-if="card.aggregate.total > 1" class="space-y-1.5">
+                  <div
+                    class="flex items-center gap-[3px]"
+                    role="img"
+                    :aria-label="t('admin.pelicanProbe.stripHint')"
+                    :title="t('admin.pelicanProbe.stripHint')"
+                  >
+                    <span
+                      v-for="cell in card.aggregate.strip"
+                      :key="cell.key"
+                      class="h-4 flex-1 rounded-[2px]"
+                      :class="stripClass[cell.state]"
+                      :title="cell.title"
+                    />
+                  </div>
+                  <div
+                    class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-gray-500 dark:text-gray-400"
+                  >
+                    <span v-if="card.aggregate.passRate !== null">
+                      {{ t('admin.pelicanProbe.passRate') }}
+                      <span class="font-semibold" :class="passRateClass(card.aggregate.passRate)">
+                        {{ Math.round(card.aggregate.passRate * 100) }}%
+                      </span>
+                    </span>
+                    <template v-if="card.aggregate.avgLatencyMs !== null">
+                      <span aria-hidden="true">·</span>
+                      <span>
+                        {{ t('admin.pelicanProbe.avgLatency') }}
+                        {{ formatLatency(card.aggregate.avgLatencyMs) }}
+                      </span>
+                    </template>
+                    <span aria-hidden="true">·</span>
+                    <span>{{ t('admin.pelicanProbe.runCount', { n: card.aggregate.total }) }}</span>
+                  </div>
+                </div>
               </div>
 
               <!-- Full-width preview row: the pelican document, or one friendly
@@ -133,13 +172,14 @@
               </div>
             </article>
 
-            <!-- History — the same flat structure, with a shorter preview -->
+            <!-- History — newest few first, the rest behind one button. Without
+                 the cap a long-lived plan turns this page into a wall of cards. -->
             <div
               v-if="expandedHistory[card.plan.id]"
               class="grid grid-cols-1 gap-3 lg:grid-cols-2"
             >
               <div
-                v-for="item in card.history"
+                v-for="item in historyShown(card)"
                 :key="item.result.id"
                 class="overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800"
               >
@@ -180,6 +220,19 @@
                   <Icon name="infoCircle" size="xs" class="mt-0.5 shrink-0 text-gray-400" />
                   <span>{{ item.view.message }}</span>
                 </div>
+              </div>
+
+              <!-- Spans both columns so it reads as a footer for the grid. -->
+              <div
+                v-if="!showAllHistory[card.plan.id] && card.history.length > HISTORY_PREVIEW"
+                class="flex justify-center lg:col-span-2"
+              >
+                <button
+                  class="btn btn-secondary px-3 py-1.5 text-xs"
+                  @click="revealAllHistory(card.plan.id)"
+                >
+                  {{ t('admin.pelicanProbe.showAllHistory', { n: card.history.length }) }}
+                </button>
               </div>
             </div>
           </div>
@@ -360,6 +413,98 @@ const viewOf = (r: PelicanProbeResult | undefined, testType: string): ResultView
   }
 }
 
+/**
+ * How many recent runs the compact strip renders, and how many history entries
+ * the expanded list shows before the user asks for the rest.
+ *
+ * Both are deliberately fixed: the payload caps public results at 60, so an
+ * unfolded card must not grow with the number of runs, or the page turns into a
+ * wall of cards as the probes keep firing every hour.
+ */
+const STRIP_SIZE = 20
+const HISTORY_PREVIEW = 5
+
+/** Fill colour of one strip cell, matching the pill palette above. */
+const stripClass: Record<StatusState, string> = {
+  pass: 'bg-emerald-500',
+  degraded: 'bg-rose-500',
+  pending: 'bg-amber-400',
+  nodata: 'bg-gray-300 dark:bg-gray-600'
+}
+
+/** One run reduced to a colour, with a tooltip carrying the detail. */
+interface StripCell {
+  key: number
+  state: StatusState
+  title: string
+}
+
+interface CardAggregate {
+  /** Every run in the payload, failures included. */
+  total: number
+  /** Runs that reached a verdict (pass + degraded). Failures and pending runs
+   *  are excluded on purpose: an upstream error or a gateway concurrency limit
+   *  is not a quality signal, so folding it into the denominator would report a
+   *  healthy model as degraded. */
+  judged: number
+  /** `null` while nothing has been judged yet — the row is hidden, not shown as 0%. */
+  passRate: number | null
+  /** Mean latency over successful runs only; `null` when there are none. */
+  avgLatencyMs: number | null
+  /** Oldest → newest, so the strip reads left to right like a timeline. */
+  strip: StripCell[]
+}
+
+const aggregateOf = (results: PelicanProbeResult[], testType: string): CardAggregate => {
+  const isCandy = (testType || '').toLowerCase() === 'candy'
+
+  let passCount = 0
+  let judged = 0
+  let latencySum = 0
+  let latencyCount = 0
+
+  for (const r of results) {
+    const state = stateOf(r)
+    if (state === 'pass') {
+      passCount += 1
+      judged += 1
+    } else if (state === 'degraded') {
+      judged += 1
+    }
+    if (r.status === 'success' && Number.isFinite(r.latency_ms) && r.latency_ms > 0) {
+      latencySum += r.latency_ms
+      latencyCount += 1
+    }
+  }
+
+  const strip = results
+    .slice(0, STRIP_SIZE)
+    .reverse()
+    .map((r) => {
+      const state = stateOf(r)
+      return {
+        key: r.id,
+        state,
+        title: `${formatTime(r.created_at)} · ${isCandy ? candyStateLabel(state) : stateLabel(state)}`
+      }
+    })
+
+  return {
+    total: results.length,
+    judged,
+    passRate: judged > 0 ? passCount / judged : null,
+    avgLatencyMs: latencyCount > 0 ? latencySum / latencyCount : null,
+    strip
+  }
+}
+
+/** Colour the pass-rate number by how bad it is, not by the latest single run. */
+const passRateClass = (rate: number): string => {
+  if (rate >= 0.9) return 'text-emerald-600 dark:text-emerald-400'
+  if (rate >= 0.7) return 'text-amber-600 dark:text-amber-400'
+  return 'text-rose-600 dark:text-rose-400'
+}
+
 /** Plans grouped by `group_id`, one section per group, insertion order kept. */
 const sections = computed(() => {
   const groups = new Map<number, { id: number; name: string; plans: PelicanProbePlan[] }>()
@@ -386,15 +531,34 @@ const sections = computed(() => {
         plan,
         latest,
         history: results.slice(1).map((result) => ({ result, view: viewOf(result, testType) })),
+        aggregate: aggregateOf(results, testType),
         view: viewOf(latest, testType)
       }
     })
   }))
 })
 
+/**
+ * History entries to render for a card: the newest few by default, everything
+ * once the user asks for it. Keeps a long-lived plan from pushing the rest of
+ * the page off screen.
+ */
+type StatusCard = (typeof sections)['value'][number]['cards'][number]
+
+const historyShown = (card: StatusCard) =>
+  showAllHistory[card.plan.id] ? card.history : card.history.slice(0, HISTORY_PREVIEW)
+
 const expandedHistory = reactive<Record<number, boolean>>({})
+const showAllHistory = reactive<Record<number, boolean>>({})
+
 const toggleHistory = (planId: number) => {
   expandedHistory[planId] = !expandedHistory[planId]
+  // Collapsing resets the "show all" state so reopening starts compact again.
+  if (!expandedHistory[planId]) showAllHistory[planId] = false
+}
+
+const revealAllHistory = (planId: number) => {
+  showAllHistory[planId] = true
 }
 
 const load = async () => {

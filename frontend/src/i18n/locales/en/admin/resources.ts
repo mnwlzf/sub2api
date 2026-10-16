@@ -154,7 +154,12 @@ export default {
       failureTimeout: 'Probe timed out before it returned',
       failureConcurrency: 'Gateway is busy, please try again later',
       failureConfig: 'Probe configuration is invalid',
-      failureUnknown: 'No valid result from this probe'
+      failureUnknown: 'No valid result from this probe',
+      passRate: 'Pass rate',
+      avgLatency: 'Avg latency',
+      runCount: '{n} runs',
+      showAllHistory: 'Show all ({n})',
+      stripHint: 'One cell per run, oldest to newest'
     },
 
     // Proxies

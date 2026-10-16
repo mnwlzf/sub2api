@@ -151,7 +151,12 @@ export default {
       failureTimeout: '探测超时，未在时限内返回',
       failureConcurrency: '网关繁忙，请稍后重试',
       failureConfig: '探测配置有误',
-      failureUnknown: '本次探测未获得有效结果'
+      failureUnknown: '本次探测未获得有效结果',
+      passRate: '成功率',
+      avgLatency: '平均耗时',
+      runCount: '共 {n} 次',
+      showAllHistory: '查看全部（{n}）',
+      stripHint: '每格一次探测，由旧到新'
     },
 
     // Proxies Management

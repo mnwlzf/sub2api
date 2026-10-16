@@ -384,4 +384,102 @@ describe('IQStatusView (user-facing IQ status)', () => {
     // 判定仍然可见：历史卡片头部的小徽标
     expect(wrapper.text()).toContain('admin.pelicanProbe.candyVerdictDegraded')
   })
+
+  // 用户反馈：「等以后测试多了，这里会不会有问题呢」「图二这种形式叫什么，
+  // 更多用这个表示会更好吗」。下面这组用例锁定补上的聚合摘要 + 紧凑趋势条。
+
+  it('summarises recent runs, keeping failed runs out of the pass rate', async () => {
+    const wrapper = await mountView(
+      enabledStatus(
+        [makePlan()],
+        [
+          makeResult({ id: 104, verdict: 'pass', created_at: '2026-01-04T00:00:00Z' }),
+          makeResult({ id: 103, verdict: 'degraded', created_at: '2026-01-03T00:00:00Z' }),
+          // 上游错误（并发超限 / 超时）：不是模型质量信号，进分母会把
+          // 2/3 报成 2/4，等于拿网关限流给模型扣分。
+          makeResult({
+            id: 102,
+            status: 'failed',
+            verdict: 'pending',
+            created_at: '2026-01-02T00:00:00Z'
+          }),
+          makeResult({ id: 101, verdict: 'pass', created_at: '2026-01-01T00:00:00Z' })
+        ]
+      )
+    )
+
+    expect(wrapper.text()).toContain('admin.pelicanProbe.passRate')
+    // pass 2 / judged 3 = 67%（不是 50%）
+    expect(wrapper.text()).toContain('67%')
+    expect(wrapper.text()).toContain('admin.pelicanProbe.avgLatency')
+    expect(wrapper.text()).toContain('admin.pelicanProbe.runCount')
+  })
+
+  it('draws the trend strip oldest first, so it reads like a timeline', async () => {
+    const wrapper = await mountView(
+      enabledStatus(
+        [makePlan()],
+        [
+          makeResult({ id: 103, verdict: 'pass', created_at: '2026-01-03T00:00:00Z' }),
+          makeResult({ id: 102, verdict: 'degraded', created_at: '2026-01-02T00:00:00Z' }),
+          makeResult({ id: 101, verdict: 'pass', created_at: '2026-01-01T00:00:00Z' })
+        ]
+      )
+    )
+
+    const cells = wrapper.find('[role="img"]').findAll('span')
+    expect(cells).toHaveLength(3)
+    // 最左是最旧那次：pass → degraded → pass
+    expect(cells[0].classes()).toContain('bg-emerald-500')
+    expect(cells[1].classes()).toContain('bg-rose-500')
+    expect(cells[2].classes()).toContain('bg-emerald-500')
+  })
+
+  it('caps the trend strip so a long-lived plan cannot stretch the card', async () => {
+    const results = Array.from({ length: 40 }, (_, i) =>
+      makeResult({
+        id: 100 + i,
+        created_at: new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString()
+      })
+    )
+
+    const wrapper = await mountView(enabledStatus([makePlan()], results))
+
+    // 固定宽度：40 次探测仍然只画 20 格，卡片高度不随历史增长。
+    expect(wrapper.find('[role="img"]').findAll('span')).toHaveLength(20)
+  })
+
+  it('hides the aggregate row when there is nothing but the latest run', async () => {
+    const wrapper = await mountView(enabledStatus([makePlan()], [makeResult()]))
+
+    // 一格不构成趋势，胶囊已经说明了状态。
+    expect(wrapper.find('[role="img"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('admin.pelicanProbe.passRate')
+  })
+
+  it('shows only the newest few history entries until the rest is requested', async () => {
+    const results = Array.from({ length: 12 }, (_, i) =>
+      makeResult({
+        id: 100 + i,
+        created_at: new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString()
+      })
+    )
+
+    const wrapper = await mountView(enabledStatus([makePlan()], results))
+    await clickHistoryToggle(wrapper)
+    await flushPromises()
+
+    // 12 条结果里最新那条是卡片本体，剩 11 条历史默认只展开 5 条。
+    expect(wrapper.findAll('iframe[title="pelican probe history preview"]')).toHaveLength(5)
+    expect(wrapper.text()).toContain('admin.pelicanProbe.showAllHistory')
+
+    const showAll = wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('admin.pelicanProbe.showAllHistory'))
+    expect(showAll, 'show-all button should exist').toBeTruthy()
+    await showAll!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.findAll('iframe[title="pelican probe history preview"]')).toHaveLength(11)
+  })
 })
