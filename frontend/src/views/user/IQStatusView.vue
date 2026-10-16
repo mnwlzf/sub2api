@@ -89,24 +89,18 @@
                   </div>
                 </div>
 
-                <!-- Right: preview thumbnail, or a compact friendly line on failure -->
-                <div class="w-full shrink-0 sm:w-64">
-                  <!-- candy answers are prose, so they render as text (never an iframe) -->
+                <!-- Right: the pelican document, or a friendly line when there is
+                     nothing to look at. Candy cards render no body at all — their
+                     verdict is the badge on the left, and the model's answer plus
+                     the judge note are review material for the admin wall. -->
+                <div v-if="card.view.body !== 'none'" class="w-full shrink-0 sm:w-64">
                   <ProbeResultBody
-                    v-if="card.view.hasPreview && card.view.isCandy"
+                    v-if="card.view.body === 'html'"
                     :result="card.latest!"
-                    test-type="candy"
+                    :test-type="card.plan.test_type"
                     variant="user"
                     :show-verdict="false"
-                    preview-class="h-[180px]"
-                  />
-                  <iframe
-                    v-else-if="card.view.hasPreview"
-                    sandbox="allow-scripts"
-                    :srcdoc="card.view.html"
-                    class="h-[180px] w-full rounded-lg border border-gray-200 bg-white dark:border-gray-700"
-                    loading="lazy"
-                    title="pelican probe preview"
+                    preview-class="h-[180px] rounded-lg border border-gray-200 dark:border-gray-700"
                   />
                   <div
                     v-else
@@ -147,23 +141,16 @@
                   <span class="text-[11px] text-gray-400">{{ formatTime(item.result.created_at) }}</span>
                 </div>
                 <ProbeResultBody
-                  v-if="item.view.hasPreview && item.view.isCandy"
+                  v-if="item.view.body === 'html'"
                   :result="item.result"
-                  test-type="candy"
+                  :test-type="card.plan.test_type"
                   variant="user"
                   :show-verdict="false"
-                  preview-class="max-h-32"
-                />
-                <iframe
-                  v-else-if="item.view.hasPreview"
-                  sandbox="allow-scripts"
-                  :srcdoc="item.view.html"
-                  class="h-32 w-full bg-white"
-                  loading="lazy"
-                  title="pelican probe history preview"
+                  preview-class="h-32"
+                  preview-title="pelican probe history preview"
                 />
                 <div
-                  v-else
+                  v-else-if="item.view.body === 'message'"
                   class="flex items-start gap-2 px-3 py-2 text-[11px] leading-relaxed text-gray-500 dark:text-gray-400"
                 >
                   <Icon name="infoCircle" size="xs" class="mt-0.5 shrink-0 text-gray-400" />
@@ -229,10 +216,12 @@ interface ResultView {
   state: StatusState
   label: string
   message: string
-  html: string
-  hasPreview: boolean
-  /** Candy plans answer in prose: render text instead of an iframe preview. */
-  isCandy: boolean
+  /**
+   * What the right-hand column renders: `html` = the pelican document preview,
+   * `message` = one plain sentence about why there is nothing to show, `none` =
+   * nothing at all (a candy card only carries its verdict in the badge).
+   */
+  body: 'html' | 'message' | 'none'
 }
 
 const { t } = useI18n()
@@ -336,15 +325,15 @@ const failureText = (r?: PelicanProbeResult): string => {
 
 const viewOf = (r: PelicanProbeResult | undefined, testType: string): ResultView => {
   const state = stateOf(r)
-  const html = r && r.status !== 'failed' ? r.raw_html ?? '' : ''
   const isCandy = (testType || '').toLowerCase() === 'candy'
+  // Candy answers are prose for the judge, not a document: the user-facing page
+  // shows the verdict only, so there is no preview to build for them.
+  const html = !isCandy && r && r.status !== 'failed' ? r.raw_html ?? '' : ''
   return {
     state,
     label: isCandy ? candyStateLabel(state) : stateLabel(state),
     message: failureText(r),
-    html,
-    hasPreview: html.trim() !== '',
-    isCandy
+    body: html.trim() !== '' ? 'html' : state === 'nodata' ? 'message' : 'none'
   }
 }
 

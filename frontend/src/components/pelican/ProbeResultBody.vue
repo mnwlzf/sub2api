@@ -18,7 +18,15 @@
       <p class="break-all text-xs text-rose-600">{{ failureText }}</p>
     </div>
 
-    <!-- candy: the model answered in prose, so render text — never an iframe -->
+    <!-- candy, user-facing: the verdict IS the whole message. The model's prose
+         answer and the judge note are review material and stay admin-side. -->
+    <div v-else-if="isCandy && isUser" class="p-3">
+      <div class="rounded-lg px-2.5 py-1.5 text-xs font-semibold" :class="candyVerdictClass">
+        {{ candyVerdictText }}
+      </div>
+    </div>
+
+    <!-- candy, admin: the model answered in prose, so render text — never an iframe -->
     <div v-else-if="isCandy" class="space-y-2 p-3">
       <div class="text-xs font-medium text-gray-500 dark:text-gray-400">
         {{ t('admin.pelicanProbe.candyAnswerLabel') }}
@@ -41,7 +49,7 @@
       class="w-full bg-white"
       :class="previewClass"
       loading="lazy"
-      title="pelican probe preview"
+      :title="previewTitle"
     />
 
     <p
@@ -61,13 +69,17 @@ import type { PelicanProbeResult } from '@/types'
 // ProbeResultBody renders one probe result body. It exists so the admin results
 // wall and the user-facing status page share a single branch:
 //
-//   * candy  → the model produced a prose answer; render it as (escaped) text
-//              and surface the judge verdict. Rendering it in an iframe showed
-//              raw text as a broken web page.
+//   * candy  → the model produced a prose answer. Admins reviewing the run see
+//              the answer (escaped text) and the judge note; end users see the
+//              verdict alone, because the answer is review material.
 //   * pelican → the model produced HTML/SVG; keep the sandboxed iframe preview.
 //   * failed  → admin keeps the raw upstream error, users get a plain sentence
 //              (raw errors embed internal endpoints such as
 //              `Post "http://127.0.0.1:8080/v1/chat/completions"`).
+//
+// The `user` variant is deliberately austere: no answer body, no judge note, no
+// diagnostics — every one of those leaked internal detail (or model prose) onto
+// a page users are meant to read at a glance.
 
 // test_type is not part of the plan-result payload yet; when a backend starts
 // sending it, prefer it over the plan lookup.
@@ -78,7 +90,7 @@ const props = withDefaults(
     result: PelicanProbeResult
     /** Plan test type ('candy' | 'pelican'); empty falls back to result.test_type. */
     testType?: string
-    /** 'user' hides raw upstream errors; 'admin' keeps them verbatim. */
+    /** 'user' hides the answer body, notes and raw upstream errors; 'admin' keeps them. */
     variant?: 'admin' | 'user'
     /** Height/scroll classes for the iframe or the text answer box. */
     previewClass?: string
@@ -87,11 +99,21 @@ const props = withDefaults(
      * status badge (the user-facing status cards) turn it off.
      */
     showVerdict?: boolean
+    /** Accessible name of the pelican preview frame. */
+    previewTitle?: string
   }>(),
-  { testType: '', variant: 'admin', previewClass: 'h-56', showVerdict: true }
+  {
+    testType: '',
+    variant: 'admin',
+    previewClass: 'h-56',
+    showVerdict: true,
+    previewTitle: 'pelican probe preview'
+  }
 )
 
 const { t } = useI18n()
+
+const isUser = computed(() => props.variant === 'user')
 
 const isCandy = computed(
   () =>
@@ -102,21 +124,18 @@ const isCandy = computed(
 const isFailed = computed(() => props.result.status === 'failed')
 
 const failureText = computed(() => {
-  if (props.variant === 'user') {
+  if (isUser.value) {
     return t('admin.pelicanProbe.resultUnavailable')
   }
   return props.result.error_message || t('admin.pelicanProbe.statusFailed')
 })
 
 // Judge notes double as diagnostics ("auto-judge skipped: judge HTTP 404: …")
-// and can embed the internal gateway URL, so the user-facing view keeps only
-// plain human notes.
+// and can embed the internal gateway URL, so the user-facing view drops them
+// entirely rather than trying to tell the two kinds apart.
 const displayNote = computed(() => {
-  const note = (props.result.note || '').trim()
-  if (!note) return ''
-  if (props.variant !== 'user') return note
-  if (/^auto-judge skipped/i.test(note) || /https?:\/\//i.test(note)) return ''
-  return note
+  if (isUser.value) return ''
+  return (props.result.note || '').trim()
 })
 
 const verdictClass = computed(() => {
