@@ -248,3 +248,73 @@ describe('PelicanProbeView run-now async contract', () => {
     expect(runControl(wrapper)!.text().trim()).toBe('admin.pelicanProbe.runNow')
   })
 })
+
+// 探测本身失败 = 没有任何模型输出可评审。给它配通过/降智按钮，等于把一次
+// 上游限流点成质量结论；把它算进「待评审」计数，等于让人去处理一件不存在的事。
+describe('PelicanProbeView review queue', () => {
+  let wrapper: ReturnType<typeof mount> | null = null
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    listPlans.mockResolvedValue([PLAN])
+    getGlobalStatus.mockResolvedValue({ enabled: true })
+    groupsGetAll.mockResolvedValue([])
+  })
+
+  afterEach(() => {
+    wrapper?.unmount()
+    wrapper = null
+  })
+
+  const FAILED: PelicanProbeResult = {
+    ...OLD_RESULT,
+    id: 9,
+    status: 'failed',
+    // 新值出现之前落库的行长这样；它和新的 invalid 一样不可评审。
+    verdict: 'pending',
+    raw_html: '',
+    error_message: 'gateway_concurrency_limit'
+  }
+
+  const findButton = (w: ReturnType<typeof mount>, key: string) =>
+    w.findAll('button').find((b) => b.text().includes(key))
+
+  it('hides the review buttons for a failed result but keeps the source view', async () => {
+    listRecent.mockResolvedValue([FAILED])
+    listResults.mockResolvedValue([FAILED])
+
+    wrapper = await mountView()
+    await settle()
+
+    expect(wrapper.text()).toContain('admin.pelicanProbe.reviewNotApplicable')
+    expect(findButton(wrapper, 'admin.pelicanProbe.markPass')).toBeUndefined()
+    expect(findButton(wrapper, 'admin.pelicanProbe.markDegraded')).toBeUndefined()
+    // 诊断入口必须留着：看不到源码就没法判断这次失败是什么。
+    expect(findButton(wrapper, 'admin.pelicanProbe.viewSource')).toBeTruthy()
+  })
+
+  it('keeps the review buttons for a result that actually rendered', async () => {
+    listRecent.mockResolvedValue([OLD_RESULT])
+    listResults.mockResolvedValue([OLD_RESULT])
+
+    wrapper = await mountView()
+    await settle()
+
+    expect(findButton(wrapper, 'admin.pelicanProbe.markPass')).toBeTruthy()
+    expect(findButton(wrapper, 'admin.pelicanProbe.markDegraded')).toBeTruthy()
+    expect(wrapper.text()).not.toContain('admin.pelicanProbe.reviewNotApplicable')
+  })
+
+  it('counts a failed result as invalid instead of pending review', async () => {
+    listRecent.mockResolvedValue([OLD_RESULT, FAILED])
+    listResults.mockResolvedValue([OLD_RESULT, FAILED])
+
+    wrapper = await mountView()
+    await settle()
+
+    // 两张统计卡片都要渲染出来；数字本身靠相邻文案定位不可靠，这里断言
+    // 「无效」卡片存在，并且失败记录没有混进待评审文案块。
+    expect(wrapper.text()).toContain('admin.pelicanProbe.statsInvalid')
+    expect(wrapper.text()).toContain('admin.pelicanProbe.statsPending')
+  })
+})

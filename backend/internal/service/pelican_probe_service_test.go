@@ -922,10 +922,12 @@ func TestRunRowCandyJudgeFallback(t *testing.T) {
 		// A judge model that never matches keeps every request on the probe path.
 		saved, reqs := runCandyJudge(t, candyJudgeRow(""), "", "judge-model", "YES", 0, 0, 0)
 		require.Equal(t, PelicanRunFailed, saved.Status)
-		require.Equal(t, PelicanVerdictPending, saved.Verdict)
+		// Not pending: a probe that returned nothing has no answer to judge, so it
+		// must not sit in the review queue waiting for a pass/degraded click.
+		require.Equal(t, PelicanVerdictInvalid, saved.Verdict)
 		require.Empty(t, saved.ReviewedBy)
 		require.Nil(t, saved.ReviewedAt)
-		require.Len(t, reqs, 1)
+		require.Len(t, reqs, 1, "a failed probe must not reach the judge")
 	})
 
 	t.Run("pelican plan never calls the judge", func(t *testing.T) {
@@ -955,4 +957,57 @@ func TestRunRowPersistsAfterRequestCancel(t *testing.T) {
 	require.Equal(t, PelicanRunFailed, saved.Status)
 	require.Len(t, results.created, 1)
 	require.Equal(t, []int64{1}, plans.ranIDs)
+}
+
+// A probe that failed at the transport layer produced no model output at all,
+// so there is nothing a reviewer could judge. It must carry invalid instead of
+// the default pending: a pending row lands in the review queue next to the
+// pass/degraded buttons, and one click records an upstream rate limit as a
+// quality verdict.
+func TestRunRowMarksFailedProbeInvalid(t *testing.T) {
+	t.Run("HTTP 5xx marks the run invalid", func(t *testing.T) {
+		var captured map[string]any
+		srv := probeTestServer(t, &captured, "", true)
+		defer srv.Close()
+		svc, _, _ := probeSvcWithServer(t, srv)
+
+		saved, err := svc.runRow(context.Background(), probeRow(srv.URL), true)
+		require.NoError(t, err)
+		require.Equal(t, PelicanRunFailed, saved.Status)
+		require.Equal(t, PelicanVerdictInvalid, saved.Verdict)
+		require.NotEqual(t, PelicanVerdictPending, saved.Verdict,
+			"a failed probe must not enter the pending-review queue")
+		require.NotEmpty(t, saved.ErrorMessage)
+		require.Empty(t, saved.ReviewedBy)
+		require.Nil(t, saved.ReviewedAt)
+	})
+
+	t.Run("cancelled context marks the run invalid", func(t *testing.T) {
+		var captured map[string]any
+		srv := probeTestServer(t, &captured, "<p>hi</p>", false)
+		defer srv.Close()
+		svc, _, _ := probeSvcWithServer(t, srv)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		saved, err := svc.runRow(ctx, probeRow(srv.URL), true)
+		require.NoError(t, err)
+		require.Equal(t, PelicanRunFailed, saved.Status)
+		require.Equal(t, PelicanVerdictInvalid, saved.Verdict)
+	})
+
+	// Guard against over-correcting: a run that actually produced output still
+	// needs a human verdict, so its verdict must stay pending.
+	t.Run("a successful run still awaits review", func(t *testing.T) {
+		var captured map[string]any
+		srv := probeTestServer(t, &captured, "<p>hi</p>", false)
+		defer srv.Close()
+		svc, _, _ := probeSvcWithServer(t, srv)
+
+		saved, err := svc.runRow(context.Background(), probeRow(srv.URL), true)
+		require.NoError(t, err)
+		require.Equal(t, PelicanRunSuccess, saved.Status)
+		require.Equal(t, PelicanVerdictPending, saved.Verdict,
+			"a real result still needs a human verdict")
+	})
 }

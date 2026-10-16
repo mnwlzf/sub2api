@@ -899,6 +899,13 @@ func (s *PelicanProbeService) runRow(ctx context.Context, row *PelicanProbePlanR
 	if runErr != nil {
 		result.Status = PelicanRunFailed
 		result.ErrorMessage = runErr.Error()
+		// A failed probe produced no model output at all, so there is nothing a
+		// reviewer could judge. Marking it invalid keeps it out of the pending
+		// queue: leaving it at the default `pending` put upstream 5xx / timeout /
+		// gateway concurrency-limit failures behind a "pending review" badge with
+		// pass/degraded buttons, and one click recorded a rate limit as a quality
+		// verdict.
+		result.Verdict = PelicanVerdictInvalid
 	} else if row.TestType == PelicanTestTypeCandy {
 		// Candy tests have an objective answer (21): ask the configured LLM
 		// judge synchronously before persisting. A judge that cannot decide
