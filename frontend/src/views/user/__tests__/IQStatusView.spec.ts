@@ -241,12 +241,71 @@ describe('IQStatusView (user-facing IQ status)', () => {
     expect(wrapper.findAll('iframe[title="pelican probe history preview"]')).toHaveLength(2)
   })
 
-  it('shows a compact preview thumbnail rather than a tall empty frame', async () => {
+  it('gives the preview the full card width and a tall frame', async () => {
     const wrapper = await mountView(enabledStatus([makePlan()], [makeResult()]))
     const frame = wrapper.find('iframe[title="pelican probe preview"]')
     expect(frame.exists()).toBe(true)
     expect(frame.attributes('sandbox')).toBe('allow-scripts')
-    expect(frame.attributes('class')).toContain('h-[180px]')
+    // 用户明确要求预览占满卡片宽度、明显更高：不再是 sm:w-64 的固定窄列。
+    expect(frame.attributes('class')).toContain('w-full')
+    expect(frame.attributes('class')).toContain('h-[320px]')
+    expect(wrapper.html()).not.toContain('sm:w-64')
+  })
+
+  // 用户第三次否定布局：不要卡片套卡片，状态改成标题行最前面的内联小胶囊，
+  // 信息前置，预览单独占一行。
+  it('lays the card out flat: inline pill leading the header, no nested panel', async () => {
+    const wrapper = await mountView(
+      enabledStatus([makePlan({ group_name: 'Alpha', model_id: 'gpt-6.1-sol' })], [makeResult()])
+    )
+
+    const card = wrapper.find('article')
+    const html = card.html()
+
+    // 彩色的、撑满卡片高度的内层状态面板必须彻底消失
+    expect(html).not.toContain('self-stretch')
+    expect(html).not.toContain('sm:w-28')
+    expect(html).not.toContain('rounded-lg px-3 py-2')
+
+    // 状态是标题行最前面的内联胶囊：rounded-full + 软色底，高度随内容
+    const pill = card.find('span.rounded-full')
+    expect(pill.exists()).toBe(true)
+    expect(pill.classes()).toContain('inline-flex')
+    expect(pill.classes()).not.toContain('self-stretch')
+    expect(pill.text()).toContain('admin.pelicanProbe.statusNormal')
+
+    // 卡片头部只有两行：胶囊 + 模型 / 时间·耗时 + 历史按钮
+    const header = card.element.firstElementChild as HTMLElement
+    expect(header.children).toHaveLength(2)
+    expect(header.textContent).toContain('gpt-6.1-sol')
+
+    // 分组名已在 section 标题里，卡片里不再重复
+    expect(card.text()).not.toContain('Alpha')
+    expect(card.find('.font-mono').text()).toBe('gpt-6.1-sol')
+
+    // 预览是独立的一整行（头部 + 预览行），而不是挤在右侧的窄列
+    expect(card.element.children).toHaveLength(2)
+  })
+
+  it('right-aligns the history toggle on the meta row inside the card', async () => {
+    const wrapper = await mountView(
+      enabledStatus(
+        [makePlan()],
+        [
+          makeResult({ id: 103, created_at: '2026-01-03T00:00:00Z' }),
+          makeResult({ id: 102, created_at: '2026-01-02T00:00:00Z' })
+        ]
+      )
+    )
+
+    const card = wrapper.find('article')
+    const toggle = card
+      .findAll('button')
+      .find((b) => b.text().includes('admin.pelicanProbe.viewHistory'))
+    expect(toggle, 'history toggle lives inside the card header').toBeTruthy()
+    // 与「时间 · 耗时」同属第二行，由 justify-between 推到右侧
+    expect(toggle!.element.parentElement?.className).toContain('justify-between')
+    expect(toggle!.element.parentElement?.className).toContain('text-xs')
   })
 
   it('renders the pelican document and no extra text on the card', async () => {
@@ -262,8 +321,11 @@ describe('IQStatusView (user-facing IQ status)', () => {
     expect(frame.attributes('srcdoc')).toBe('<svg><rect/></svg>')
 
     const card = wrapper.find('article')
+    expect(card.text()).toContain('admin.pelicanProbe.statusNormal')
     expect(card.text()).not.toContain('脚踩空')
     expect(card.find('pre').exists()).toBe(false)
+    // 鹈鹕卡片 = 头部两行 + 预览行，预览只走 iframe
+    expect(card.element.children).toHaveLength(2)
   })
 
   // 用户明确要求：糖果卡片只给出「未判为 21 ✗」这类判定，其余一律不显示。
@@ -289,6 +351,9 @@ describe('IQStatusView (user-facing IQ status)', () => {
     expect(card.text()).not.toContain('admin.pelicanProbe.candyAnswerLabel')
     expect(card.find('pre').exists()).toBe(false)
     expect(card.find('iframe').exists()).toBe(false)
+    // 不渲染任何正文 => 卡片只有那两行头部，因此非常矮
+    expect(card.element.children).toHaveLength(1)
+    expect(card.html()).not.toContain('self-stretch')
   })
 
   it('keeps candy history cards to the verdict pill only', async () => {
