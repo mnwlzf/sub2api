@@ -352,16 +352,15 @@ func (r *promptTemplateRepository) UpsertGroupBinding(ctx context.Context, b *se
 		return nil
 	}
 
-	affected, err := client.GroupPromptBinding.Update().
+	update := client.GroupPromptBinding.Update().
 		Where(
 			grouppromptbinding.GroupIDEQ(b.GroupID),
 			grouppromptbinding.RevisionEQ(expectedRevision),
 		).
 		SetMode(b.Mode).
-		SetNillableVersionID(b.VersionID).
 		SetNillableUpdatedBy(b.UpdatedBy).
-		SetRevision(expectedRevision + 1).
-		Save(ctx)
+		SetRevision(expectedRevision + 1)
+	affected, err := setGroupBindingVersionID(update, b.VersionID).Save(ctx)
 	if err != nil {
 		return err
 	}
@@ -370,6 +369,29 @@ func (r *promptTemplateRepository) UpsertGroupBinding(ctx context.Context, b *se
 	}
 	b.Revision = expectedRevision + 1
 	return nil
+}
+
+// setGroupBindingVersionID 表达 version_id 的两种更新意图：有值时写入，无值时清空。
+//
+// 不能直接用 SetNillableVersionID：ent 对 nil 指针的语义是「跳过该列」，而不是
+// 「置为 NULL」。分组从 mode=version 切到 mode=disabled 时两者都要求 version_id
+// 为 NULL，静默跳过会让旧 version_id 留在行上，撞上
+// group_prompt_bindings_mode_version_pair 这条 CHECK 约束，接口报 500。
+func setGroupBindingVersionID(update *dbent.GroupPromptBindingUpdate, versionID *int64) *dbent.GroupPromptBindingUpdate {
+	if versionID == nil {
+		return update.ClearVersionID()
+	}
+	return update.SetVersionID(*versionID)
+}
+
+// setAccountOverrideVersionID 与 setGroupBindingVersionID 同理：账号覆盖从
+// mode=version 切到 inherit/disabled 时必须清空 version_id，否则违反
+// account_group_prompt_overrides_mode_version_pair。
+func setAccountOverrideVersionID(update *dbent.AccountGroupPromptOverrideUpdate, versionID *int64) *dbent.AccountGroupPromptOverrideUpdate {
+	if versionID == nil {
+		return update.ClearVersionID()
+	}
+	return update.SetVersionID(*versionID)
 }
 
 func (r *promptTemplateRepository) DeleteGroupBinding(ctx context.Context, groupID int64) error {
@@ -434,17 +456,16 @@ func (r *promptTemplateRepository) UpsertAccountOverride(ctx context.Context, o 
 		return nil
 	}
 
-	affected, err := client.AccountGroupPromptOverride.Update().
+	update := client.AccountGroupPromptOverride.Update().
 		Where(
 			accountgrouppromptoverride.AccountIDEQ(o.AccountID),
 			accountgrouppromptoverride.GroupIDEQ(o.GroupID),
 			accountgrouppromptoverride.RevisionEQ(expectedRevision),
 		).
 		SetMode(o.Mode).
-		SetNillableVersionID(o.VersionID).
 		SetNillableUpdatedBy(o.UpdatedBy).
-		SetRevision(expectedRevision + 1).
-		Save(ctx)
+		SetRevision(expectedRevision + 1)
+	affected, err := setAccountOverrideVersionID(update, o.VersionID).Save(ctx)
 	if err != nil {
 		return err
 	}

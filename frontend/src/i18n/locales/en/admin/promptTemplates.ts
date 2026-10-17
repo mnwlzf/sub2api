@@ -213,9 +213,12 @@ export default {
     },
     binding: {
       title: 'Prompt binding',
-      description:
-        'Enable prompt injection for this group and pin it to one published version. Publishing a new version does not move this binding.',
       loadFailed: 'Failed to load the group prompt binding.',
+      statusDisabled: 'Not enabled',
+      statusBound: 'Enabled · {template} · {version}',
+      injectionModeTitle: 'Injection mode: append, the existing system prompt is never replaced',
+      injectionModeDetail:
+        "The client's own system / developer prompt is kept in full; this prompt is inserted as one extra system message after it. Responses requests get it appended to the end of instructions.",
       mode: 'Mode',
       disabled: 'Disabled',
       version: 'Bound to a fixed version',
@@ -230,42 +233,23 @@ export default {
       saving: 'Saving…',
       saveSuccess: 'Group prompt binding saved.',
       saveFailed: 'Failed to save the group prompt binding.',
-      clear: 'Disable for this group',
-      clearSuccess: 'Group prompt binding removed; the group is now disabled.',
-      clearFailed: 'Failed to remove the group prompt binding.',
-      clearConfirmTitle: 'Disable prompt injection for this group?',
-      clearConfirmMessage:
-        'The binding row is deleted, which is equivalent to disabled. Per-account overrides stop having any effect.',
-      fixedVersionNotice:
-        'This group stays on version {version} until an administrator changes this binding. Publishing a newer version does not upgrade it.',
-      groupDisabledNotice:
-        'Prompt injection is disabled for this group. Requests in this group run without a prompt.',
       groupDisabledOverridesNotice:
         'The group is disabled, so per-account overrides do nothing here. Enabling the group is the master switch.',
-      affectedAccounts: 'Accounts in this group',
-      affectedAccountsValue: '{count}',
-      affectedAccountsUnknown: 'Unknown',
-      revision: 'Binding revision {revision}',
       archivedTemplateNotice:
         'The bound template is archived. The binding keeps running, but it cannot be re-pointed at a new version of an archived template.',
       publishFirst: 'Publish a version',
       goToTemplates: 'Open template list',
       overrides: {
         title: 'Per-account overrides',
-        description:
-          'Overrides apply only inside this group. They are ignored entirely while the group binding is disabled.',
-        empty: 'No account override in this group. Every account inherits the group binding.',
+        description: 'Overrides apply only inside this group.',
+        empty: 'No account override; every account inherits the group binding.',
         loadFailed: 'Failed to load per-account overrides.',
         columns: {
           account: 'Account',
-          mode: 'Override',
-          version: 'Version',
           updatedAt: 'Updated',
           actions: 'Actions',
         },
         inherit: 'Inherit group',
-        accountDisabled: 'Disabled for this account',
-        accountVersion: 'Pinned to a version',
         edit: 'Edit',
         clear: 'Remove override',
         clearSuccess: 'Override removed; the account inherits the group again.',
