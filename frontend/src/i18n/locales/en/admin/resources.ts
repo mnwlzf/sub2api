@@ -132,7 +132,7 @@ export default {
       testTypePelican: 'Pelican SVG (human review)',
       testTypeCandy: 'Candy quiz (auto-judged)',
       candyPromptHint:
-        'Fixed prompt (v2: touch disambiguation + the ANSWER line contract) to keep results comparable over time',
+        'Fixed prompt (v3: original problem statement + the ANSWER line contract) to keep results comparable over time',
       judgeModel: 'Judge model',
       judgeModelPlaceholder: 'deepseek-chat / gpt-4o-mini',
       judgeModelHint:

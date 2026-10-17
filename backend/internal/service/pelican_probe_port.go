@@ -72,43 +72,45 @@ const PelicanAutoReviewer = "auto"
 
 // PelicanCandyExpectedAnswer is the fixed answer key of the candy test.
 //
-// The prompt grants shape selection by touch ("不同的形状靠手感可以分辨"), which
-// makes 21 correct: 9 round draws guarantee a round apple (only 8 round
-// watermelons) and 12 star draws guarantee a star peach (only 11 star
-// non-peaches), and the adaptive game value is also 21. The blind-draw reading
-// yields 29 (worst case: all 24 round + 4 star watermelons) and must stay wrong.
+// 21 is the official answer: the intended reading is that the shapes are
+// distinguishable by touch, so a contestant may pick the shape of each draw
+// (9 round draws guarantee a round apple, 12 star draws guarantee a star peach;
+// the adaptive game value is also 21). The blind-draw reading yields 29 (worst
+// case: all 24 round + 4 star watermelons) and is graded as wrong — deciding
+// which reading applies is part of the test.
 const PelicanCandyExpectedAnswer = 21
 
 // PelicanCandyPromptVersion identifies the generation of DefaultCandyPrompt. It
-// is recorded in the auto-graded note so v2 results stay separable from the
-// judge-graded v1 history.
-const PelicanCandyPromptVersion = 2
+// is recorded in the auto-graded note so generations stay separable.
+//
+//	1: free-form answer graded by the LLM judge (before 2026-10-18)
+//	2: briefly shipped with a reworded problem statement that spelled out the
+//	   touch/shape permission; reverted because it changed the test itself and
+//	   led the model to 21. Exactly one production run (2026-10-18 00:15 UTC+8)
+//	   carries it.
+//	3: the original problem statement, verbatim, plus the answer-line contract.
+const PelicanCandyPromptVersion = 3
 
 // DefaultCandyPrompt is the fixed candy-test prompt. It must stay verbatim so
 // candy results stay longitudinally comparable; users cannot customize it.
 //
-// v2 added the two things that make grading deterministic:
-//   - the parenthetical now spells out that the shapes are distinguishable by
-//     touch, so a contestant may choose the shape of each draw. The permission
-//     was only implied before, and 20 of the first 119 production runs answered
-//     29 (the blind-draw reading) because of it;
-//   - the answer contract: a short derivation, then a single "ANSWER: <n>" line.
-//     parseCandyAnswer grades that line deterministically; the LLM judge is now
-//     only a fallback for answers that ignore the contract.
+// The problem statement is quoted verbatim and must never be reworded to make
+// the intended reading explicit: the test is whether a model infers the
+// touch/shape permission from "不同的形状靠手感可以分辨". Spelling it out answers
+// that question for the model (v2 did exactly that and was reverted).
 //
-// Results recorded before v2 were graded by the judge on free prose and are only
-// loosely comparable with v2 runs.
+// v3 only appends the output contract: a short derivation, then a single
+// "ANSWER: <n>" line. parseCandyAnswer grades that line deterministically; the
+// LLM judge is only a fallback for answers that ignore the contract.
 const DefaultCandyPrompt = `不使用任何外部工具回答以下问题：
 
-在一个黑色的袋子里放有三种口味的糖果，每种糖果有两种不同的形状（圆形和五角星形，不同的形状靠手感可以分辨）。现已知不同口味的糖和不同形状的数量统计如下表。参赛者需要在活动前决定摸出的糖果数目，那么，最少取出多少个糖果才能保证手中同时拥有不同形状的苹果味和桃子味的糖？（同时手中有圆形苹果味匹配五角星桃子味糖果，或者有圆形桃子味匹配五角星苹果味糖果都满足要求。注意：形状可以靠手感分辨，所以摸取时可以按手感选择每次取出的形状，并根据已经摸出的糖果调整后续选择。）
+在一个黑色的袋子里放有三种口味的糖果，每种糖果有两种不同的形状（圆形和五角星形，不同的形状靠手感可以分辨）。现已知不同口味的糖和不同形状的数量统计如下表。参赛者需要在活动前决定摸出的糖果数目，那么，最少取出多少个糖果才能保证手中同时拥有不同形状的苹果味和桃子味的糖？（同时手中有圆形苹果味匹配五角星桃子味糖果，或者有圆形桃子味匹配五角星苹果味糖果都满足要求）
 
         苹果味  桃子味  西瓜味
 圆形       7      9      8
 五角星形   7      6      4
 
-要求：
-- 先给出简短推导（不超过 200 字）；
-- 最后单独一行只输出 ANSWER: <数字>，这一行之后不要再写任何内容。`
+请给出简短推导，并在最后单独一行输出 ANSWER: 数字。`
 
 // DefaultCandyJudgePrompt is the fixed grading prompt for the candy test. The
 // candidate answer is embedded at the %s placeholder, truncated to
