@@ -123,18 +123,32 @@ func (r *promptTemplateRepository) UpdateTemplate(ctx context.Context, t *servic
 	if t == nil {
 		return service.ErrPromptTemplateNotFound
 	}
-	affected, err := clientFromContext(ctx, r.client).PromptTemplate.Update().
+	// 可选文本字段必须显式置空：SetNillableDescription(nil) 只会「跳过该列」，
+	// 管理员在界面上清空描述/来源后旧值会留在行上 —— 与绑定 version_id 同一类陷阱。
+	update := clientFromContext(ctx, r.client).PromptTemplate.Update().
 		Where(
 			prompttemplate.IDEQ(t.ID),
 			prompttemplate.RevisionEQ(expectedRevision),
 		).
 		SetName(t.Name).
-		SetNillableDescription(nilIfEmpty(t.Description)).
-		SetNillableSourceURL(nilIfEmpty(t.SourceURL)).
-		SetNillableSourceNote(nilIfEmpty(t.SourceNote)).
 		SetNillableUpdatedBy(t.UpdatedBy).
-		SetRevision(expectedRevision + 1).
-		Save(ctx)
+		SetRevision(expectedRevision + 1)
+	if t.Description == "" {
+		update = update.ClearDescription()
+	} else {
+		update = update.SetDescription(t.Description)
+	}
+	if t.SourceURL == "" {
+		update = update.ClearSourceURL()
+	} else {
+		update = update.SetSourceURL(t.SourceURL)
+	}
+	if t.SourceNote == "" {
+		update = update.ClearSourceNote()
+	} else {
+		update = update.SetSourceNote(t.SourceNote)
+	}
+	affected, err := update.Save(ctx)
 	if err != nil {
 		return translatePersistenceError(err, nil, service.ErrPromptTemplateNameExists)
 	}
@@ -676,14 +690,6 @@ func promptAdminEventEntityToService(row *dbent.PromptAdminEvent) service.Prompt
 		Note:        derefString(row.Note),
 		CreatedAt:   row.CreatedAt,
 	}
-}
-
-// nilIfEmpty 把空字符串转成 nil，避免把“清空描述”写成空串。
-func nilIfEmpty(value string) *string {
-	if value == "" {
-		return nil
-	}
-	return &value
 }
 
 // ---------------------------------------------------------------- 运行期记录

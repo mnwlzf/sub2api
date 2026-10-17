@@ -152,3 +152,44 @@ func TestUpsertAccountOverrideWritesVersionIDWhenBound(t *testing.T) {
 	require.Contains(t, sql, `"version_id" = $`)
 	require.Equal(t, 2, override.Revision)
 }
+
+// 同一类陷阱：模板的可选文本字段（描述/来源 URL/来源说明）清空后必须真的落库为 NULL。
+// 旧实现用 SetNillableX(nil) 会跳过该列，管理员在界面上清空描述后旧值仍在。
+func TestUpdateTemplateClearsOptionalTextWhenEmpty(t *testing.T) {
+	matcher := &capturingSqlmockMatcher{}
+	repo, mock := newPromptBindingRepoTestRepo(t, matcher)
+	mock.ExpectExec("").WillReturnResult(sqlmock.NewResult(0, 1))
+
+	template := &service.PromptTemplate{ID: 5, Name: "Template A"}
+
+	require.NoError(t, repo.UpdateTemplate(context.Background(), template, 3))
+
+	sql := matcher.last(t)
+	require.Contains(t, sql, `"description" = NULL`, "清空描述必须显式置 NULL")
+	require.Contains(t, sql, `"source_url" = NULL`, "清空来源 URL 必须显式置 NULL")
+	require.Contains(t, sql, `"source_note" = NULL`, "清空来源说明必须显式置 NULL")
+	require.Equal(t, 4, template.Revision)
+}
+
+// 正向保护：保留文本时要写入实际值，不能被清空逻辑误伤。
+func TestUpdateTemplateKeepsOptionalTextWhenPresent(t *testing.T) {
+	matcher := &capturingSqlmockMatcher{}
+	repo, mock := newPromptBindingRepoTestRepo(t, matcher)
+	mock.ExpectExec("").WillReturnResult(sqlmock.NewResult(0, 1))
+
+	template := &service.PromptTemplate{
+		ID:          5,
+		Name:        "Template A",
+		Description: "keep me",
+		SourceURL:   "https://example.com/prompt",
+		SourceNote:  "note",
+	}
+
+	require.NoError(t, repo.UpdateTemplate(context.Background(), template, 3))
+
+	sql := matcher.last(t)
+	require.NotContains(t, sql, `"description" = NULL`)
+	require.NotContains(t, sql, `"source_url" = NULL`)
+	require.NotContains(t, sql, `"source_note" = NULL`)
+	require.Contains(t, sql, `"description" = $`)
+}
