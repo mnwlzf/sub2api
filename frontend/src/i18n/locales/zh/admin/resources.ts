@@ -130,7 +130,7 @@ export default {
       testType: '测试类型',
       testTypePelican: '鹈鹕 SVG（人工评审）',
       testTypeCandy: '糖果题（自动判定）',
-      candyPromptHint: '固定提示词（v2：含「按手感选形状」消歧与 ANSWER 输出约定）以保证纵向可比，保存后仍使用固定提示词',
+      candyPromptHint: '固定提示词（v3：题干原文 + ANSWER 输出约定）以保证纵向可比，保存后仍使用固定提示词',
       judgeModel: '裁判模型',
       judgeModelPlaceholder: 'deepseek-chat / gpt-4o-mini',
       judgeModelHint: '可选。主判分走 ANSWER 行的确定性解析；仅当模型没按约定输出时，才调用该模型兜底判定',

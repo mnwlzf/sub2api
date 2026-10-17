@@ -51,9 +51,15 @@ func TestParseCandyAnswer(t *testing.T) {
 
 func TestCandyPromptAnswerContract(t *testing.T) {
 	require.Equal(t, 21, PelicanCandyExpectedAnswer)
-	require.Contains(t, DefaultCandyPrompt, "ANSWER: <数字>")
-	// The disambiguation is what makes 21 (not 29) the intended answer.
-	require.Contains(t, DefaultCandyPrompt, "按手感选择每次取出的形状")
+	// The output contract the deterministic parser relies on.
+	require.Contains(t, DefaultCandyPrompt, "ANSWER: 数字")
+	// The problem statement must stay verbatim: no hint that the shapes can be
+	// chosen by touch. Spelling that out would answer the reading-comprehension
+	// part of the test for the model.
+	require.NotContains(t, DefaultCandyPrompt, "按手感选择")
+	require.NotContains(t, DefaultCandyPrompt, "调整后续选择")
+	// The original parenthetical is intact.
+	require.Contains(t, DefaultCandyPrompt, "或者有圆形桃子味匹配五角星苹果味糖果都满足要求）")
 }
 
 func TestApplyCandyVerdict(t *testing.T) {
