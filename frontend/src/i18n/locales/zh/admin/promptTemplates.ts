@@ -22,6 +22,7 @@ export default {
       description:
         '“最新发布版本”只是信息展示。分组会一直运行它所绑定的版本，直到管理员主动修改绑定。',
       includeArchived: '包含已归档',
+      count: '{count} 个模板',
       searchPlaceholder: '按模板名称搜索',
       create: '新建模板',
       refresh: '刷新',
@@ -310,6 +311,10 @@ export default {
         upstreamModel: '上游模型',
         profile: '出站 profile',
         bindingSource: '策略来源',
+        groupAccount: '分组 / 账号',
+        model: '模型',
+        sourceVersion: '来源 / 版本',
+        result: '结果',
         version: '版本',
         applied: '已注入',
         reason: '原因',

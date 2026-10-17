@@ -855,7 +855,7 @@ const adminNavItems = computed((): NavItem[] => {
       label: t('nav.promptTemplates'),
       icon: PromptTemplateIcon,
       children: [
-        { path: '/admin/prompt-templates', label: t('nav.promptTemplates'), icon: PromptTemplateIcon },
+        { path: '/admin/prompt-templates', label: t('nav.promptTemplatesList'), icon: PromptTemplateIcon },
         { path: '/admin/prompt-request-events', label: t('nav.promptRequestEvents'), icon: PromptRequestIcon },
       ],
     },

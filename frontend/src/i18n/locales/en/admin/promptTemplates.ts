@@ -22,6 +22,7 @@ export default {
       description:
         'Latest published version is informational only. A group keeps the version it is bound to until an administrator changes the binding.',
       includeArchived: 'Include archived',
+      count: '{count} templates',
       searchPlaceholder: 'Search by template name',
       create: 'New template',
       refresh: 'Refresh',
@@ -321,6 +322,10 @@ export default {
         upstreamModel: 'Upstream model',
         profile: 'Outbound profile',
         bindingSource: 'Policy source',
+        groupAccount: 'Group / account',
+        model: 'Model',
+        sourceVersion: 'Source / version',
+        result: 'Result',
         version: 'Version',
         applied: 'Applied',
         reason: 'Reason',

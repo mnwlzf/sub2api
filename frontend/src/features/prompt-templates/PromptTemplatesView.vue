@@ -1,108 +1,106 @@
 <template>
   <AppLayout>
-    <div class="mx-auto max-w-[1600px] pb-8">
-      <header class="mb-6 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 class="text-2xl font-semibold tracking-tight text-gray-950 dark:text-white">
+    <div class="mx-auto max-w-[1500px] pb-10">
+      <header class="mb-5 flex flex-wrap items-end justify-between gap-4">
+        <div class="min-w-0">
+          <h1 class="text-[22px] font-semibold tracking-tight text-gray-950 dark:text-white">
             {{ t('admin.promptTemplates.list.title') }}
           </h1>
-          <p class="mt-2 max-w-3xl text-sm text-gray-500 dark:text-dark-300">
-            {{ t('admin.promptTemplates.description') }}
+          <p class="mt-1.5 max-w-2xl text-sm leading-relaxed text-gray-500 dark:text-dark-300">
+            {{ t('admin.promptTemplates.list.description') }}
           </p>
         </div>
-        <div class="flex flex-wrap items-center gap-3">
-          <label class="flex cursor-pointer items-center gap-2 text-sm text-gray-700 dark:text-dark-200">
+        <div class="flex flex-wrap items-center gap-2">
+          <label class="flex cursor-pointer items-center gap-2 text-xs text-gray-600 dark:text-dark-300">
             <Toggle :model-value="includeArchived" @update:model-value="handleIncludeArchivedChange" />
             <span class="select-none">{{ t('admin.promptTemplates.list.includeArchived') }}</span>
           </label>
-          <button type="button" class="btn btn-secondary" :disabled="loading" @click="load">
+          <button type="button" class="btn btn-secondary btn-sm" :disabled="loading" @click="load">
             {{ t('admin.promptTemplates.list.refresh') }}
           </button>
-          <button type="button" class="btn btn-primary" data-test="create-template" @click="showCreate = true">
+          <button type="button" class="btn btn-primary btn-sm" data-test="create-template" @click="showCreate = true">
             <Icon name="plus" size="sm" class="mr-1.5" />
             {{ t('admin.promptTemplates.list.create') }}
           </button>
         </div>
       </header>
 
-      <div
-        role="status"
-        class="mb-4 flex items-start gap-2.5 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900 dark:border-sky-900/70 dark:bg-sky-950/30 dark:text-sky-200"
-      >
-        <Icon name="infoCircle" size="sm" class="mt-0.5 shrink-0" />
-        <span>{{ t('admin.promptTemplates.list.latestVersionNotice') }}</span>
-      </div>
-
-      <div v-if="loadError" role="alert" class="mb-4 rounded-xl border border-red-200 bg-red-50 p-5 dark:border-red-900 dark:bg-red-950/30">
+      <div v-if="loadError" role="alert" class="card p-6">
         <p class="text-sm text-red-700 dark:text-red-300">{{ loadError }}</p>
         <button type="button" class="btn btn-secondary btn-sm mt-3" @click="load">
           {{ t('admin.promptTemplates.reload') }}
         </button>
       </div>
 
-      <div v-else class="card p-4 sm:p-6">
-        <div class="mb-4 max-w-md">
-          <SearchInput
-            v-model="search"
-            :placeholder="t('admin.promptTemplates.list.searchPlaceholder')"
-          />
+      <div v-else class="card">
+        <div class="card-header flex flex-wrap items-center justify-between gap-3">
+          <div class="w-full max-w-xs">
+            <SearchInput
+              v-model="search"
+              :placeholder="t('admin.promptTemplates.list.searchPlaceholder')"
+            />
+          </div>
+          <span class="text-xs text-gray-400 dark:text-dark-500">
+            {{ t('admin.promptTemplates.list.count', { count: rows.length }) }}
+          </span>
         </div>
 
-        <DataTable
-          :columns="columns"
-          :data="rows"
-          :loading="loading"
-          row-key="id"
-          :estimate-row-height="64"
-        >
-          <template #cell-name="{ row }">
-            <RouterLink
-              :to="{ name: 'AdminPromptTemplateDetail', params: { id: row.id } }"
-              class="font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
-            >
-              {{ row.name }}
-            </RouterLink>
-            <p v-if="row.description" class="mt-0.5 max-w-md truncate text-xs text-gray-500 dark:text-dark-400" :title="row.description">
-              {{ row.description }}
-            </p>
-          </template>
+        <div class="card-body">
+          <DataTable
+            :columns="columns"
+            :data="rows"
+            :loading="loading"
+            row-key="id"
+            :estimate-row-height="64"
+          >
+            <template #cell-name="{ row }">
+              <div class="flex flex-wrap items-center gap-2">
+                <RouterLink
+                  :to="{ name: 'AdminPromptTemplateDetail', params: { id: row.id } }"
+                  class="font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
+                >
+                  {{ row.name }}
+                </RouterLink>
+                <span v-if="row.archived" class="badge badge-gray">
+                  {{ t('admin.promptTemplates.list.archived') }}
+                </span>
+              </div>
+              <p v-if="row.description" class="mt-0.5 max-w-md truncate text-xs text-gray-500 dark:text-dark-400" :title="row.description">
+                {{ row.description }}
+              </p>
+            </template>
 
-          <template #cell-latestVersion="{ row }">
-            <span v-if="row.latestVersion" class="font-medium text-gray-900 dark:text-white">
-              {{ versionLabel(row.latestVersion) }}
-            </span>
-            <span v-else-if="row.latestVersionUnavailable" class="text-gray-400 dark:text-dark-500">
-              {{ t('admin.promptTemplates.list.latestVersionUnavailable') }}
-            </span>
-            <span v-else class="text-gray-400 dark:text-dark-500">
-              {{ t('admin.promptTemplates.list.latestVersionNone') }}
-            </span>
-          </template>
+            <template #cell-latestVersion="{ row }">
+              <span v-if="row.latestVersion" class="font-medium text-gray-900 dark:text-white">
+                {{ versionLabel(row.latestVersion) }}
+              </span>
+              <span v-else-if="row.latestVersionUnavailable" class="text-gray-400 dark:text-dark-500">
+                {{ t('admin.promptTemplates.list.latestVersionUnavailable') }}
+              </span>
+              <span v-else class="text-gray-400 dark:text-dark-500">
+                {{ t('admin.promptTemplates.list.latestVersionNone') }}
+              </span>
+            </template>
 
-          <template #cell-archived="{ row }">
-            <span :class="['badge', row.archived ? 'badge-gray' : 'badge-success']">
-              {{ row.archived ? t('admin.promptTemplates.list.archived') : t('admin.promptTemplates.list.active') }}
-            </span>
-          </template>
+            <template #cell-actions="{ row }">
+              <RouterLink
+                :to="{ name: 'AdminPromptTemplateDetail', params: { id: row.id } }"
+                class="btn btn-secondary btn-sm"
+              >
+                {{ t('admin.promptTemplates.list.openDetail') }}
+              </RouterLink>
+            </template>
 
-          <template #cell-actions="{ row }">
-            <RouterLink
-              :to="{ name: 'AdminPromptTemplateDetail', params: { id: row.id } }"
-              class="btn btn-secondary btn-sm"
-            >
-              {{ t('admin.promptTemplates.list.openDetail') }}
-            </RouterLink>
-          </template>
-
-          <template #empty>
-            <EmptyState
-              :title="t('admin.promptTemplates.list.empty')"
-              :description="t('admin.promptTemplates.list.emptyHint')"
-              :action-text="t('admin.promptTemplates.list.create')"
-              @action="showCreate = true"
-            />
-          </template>
-        </DataTable>
+            <template #empty>
+              <EmptyState
+                :title="t('admin.promptTemplates.list.empty')"
+                :description="t('admin.promptTemplates.list.emptyHint')"
+                :action-text="t('admin.promptTemplates.list.create')"
+                @action="showCreate = true"
+              />
+            </template>
+          </DataTable>
+        </div>
       </div>
     </div>
 
@@ -161,8 +159,6 @@ const showCreate = ref(false)
 const columns = computed<Column[]>(() => [
   { key: 'name', label: t('admin.promptTemplates.list.columns.name'), sortable: true },
   { key: 'latestVersion', label: t('admin.promptTemplates.list.columns.latestVersion'), sortable: true },
-  { key: 'archived', label: t('admin.promptTemplates.list.columns.archived'), sortable: true },
-  { key: 'revision', label: t('admin.promptTemplates.list.columns.revision'), sortable: true },
   { key: 'updatedAtLabel', label: t('admin.promptTemplates.list.columns.updatedAt'), sortable: true },
   { key: 'actions', label: t('admin.promptTemplates.list.columns.actions'), class: 'text-right' },
 ])

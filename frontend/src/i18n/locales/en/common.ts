@@ -218,6 +218,7 @@ export default {
     contentModeration: 'Content Moderation',
     promptAudit: 'Prompt Audit',
     promptTemplates: 'Text Prompts',
+    promptTemplatesList: 'Prompt Templates',
     promptRequestEvents: 'Prompt Request Records',
     auditLogs: 'Audit Logs',
   },
