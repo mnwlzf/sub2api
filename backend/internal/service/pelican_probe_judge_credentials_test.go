@@ -255,10 +255,14 @@ func TestCreatePlanCandyJudgeRouting(t *testing.T) {
 	}
 	base := CreatePlanInput{GroupID: 12, ModelID: "gpt-5", APIKey: "probe-key", TestType: "candy"}
 
-	t.Run("judge model missing is rejected", func(t *testing.T) {
-		svc, _ := newSvc()
-		_, err := svc.CreatePlan(context.Background(), base)
-		require.ErrorContains(t, err, "judge_model_id is required")
+	t.Run("judge model missing is accepted without routing validation", func(t *testing.T) {
+		// The deterministic ANSWER-line parser grades candy runs, so a plan
+		// without a judge is valid and must not trigger a routing check.
+		svc, models := newSvc()
+		got, err := svc.CreatePlan(context.Background(), base)
+		require.NoError(t, err)
+		require.Empty(t, got.JudgeModelID)
+		require.Empty(t, models.calls, "no judge routing check without a judge model")
 	})
 
 	t.Run("judge key group not serving the judge model is rejected", func(t *testing.T) {

@@ -28,8 +28,18 @@
 
     <!-- candy, admin: the model answered in prose, so render text — never an iframe -->
     <div v-else-if="isCandy" class="space-y-2 p-3">
-      <div class="text-xs font-medium text-gray-500 dark:text-gray-400">
-        {{ t('admin.pelicanProbe.candyAnswerLabel') }}
+      <div class="flex items-center justify-between gap-2">
+        <span class="text-xs font-medium text-gray-500 dark:text-gray-400">
+          {{ t('admin.pelicanProbe.candyAnswerLabel') }}
+        </span>
+        <!-- Deterministic parse of the "ANSWER: <n>" line; absent when the
+             answer ignored the contract (judge fallback / manual review). -->
+        <span
+          v-if="parsedAnswer !== null"
+          class="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[11px] text-gray-700 dark:bg-gray-700/60 dark:text-gray-200"
+        >
+          {{ t('admin.pelicanProbe.candyParsedAnswer', { answer: parsedAnswer }) }}
+        </span>
       </div>
       <!-- Vue interpolation escapes the answer; raw_html must never be v-html'd. -->
       <pre
@@ -179,6 +189,14 @@ const candyVerdictText = computed(() => {
     default:
       return t('admin.pelicanProbe.candyVerdictPending')
   }
+})
+
+// Deterministic parse of the "ANSWER: <n>" line. The backend omits the field
+// when the answer ignored the contract, so absence must render nothing rather
+// than a zero.
+const parsedAnswer = computed(() => {
+  const value = props.result.answer_value
+  return typeof value === 'number' ? value : null
 })
 
 const candyVerdictClass = computed(() => {

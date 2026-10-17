@@ -13,6 +13,15 @@ const pelicanProbePlanColumns = `id, name, group_id, model_id, base_url, api_key
 	test_type, reasoning_effort, judge_model_id, judge_api_key_encrypted, judge_base_url,
 	cron_expression, enabled, is_public, max_results, last_run_at, next_run_at, created_at, updated_at`
 
+// pelicanProbeResultColumns is the full column list for result scans.
+const pelicanProbeResultColumns = `id, plan_id, status, raw_html, verdict, note, reviewed_by, reviewed_at,
+	error_message, latency_ms, prompt_tokens, completion_tokens, started_at, finished_at, answer_value, created_at`
+
+// pelicanProbeResultColumnsR is the same list qualified with the result alias
+// used by the queries that join plans.
+const pelicanProbeResultColumnsR = `r.id, r.plan_id, r.status, r.raw_html, r.verdict, r.note, r.reviewed_by, r.reviewed_at,
+	r.error_message, r.latency_ms, r.prompt_tokens, r.completion_tokens, r.started_at, r.finished_at, r.answer_value, r.created_at`
+
 // --- Plan Repository ---
 
 type pelicanProbePlanRepository struct {
@@ -158,29 +167,32 @@ func NewPelicanProbeResultRepository(db *sql.DB) service.PelicanProbeResultRepos
 func (r *pelicanProbeResultRepository) Create(ctx context.Context, result *service.PelicanProbeResult) (*service.PelicanProbeResult, error) {
 	row := r.db.QueryRowContext(ctx, `
 		INSERT INTO pelican_probe_results (plan_id, status, raw_html, verdict, note, reviewed_by, reviewed_at,
-			error_message, latency_ms, prompt_tokens, completion_tokens, started_at, finished_at, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
-		RETURNING id, plan_id, status, raw_html, verdict, note, reviewed_by, reviewed_at,
-			error_message, latency_ms, prompt_tokens, completion_tokens, started_at, finished_at, created_at
+			error_message, latency_ms, prompt_tokens, completion_tokens, started_at, finished_at, answer_value, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
+		RETURNING `+pelicanProbeResultColumns+`
 	`, result.PlanID, result.Status, result.RawHTML, result.Verdict, result.Note, result.ReviewedBy,
 		result.ReviewedAt, result.ErrorMessage, result.LatencyMs, result.PromptTokens,
-		result.CompletionTokens, result.StartedAt, result.FinishedAt)
+		result.CompletionTokens, result.StartedAt, result.FinishedAt, result.AnswerValue)
 
 	out := &service.PelicanProbeResult{}
+	var answer sql.NullInt64
 	if err := row.Scan(
 		&out.ID, &out.PlanID, &out.Status, &out.RawHTML, &out.Verdict, &out.Note, &out.ReviewedBy,
 		&out.ReviewedAt, &out.ErrorMessage, &out.LatencyMs, &out.PromptTokens,
-		&out.CompletionTokens, &out.StartedAt, &out.FinishedAt, &out.CreatedAt,
+		&out.CompletionTokens, &out.StartedAt, &out.FinishedAt, &answer, &out.CreatedAt,
 	); err != nil {
 		return nil, err
+	}
+	if answer.Valid {
+		value := int(answer.Int64)
+		out.AnswerValue = &value
 	}
 	return out, nil
 }
 
 func (r *pelicanProbeResultRepository) ListByPlanID(ctx context.Context, planID int64, limit int) ([]*service.PelicanProbeResult, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, plan_id, status, raw_html, verdict, note, reviewed_by, reviewed_at,
-			error_message, latency_ms, prompt_tokens, completion_tokens, started_at, finished_at, created_at
+		SELECT `+pelicanProbeResultColumns+`
 		FROM pelican_probe_results
 		WHERE plan_id = $1
 		ORDER BY created_at DESC
@@ -196,8 +208,7 @@ func (r *pelicanProbeResultRepository) ListByPlanID(ctx context.Context, planID 
 func (r *pelicanProbeResultRepository) ListRecent(ctx context.Context, groupID *int64, limit int) ([]*service.PelicanProbeResult, error) {
 	if groupID != nil {
 		rows, err := r.db.QueryContext(ctx, `
-			SELECT r.id, r.plan_id, r.status, r.raw_html, r.verdict, r.note, r.reviewed_by, r.reviewed_at,
-				r.error_message, r.latency_ms, r.prompt_tokens, r.completion_tokens, r.started_at, r.finished_at, r.created_at
+			SELECT `+pelicanProbeResultColumnsR+`
 			FROM pelican_probe_results r
 			JOIN pelican_probe_plans p ON p.id = r.plan_id
 			WHERE p.group_id = $1
@@ -211,8 +222,7 @@ func (r *pelicanProbeResultRepository) ListRecent(ctx context.Context, groupID *
 		return scanPelicanProbeResults(rows)
 	}
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, plan_id, status, raw_html, verdict, note, reviewed_by, reviewed_at,
-			error_message, latency_ms, prompt_tokens, completion_tokens, started_at, finished_at, created_at
+		SELECT `+pelicanProbeResultColumns+`
 		FROM pelican_probe_results
 		ORDER BY created_at DESC
 		LIMIT $1
@@ -226,8 +236,7 @@ func (r *pelicanProbeResultRepository) ListRecent(ctx context.Context, groupID *
 
 func (r *pelicanProbeResultRepository) ListPublicRecent(ctx context.Context, limit int) ([]*service.PelicanProbeResult, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT r.id, r.plan_id, r.status, r.raw_html, r.verdict, r.note, r.reviewed_by, r.reviewed_at,
-			r.error_message, r.latency_ms, r.prompt_tokens, r.completion_tokens, r.started_at, r.finished_at, r.created_at
+		SELECT `+pelicanProbeResultColumnsR+`
 		FROM pelican_probe_results r
 		JOIN pelican_probe_plans p ON p.id = r.plan_id
 		WHERE p.is_public = true AND p.enabled = true
@@ -246,16 +255,20 @@ func (r *pelicanProbeResultRepository) Review(ctx context.Context, id int64, ver
 		UPDATE pelican_probe_results
 		SET verdict = $2, note = $3, reviewed_by = $4, reviewed_at = NOW()
 		WHERE id = $1
-		RETURNING id, plan_id, status, raw_html, verdict, note, reviewed_by, reviewed_at,
-			error_message, latency_ms, prompt_tokens, completion_tokens, started_at, finished_at, created_at
+		RETURNING `+pelicanProbeResultColumns+`
 	`, id, verdict, note, reviewer)
 	out := &service.PelicanProbeResult{}
+	var answer sql.NullInt64
 	if err := row.Scan(
 		&out.ID, &out.PlanID, &out.Status, &out.RawHTML, &out.Verdict, &out.Note, &out.ReviewedBy,
 		&out.ReviewedAt, &out.ErrorMessage, &out.LatencyMs, &out.PromptTokens,
-		&out.CompletionTokens, &out.StartedAt, &out.FinishedAt, &out.CreatedAt,
+		&out.CompletionTokens, &out.StartedAt, &out.FinishedAt, &answer, &out.CreatedAt,
 	); err != nil {
 		return nil, err
+	}
+	if answer.Valid {
+		value := int(answer.Int64)
+		out.AnswerValue = &value
 	}
 	return out, nil
 }
@@ -304,12 +317,17 @@ func scanPelicanProbeResults(rows *sql.Rows) ([]*service.PelicanProbeResult, err
 	var results []*service.PelicanProbeResult
 	for rows.Next() {
 		r := &service.PelicanProbeResult{}
+		var answer sql.NullInt64
 		if err := rows.Scan(
 			&r.ID, &r.PlanID, &r.Status, &r.RawHTML, &r.Verdict, &r.Note, &r.ReviewedBy,
 			&r.ReviewedAt, &r.ErrorMessage, &r.LatencyMs, &r.PromptTokens,
-			&r.CompletionTokens, &r.StartedAt, &r.FinishedAt, &r.CreatedAt,
+			&r.CompletionTokens, &r.StartedAt, &r.FinishedAt, &answer, &r.CreatedAt,
 		); err != nil {
 			return nil, err
+		}
+		if answer.Valid {
+			value := int(answer.Int64)
+			r.AnswerValue = &value
 		}
 		results = append(results, r)
 	}

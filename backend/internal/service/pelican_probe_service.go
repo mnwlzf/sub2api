@@ -307,10 +307,11 @@ func (s *PelicanProbeService) judgeCandyAnswer(ctx context.Context, baseURL, api
 	return parseJudgeVerdict(content), judgeNoteSnippet(content), nil
 }
 
-// applyCandyJudge runs the LLM judge for a successful candy probe and folds the
-// outcome into the result. The probe itself succeeded either way: a judge that
-// cannot decide leaves the verdict at pending for human review instead of
-// failing the run.
+// applyCandyJudge runs the LLM judge for a candy probe whose answer line could
+// not be parsed deterministically (see applyCandyVerdict, the primary grader) and
+// folds the outcome into the result. The probe itself succeeded either way: a
+// judge that cannot decide leaves the verdict at pending for human review instead
+// of failing the run.
 func (s *PelicanProbeService) applyCandyJudge(ctx context.Context, row *PelicanProbePlanRow, result *PelicanProbeResult, rawHTML string) {
 	judgeModel := strings.TrimSpace(row.JudgeModelID)
 	if judgeModel == "" {
@@ -423,17 +424,15 @@ func (s *PelicanProbeService) CreatePlan(ctx context.Context, in CreatePlanInput
 	if testType == PelicanTestTypeCandy {
 		prompt = DefaultCandyPrompt
 	}
-	// Candy plans must name an LLM judge: without it the run cannot be graded.
-	// Pelican plans ignore the field (it is only meaningful for candy).
+	// The deterministic ANSWER-line parser grades candy runs, so the LLM judge
+	// is optional: it is only consulted when a model ignores the answer
+	// contract. Pelican plans ignore the field entirely.
 	judgeModelID := strings.TrimSpace(in.JudgeModelID)
-	if testType == PelicanTestTypeCandy && judgeModelID == "" {
-		return nil, fmt.Errorf("judge_model_id is required when test_type is %q", PelicanTestTypeCandy)
-	}
-	// A judge model that the judge call cannot reach would fail on every run and
-	// leave the verdict pending forever, so reject the plan up front.
 	judgeAPIKey := strings.TrimSpace(in.JudgeAPIKey)
 	judgeBaseURL := strings.TrimSpace(in.JudgeBaseURL)
-	if testType == PelicanTestTypeCandy {
+	// A configured judge that the judge call cannot reach would fail on every
+	// fallback and leave the verdict pending forever, so reject it up front.
+	if testType == PelicanTestTypeCandy && judgeModelID != "" {
 		if err := s.validateCandyJudgeModel(ctx, in.GroupID, judgeModelID, judgeAPIKey); err != nil {
 			return nil, err
 		}
@@ -559,23 +558,17 @@ func (s *PelicanProbeService) UpdatePlan(ctx context.Context, id int64, in Updat
 	if existing.TestType == PelicanTestTypeCandy {
 		existing.Prompt = DefaultCandyPrompt
 		// The judge model only applies to candy plans; for pelican plans the
-		// field is ignored so a stored value survives a round trip.
+		// field is ignored so a stored value survives a round trip. Clearing it
+		// is allowed: the deterministic parser grades every run that follows the
+		// answer contract, the judge is only a fallback.
 		if in.JudgeModelID != nil {
 			existing.JudgeModelID = strings.TrimSpace(*in.JudgeModelID)
 		}
 	}
-	// Validate the candy judge requirement whenever the caller touches test
-	// configuration. Updates that only flip enabled/is_public are exempt so a
-	// legacy candy plan with no judge model can still be toggled (it simply
-	// keeps running with the pending fallback).
-	if (in.TestType != nil || in.JudgeModelID != nil) &&
-		existing.TestType == PelicanTestTypeCandy && strings.TrimSpace(existing.JudgeModelID) == "" {
-		return nil, fmt.Errorf("judge_model_id is required when test_type is %q", PelicanTestTypeCandy)
-	}
-	// Same routing check as create: whenever the caller touches the candy judge
-	// configuration, the judge model must be reachable from the group the judge
-	// call will be routed to. Updates that only flip enabled/is_public are exempt
-	// (a legacy plan must stay toggleable).
+	// Routing check as in create: whenever the caller touches the candy judge
+	// configuration and a judge model is set, it must be reachable from the group
+	// the judge call will be routed to. Updates that only flip enabled/is_public
+	// are exempt (a legacy plan must stay toggleable).
 	if (in.TestType != nil || in.JudgeModelID != nil || strings.TrimSpace(in.JudgeAPIKey) != "") &&
 		existing.TestType == PelicanTestTypeCandy && strings.TrimSpace(existing.JudgeModelID) != "" {
 		effectiveJudgeKey := strings.TrimSpace(in.JudgeAPIKey)
@@ -907,11 +900,12 @@ func (s *PelicanProbeService) runRow(ctx context.Context, row *PelicanProbePlanR
 		// verdict.
 		result.Verdict = PelicanVerdictInvalid
 	} else if row.TestType == PelicanTestTypeCandy {
-		// Candy tests have an objective answer (21): ask the configured LLM
-		// judge synchronously before persisting. A judge that cannot decide
-		// leaves the verdict pending (the probe itself still succeeded), and
-		// admins can always override the verdict via review.
-		s.applyCandyJudge(ctx, row, result, rawHTML)
+		// Candy tests have an objective answer (21): grade the ANSWER line
+		// deterministically before persisting, and only fall back to the LLM
+		// judge when the model ignored the contract. An undecidable run leaves
+		// the verdict pending (the probe itself still succeeded), and admins can
+		// always override the verdict via review.
+		s.applyCandyVerdict(ctx, row, result, rawHTML)
 	}
 	// Persist with a detached context: scheduled runs, manual runs and tests may
 	// hand us a context that is already cancelled, but the probe result must

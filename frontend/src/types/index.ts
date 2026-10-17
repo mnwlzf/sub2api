@@ -2663,6 +2663,13 @@ export interface PelicanProbeResult {
    * must fall back to a generic message instead of `error_message`.
    */
   failure_reason?: PelicanProbeFailureReason
+  /**
+   * Deterministic parse of the candy answer line ("ANSWER: <n>"). Null/absent
+   * for non-candy tests, for answers that ignored the contract (judge fallback
+   * or manual review decide those), and for rows written before the column
+   * existed.
+   */
+  answer_value?: number | null
   latency_ms: number
   prompt_tokens: number
   completion_tokens: number
