@@ -131,11 +131,12 @@ export default {
       testType: 'Test Type',
       testTypePelican: 'Pelican SVG (human review)',
       testTypeCandy: 'Candy quiz (auto-judged)',
-      candyPromptHint: 'Fixed prompt to keep results comparable over time',
+      candyPromptHint:
+        'Fixed prompt (v2: touch disambiguation + the ANSWER line contract) to keep results comparable over time',
       judgeModel: 'Judge model',
       judgeModelPlaceholder: 'deepseek-chat / gpt-4o-mini',
-      judgeModelHint: 'The judge model auto-grades the candy quiz answer. Required: enter an available model id (e.g. a deepseek model)',
-      judgeModelRequired: 'A judge model is required for the candy quiz',
+      judgeModelHint:
+        'Optional. Grading is deterministic from the ANSWER line; the judge is only a fallback for answers that ignore the contract',
       judgeKey: 'Judge Key',
       judgeKeyHint:
         'Optional. Blank = reuse the probe key. Use a key bound to the group that serves the judge model',
@@ -146,6 +147,7 @@ export default {
       judgeBaseUrlHint:
         'Optional. Blank = reuse the probe gateway. Set this when the judge model is served by another gateway',
       candyAnswerLabel: 'Model answer',
+      candyParsedAnswer: 'Parsed answer: {answer}',
       candyVerdictPass: 'Judged 21 ✓',
       candyVerdictDegraded: 'Not judged 21 ✗',
       candyVerdictPending: 'Awaiting judge / review',

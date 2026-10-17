@@ -66,18 +66,49 @@ const (
 	PelicanTestTypeCandy = "candy"
 )
 
-// PelicanAutoReviewer marks results judged automatically by the LLM judge.
+// PelicanAutoReviewer marks results graded automatically — either by the
+// deterministic candy answer parser (primary) or by the LLM judge fallback.
 const PelicanAutoReviewer = "auto"
+
+// PelicanCandyExpectedAnswer is the fixed answer key of the candy test.
+//
+// The prompt grants shape selection by touch ("不同的形状靠手感可以分辨"), which
+// makes 21 correct: 9 round draws guarantee a round apple (only 8 round
+// watermelons) and 12 star draws guarantee a star peach (only 11 star
+// non-peaches), and the adaptive game value is also 21. The blind-draw reading
+// yields 29 (worst case: all 24 round + 4 star watermelons) and must stay wrong.
+const PelicanCandyExpectedAnswer = 21
+
+// PelicanCandyPromptVersion identifies the generation of DefaultCandyPrompt. It
+// is recorded in the auto-graded note so v2 results stay separable from the
+// judge-graded v1 history.
+const PelicanCandyPromptVersion = 2
 
 // DefaultCandyPrompt is the fixed candy-test prompt. It must stay verbatim so
 // candy results stay longitudinally comparable; users cannot customize it.
+//
+// v2 added the two things that make grading deterministic:
+//   - the parenthetical now spells out that the shapes are distinguishable by
+//     touch, so a contestant may choose the shape of each draw. The permission
+//     was only implied before, and 20 of the first 119 production runs answered
+//     29 (the blind-draw reading) because of it;
+//   - the answer contract: a short derivation, then a single "ANSWER: <n>" line.
+//     parseCandyAnswer grades that line deterministically; the LLM judge is now
+//     only a fallback for answers that ignore the contract.
+//
+// Results recorded before v2 were graded by the judge on free prose and are only
+// loosely comparable with v2 runs.
 const DefaultCandyPrompt = `不使用任何外部工具回答以下问题：
 
-在一个黑色的袋子里放有三种口味的糖果，每种糖果有两种不同的形状（圆形和五角星形，不同的形状靠手感可以分辨）。现已知不同口味的糖和不同形状的数量统计如下表。参赛者需要在活动前决定摸出的糖果数目，那么，最少取出多少个糖果才能保证手中同时拥有不同形状的苹果味和桃子味的糖？（同时手中有圆形苹果味匹配五角星桃子味糖果，或者有圆形桃子味匹配五角星苹果味糖果都满足要求）
+在一个黑色的袋子里放有三种口味的糖果，每种糖果有两种不同的形状（圆形和五角星形，不同的形状靠手感可以分辨）。现已知不同口味的糖和不同形状的数量统计如下表。参赛者需要在活动前决定摸出的糖果数目，那么，最少取出多少个糖果才能保证手中同时拥有不同形状的苹果味和桃子味的糖？（同时手中有圆形苹果味匹配五角星桃子味糖果，或者有圆形桃子味匹配五角星苹果味糖果都满足要求。注意：形状可以靠手感分辨，所以摸取时可以按手感选择每次取出的形状，并根据已经摸出的糖果调整后续选择。）
 
         苹果味  桃子味  西瓜味
 圆形       7      9      8
-五角星形   7      6      4`
+五角星形   7      6      4
+
+要求：
+- 先给出简短推导（不超过 200 字）；
+- 最后单独一行只输出 ANSWER: <数字>，这一行之后不要再写任何内容。`
 
 // DefaultCandyJudgePrompt is the fixed grading prompt for the candy test. The
 // candidate answer is embedded at the %s placeholder, truncated to
@@ -88,6 +119,7 @@ const DefaultCandyJudgePrompt = `你是一个严格的判分员。以下是一�
 
 要求：
 - 只看最终答案，不看过程
+- 若作答里有 "ANSWER: <数字>" 行，以该行为准
 - 最终答案是 21（包括"二十一"等价表达）则回答 YES，否则回答 NO
 - 你的回复必须且只能是 YES 或 NO 这一个单词，不要输出其他任何内容
 
@@ -150,6 +182,11 @@ type PelicanProbeResult struct {
 	ReviewedBy   string     `json:"reviewed_by"`
 	ReviewedAt   *time.Time `json:"reviewed_at"`
 	ErrorMessage string     `json:"error_message"`
+	// AnswerValue is the deterministic parse of the candy answer line
+	// ("ANSWER: <n>"). Nil for non-candy tests, for answers that ignored the
+	// contract (the judge fallback / manual review decides those), and for rows
+	// written before the column existed.
+	AnswerValue *int `json:"answer_value,omitempty"`
 	// FailureReason is a derived, user-safe classification of ErrorMessage. It is
 	// never persisted: the public status endpoint fills it in and clears
 	// ErrorMessage, while the admin endpoints keep ErrorMessage verbatim and

@@ -248,7 +248,7 @@
         </div>
         <div v-if="isCandy" class="sm:col-span-2">
           <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
-            {{ t('admin.pelicanProbe.judgeModel') }} <span class="text-rose-500">*</span>
+            {{ t('admin.pelicanProbe.judgeModel') }}
           </label>
           <Input
             v-model="planForm.judge_model_id"
@@ -306,7 +306,7 @@
           <textarea
             :value="isCandy ? candyPrompt : planForm.prompt"
             :disabled="isCandy"
-            :rows="isCandy ? 8 : 2"
+            :rows="isCandy ? 10 : 2"
             :placeholder="defaultPrompt"
             class="input w-full"
             @input="planForm.prompt = ($event.target as HTMLTextAreaElement).value"
@@ -443,13 +443,19 @@ const appStore = useAppStore()
 const defaultPrompt = '创建一个HTML，内容是SVG绘制一个鹈鹕骑自行车的2D动画'
 
 // Fixed candy-test prompt (mirrors backend DefaultCandyPrompt verbatim).
+// v2 adds the touch disambiguation (shapes can be picked by feel) and the
+// "ANSWER: <n>" contract the backend parses deterministically.
 const candyPrompt = `不使用任何外部工具回答以下问题：
 
-在一个黑色的袋子里放有三种口味的糖果，每种糖果有两种不同的形状（圆形和五角星形，不同的形状靠手感可以分辨）。现已知不同口味的糖和不同形状的数量统计如下表。参赛者需要在活动前决定摸出的糖果数目，那么，最少取出多少个糖果才能保证手中同时拥有不同形状的苹果味和桃子味的糖？（同时手中有圆形苹果味匹配五角星桃子味糖果，或者有圆形桃子味匹配五角星苹果味糖果都满足要求）
+在一个黑色的袋子里放有三种口味的糖果，每种糖果有两种不同的形状（圆形和五角星形，不同的形状靠手感可以分辨）。现已知不同口味的糖和不同形状的数量统计如下表。参赛者需要在活动前决定摸出的糖果数目，那么，最少取出多少个糖果才能保证手中同时拥有不同形状的苹果味和桃子味的糖？（同时手中有圆形苹果味匹配五角星桃子味糖果，或者有圆形桃子味匹配五角星苹果味糖果都满足要求。注意：形状可以靠手感分辨，所以摸取时可以按手感选择每次取出的形状，并根据已经摸出的糖果调整后续选择。）
 
         苹果味  桃子味  西瓜味
 圆形       7      9      8
-五角星形   7      6      4`
+五角星形   7      6      4
+
+要求：
+- 先给出简短推导（不超过 200 字）；
+- 最后单独一行只输出 ANSWER: <数字>，这一行之后不要再写任何内容。`
 
 const schedulePresets = [
   { value: '*/15 * * * *', labelKey: 'admin.pelicanProbe.schedule15min', descKey: 'admin.pelicanProbe.schedule15minDesc' },
@@ -665,12 +671,9 @@ const openEditDialog = (plan: PelicanProbePlan) => {
 const savePlan = async () => {
   if (!planForm.group_id || !planForm.model_id.trim()) return
   if (!planDialog.editing && !planForm.api_key.trim()) return
-  // Candy plans cannot be auto-judged without a judge model: block the submit
-  // and tell the admin instead of silently creating an ungradable plan.
-  if (isCandy.value && !planForm.judge_model_id.trim()) {
-    appStore.showError(t('admin.pelicanProbe.judgeModelRequired'))
-    return
-  }
+  // A judge model is optional: the backend grades the "ANSWER: <n>" line
+  // deterministically and only falls back to the judge when a model ignores the
+  // contract.
   const cron = isCustomSchedule.value ? planForm.cron_custom.trim() : planForm.schedule_preset
   planSaving.value = true
   try {

@@ -406,22 +406,27 @@ func TestCreatePlanJudgeModelValidation(t *testing.T) {
 	}
 	base := CreatePlanInput{GroupID: 1, ModelID: "m", APIKey: "k"}
 
-	t.Run("candy without judge model rejected", func(t *testing.T) {
+	t.Run("candy without judge model accepted", func(t *testing.T) {
+		// The ANSWER-line parser is the primary grader; the judge is an optional
+		// fallback for answers that ignore the contract.
 		svc, plans := newSvc()
 		in := base
 		in.TestType = "candy"
-		_, err := svc.CreatePlan(context.Background(), in)
-		require.ErrorContains(t, err, "judge_model_id is required")
-		require.Empty(t, plans.created, "rejected plan must not be persisted")
+		got, err := svc.CreatePlan(context.Background(), in)
+		require.NoError(t, err)
+		require.Equal(t, PelicanTestTypeCandy, got.TestType)
+		require.Empty(t, got.JudgeModelID)
+		require.Equal(t, DefaultCandyPrompt, plans.byID[got.ID].Prompt)
 	})
 
-	t.Run("candy with blank judge model rejected", func(t *testing.T) {
+	t.Run("candy with blank judge model treated as unset", func(t *testing.T) {
 		svc, _ := newSvc()
 		in := base
 		in.TestType = "candy"
 		in.JudgeModelID = "   "
-		_, err := svc.CreatePlan(context.Background(), in)
-		require.ErrorContains(t, err, "judge_model_id is required")
+		got, err := svc.CreatePlan(context.Background(), in)
+		require.NoError(t, err)
+		require.Empty(t, got.JudgeModelID)
 	})
 
 	t.Run("candy with judge model accepted and trimmed", func(t *testing.T) {
@@ -487,11 +492,13 @@ func TestUpdatePlanPelicanOptions(t *testing.T) {
 		require.Equal(t, DefaultCandyPrompt, plans.byID[7].Prompt)
 	})
 
-	t.Run("switch to candy without judge model rejected", func(t *testing.T) {
+	t.Run("switch to candy without judge model accepted", func(t *testing.T) {
 		svc, plans := newSvc(base)
-		_, err := svc.UpdatePlan(context.Background(), 7, UpdatePlanInput{TestType: pelicanStrPtr("candy")})
-		require.ErrorContains(t, err, "judge_model_id is required")
-		require.Equal(t, PelicanTestTypePelican, plans.byID[7].TestType)
+		got, err := svc.UpdatePlan(context.Background(), 7, UpdatePlanInput{TestType: pelicanStrPtr("candy")})
+		require.NoError(t, err)
+		require.Equal(t, PelicanTestTypeCandy, got.TestType)
+		require.Empty(t, got.JudgeModelID)
+		require.Equal(t, DefaultCandyPrompt, plans.byID[7].Prompt)
 	})
 
 	t.Run("candy judge model can be updated", func(t *testing.T) {
@@ -508,8 +515,10 @@ func TestUpdatePlanPelicanOptions(t *testing.T) {
 		require.Equal(t, "new-judge", got.JudgeModelID)
 		require.Equal(t, "new-judge", plans.byID[7].JudgeModelID)
 
-		_, err = svc.UpdatePlan(context.Background(), 7, UpdatePlanInput{JudgeModelID: pelicanStrPtr("  ")})
-		require.ErrorContains(t, err, "judge_model_id is required")
+		got, err = svc.UpdatePlan(context.Background(), 7, UpdatePlanInput{JudgeModelID: pelicanStrPtr("  ")})
+		require.NoError(t, err)
+		require.Empty(t, got.JudgeModelID)
+		require.Empty(t, plans.byID[7].JudgeModelID)
 	})
 
 	t.Run("pelican ignores judge model and keeps stored value", func(t *testing.T) {

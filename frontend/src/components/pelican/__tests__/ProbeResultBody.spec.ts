@@ -9,6 +9,7 @@ const TRANSLATIONS: Record<string, string> = {
   'admin.pelicanProbe.verdictDegraded': 'Degraded',
   'admin.pelicanProbe.verdictPending': 'Pending',
   'admin.pelicanProbe.candyAnswerLabel': 'Model answer',
+  'admin.pelicanProbe.candyParsedAnswer': 'Parsed answer: {answer}',
   'admin.pelicanProbe.candyVerdictPass': 'Judged 21 ✓',
   'admin.pelicanProbe.candyVerdictDegraded': 'Not judged 21 ✗',
   'admin.pelicanProbe.candyVerdictPending': 'Awaiting judge / review',
@@ -22,7 +23,11 @@ vi.mock('vue-i18n', async () => {
   return {
     ...actual,
     useI18n: () => ({
-      t: (key: string) => TRANSLATIONS[key] ?? key
+      t: (key: string, params?: Record<string, unknown>) => {
+        const template = TRANSLATIONS[key] ?? key
+        if (!params) return template
+        return template.replace(/\{(\w+)\}/g, (_, name: string) => String(params[name] ?? `{${name}}`))
+      }
     })
   }
 })
@@ -73,6 +78,26 @@ describe('ProbeResultBody (admin results wall)', () => {
     expect(label('pass')).toBe('Judged 21 ✓')
     expect(label('degraded')).toBe('Not judged 21 ✗')
     expect(label('pending')).toBe('Awaiting judge / review')
+  })
+
+  it('shows the deterministically parsed answer when the backend recorded one', () => {
+    const wrapper = mount(ProbeResultBody, {
+      props: {
+        result: makeResult({ raw_html: '盲摸读法：\nANSWER: 29', verdict: 'degraded', answer_value: 29 }),
+        testType: 'candy'
+      }
+    })
+    expect(wrapper.text()).toContain('Parsed answer: 29')
+  })
+
+  it('omits the parsed answer when the answer ignored the contract', () => {
+    const wrapper = mount(ProbeResultBody, {
+      props: {
+        result: makeResult({ raw_html: '我先想一下……答案是 21', verdict: 'pass', answer_value: null }),
+        testType: 'candy'
+      }
+    })
+    expect(wrapper.text()).not.toContain('Parsed answer')
   })
 
   it('shows the judge note under the candy answer', () => {
