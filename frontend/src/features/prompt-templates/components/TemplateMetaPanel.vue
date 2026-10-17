@@ -1,32 +1,30 @@
 <template>
-  <section class="rounded-xl border border-gray-200 p-4 dark:border-dark-700 sm:p-5">
-    <header class="mb-4 flex flex-wrap items-start justify-between gap-3">
-      <div>
-        <h2 class="text-base font-semibold text-gray-900 dark:text-white">
-          {{ t('admin.promptTemplates.meta.title') }}
-        </h2>
-        <p class="mt-1 text-xs text-gray-500 dark:text-dark-400">
-          {{ t('admin.promptTemplates.meta.description') }}
-        </p>
-      </div>
-      <span class="whitespace-nowrap text-xs text-gray-500 dark:text-dark-400">
+  <section class="card">
+    <header class="card-header flex items-center justify-between gap-2">
+      <h2 class="text-sm font-semibold text-gray-900 dark:text-white">
+        {{ t('admin.promptTemplates.meta.title') }}
+      </h2>
+      <span
+        class="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-500 dark:bg-dark-700 dark:text-dark-300"
+        data-test="meta-revision"
+      >
         {{ t('admin.promptTemplates.revisionValue', { revision: template.revision }) }}
       </span>
     </header>
 
-    <div
-      v-if="archived"
-      role="status"
-      class="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-200"
-    >
-      <p class="font-medium">{{ t('admin.promptTemplates.meta.archivedNotice') }}</p>
-      <p class="mt-1">{{ t('admin.promptTemplates.meta.archivedNoticeDescription') }}</p>
-      <p v-if="template.archived_at" class="mt-1 text-xs">
-        {{ t('admin.promptTemplates.meta.archivedAt', { time: archivedAtLabel }) }}
-      </p>
-    </div>
+    <div class="card-body space-y-3.5">
+      <div
+        v-if="archived"
+        role="status"
+        class="rounded-lg bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-900 dark:bg-amber-950/30 dark:text-amber-200"
+      >
+        <p class="font-medium">{{ t('admin.promptTemplates.meta.archivedNotice') }}</p>
+        <p class="mt-0.5">{{ t('admin.promptTemplates.meta.archiveWarning') }}</p>
+        <p v-if="template.archived_at" class="mt-0.5 opacity-80">
+          {{ t('admin.promptTemplates.meta.archivedAt', { time: archivedAtLabel }) }}
+        </p>
+      </div>
 
-    <div class="grid gap-4 md:grid-cols-2">
       <Input
         v-model="form.name"
         :label="t('admin.promptTemplates.meta.name')"
@@ -38,51 +36,50 @@
         :label="t('admin.promptTemplates.meta.sourceUrl')"
         :disabled="archived"
       />
-      <div class="md:col-span-2">
-        <TextArea
-          v-model="form.description"
-          :label="t('admin.promptTemplates.meta.descriptionLabel')"
-          :rows="2"
-          :disabled="archived"
-        />
-      </div>
-      <div class="md:col-span-2">
-        <TextArea
-          v-model="form.source_note"
-          :label="t('admin.promptTemplates.meta.sourceNote')"
-          :rows="2"
-          :disabled="archived"
-        />
-      </div>
+      <TextArea
+        v-model="form.description"
+        :label="t('admin.promptTemplates.meta.descriptionLabel')"
+        :rows="2"
+        :disabled="archived"
+      />
+      <TextArea
+        v-model="form.source_note"
+        :label="t('admin.promptTemplates.meta.sourceNote')"
+        :rows="2"
+        :disabled="archived"
+      />
     </div>
 
-    <div class="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-4 dark:border-dark-700">
-      <p class="text-xs text-gray-500 dark:text-dark-400">
+    <footer class="card-footer flex flex-wrap items-center justify-between gap-2">
+      <span
+        class="text-[11px]"
+        :class="dirty ? 'text-amber-600 dark:text-amber-400' : 'text-gray-400 dark:text-dark-500'"
+      >
         {{ dirty ? t('admin.promptTemplates.draft.dirty') : t('admin.promptTemplates.draft.synced') }}
-      </p>
-      <div class="flex items-center gap-3">
+      </span>
+      <div class="flex items-center gap-2">
         <button
           v-if="!archived"
           type="button"
-          class="btn btn-secondary"
-          :disabled="!dirty || saving"
-          data-test="save-template-meta"
-          @click="submit"
-        >
-          {{ saving ? t('admin.promptTemplates.meta.saving') : t('admin.promptTemplates.meta.save') }}
-        </button>
-        <button
-          v-if="!archived"
-          type="button"
-          class="btn btn-secondary text-red-600 dark:text-red-400"
+          class="btn btn-ghost btn-sm text-red-600 hover:text-red-700 dark:text-red-400"
           :disabled="saving"
           data-test="archive-template"
           @click="emit('archive')"
         >
           {{ t('admin.promptTemplates.meta.archive') }}
         </button>
+        <button
+          v-if="!archived"
+          type="button"
+          class="btn btn-primary btn-sm"
+          :disabled="!dirty || saving"
+          data-test="save-template-meta"
+          @click="submit"
+        >
+          {{ saving ? t('admin.promptTemplates.meta.saving') : t('admin.promptTemplates.meta.save') }}
+        </button>
       </div>
-    </div>
+    </footer>
   </section>
 </template>
 

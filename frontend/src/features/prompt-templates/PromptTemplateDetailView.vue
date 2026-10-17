@@ -1,30 +1,40 @@
 <template>
   <AppLayout>
-    <div class="mx-auto max-w-[1600px] pb-8">
+    <div class="mx-auto max-w-[1500px] pb-10">
       <RouterLink
         :to="templatesRoute"
-        class="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500 transition-colors hover:text-primary-600 dark:text-dark-400 dark:hover:text-primary-400"
+        class="mb-3 inline-flex items-center gap-1.5 text-xs text-gray-500 transition-colors hover:text-primary-600 dark:text-dark-400 dark:hover:text-primary-400"
       >
         <Icon name="arrowLeft" size="sm" />
         {{ t('admin.promptTemplates.backToList') }}
       </RouterLink>
 
-      <header class="mb-6 flex flex-wrap items-end justify-between gap-4">
+      <header class="mb-5 flex flex-wrap items-start justify-between gap-4">
         <div class="min-w-0">
-          <h1 class="truncate text-2xl font-semibold tracking-tight text-gray-950 dark:text-white">
-            {{ template?.name || t('admin.promptTemplates.title') }}
-          </h1>
-          <p class="mt-2 max-w-3xl text-sm text-gray-500 dark:text-dark-300">
-            {{ t('admin.promptTemplates.description') }}
+          <div class="flex flex-wrap items-center gap-2.5">
+            <h1 class="truncate text-[22px] font-semibold tracking-tight text-gray-950 dark:text-white">
+              {{ template?.name || t('admin.promptTemplates.title') }}
+            </h1>
+            <span
+              v-if="template?.archived_at"
+              class="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-300"
+            >
+              {{ t('admin.promptTemplates.meta.archivedBadge') }}
+            </span>
+          </div>
+          <p
+            v-if="template?.description"
+            class="mt-1.5 max-w-2xl text-sm leading-relaxed text-gray-500 dark:text-dark-300"
+          >
+            {{ template.description }}
           </p>
-        </div>
-        <div v-if="template" class="text-right text-xs text-gray-500 dark:text-dark-400">
-          <p>{{ t('admin.promptTemplates.revisionValue', { revision: template.revision }) }}</p>
-          <p class="mt-1">{{ t('admin.promptTemplates.savedAt', { time: updatedAtLabel }) }}</p>
+          <div v-if="template" class="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-gray-400 dark:text-dark-500">
+            <span>{{ t('admin.promptTemplates.savedAt', { time: updatedAtLabel }) }}</span>
+          </div>
         </div>
       </header>
 
-      <div v-if="pageError" role="alert" class="mb-4 rounded-xl border border-red-200 bg-red-50 p-5 dark:border-red-900 dark:bg-red-950/30">
+      <div v-if="pageError" role="alert" class="card p-6">
         <p class="text-sm text-red-700 dark:text-red-300">{{ pageError }}</p>
         <button type="button" class="btn btn-secondary btn-sm mt-3" @click="load">
           {{ t('admin.promptTemplates.reload') }}
@@ -35,54 +45,60 @@
         {{ t('admin.promptTemplates.loading') }}
       </div>
 
-      <div v-else-if="template" class="space-y-5">
-        <TemplateMetaPanel
-          :template="template"
-          :saving="metaSaving"
-          @save="saveMeta"
-          @archive="showArchiveConfirm = true"
-        />
+      <div v-else-if="template" class="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <!-- 主区：编辑器是这张页面的主角 -->
+        <div class="min-w-0 space-y-5">
+          <p v-if="draftError" role="alert" class="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">
+            {{ draftError }}
+          </p>
 
-        <p v-if="draftError" role="alert" class="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">
-          {{ draftError }}
-        </p>
+          <DraftEditor
+            v-if="draftForm"
+            v-model="draftForm"
+            :saving="draftSaving"
+            :archived="Boolean(template.archived_at)"
+            :dirty="draftDirty"
+            @save="saveDraft"
+            @reset="resetDraft"
+          />
 
-        <DraftEditor
-          v-if="draftForm"
-          v-model="draftForm"
-          :saving="draftSaving"
-          :archived="Boolean(template.archived_at)"
-          :dirty="draftDirty"
-          @save="saveDraft"
-          @reset="resetDraft"
-        />
+          <VersionHistoryPanel
+            :versions="versions"
+            :loading="versionsLoading"
+            :error="versionsError"
+            :can-publish="canPublish"
+            :publishing="publishing"
+            @refresh="loadVersions"
+            @publish="showPublish = true"
+            @preview="openPreview"
+            @view-body="openBody"
+            @diff="openDiff"
+          />
 
-        <ValidationPanel
-          :report="validation"
-          :loading="validationLoading"
-          :error="validationError"
-          @refresh="loadValidation"
-        />
+          <TemplateEventPanel
+            :events="auditEvents"
+            :loading="auditLoading"
+            :error="auditError"
+            @refresh="loadAuditEvents"
+          />
+        </div>
 
-        <VersionHistoryPanel
-          :versions="versions"
-          :loading="versionsLoading"
-          :error="versionsError"
-          :can-publish="canPublish"
-          :publishing="publishing"
-          @refresh="loadVersions"
-          @publish="showPublish = true"
-          @preview="openPreview"
-          @view-body="openBody"
-          @diff="openDiff"
-        />
+        <!-- 侧栏：元数据与校验，只读/低频操作 -->
+        <div class="min-w-0 space-y-5">
+          <TemplateMetaPanel
+            :template="template"
+            :saving="metaSaving"
+            @save="saveMeta"
+            @archive="showArchiveConfirm = true"
+          />
 
-        <TemplateEventPanel
-          :events="auditEvents"
-          :loading="auditLoading"
-          :error="auditError"
-          @refresh="loadAuditEvents"
-        />
+          <ValidationPanel
+            :report="validation"
+            :loading="validationLoading"
+            :error="validationError"
+            @refresh="loadValidation"
+          />
+        </div>
       </div>
     </div>
 

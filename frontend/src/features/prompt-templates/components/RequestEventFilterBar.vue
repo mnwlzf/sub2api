@@ -1,13 +1,14 @@
 <template>
-  <form class="grid gap-3 md:grid-cols-2 lg:grid-cols-6" @submit.prevent="submit">
-    <div class="lg:col-span-2">
-      <Input
-        v-model="draft.requestId"
-        :label="t('admin.promptTemplates.events.filters.requestId')"
-        :placeholder="t('admin.promptTemplates.events.filters.requestIdPlaceholder')"
-        data-test="event-filter-request-id"
-      />
-    </div>
+  <form
+    class="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.6fr)_repeat(3,minmax(0,1fr))_auto] lg:items-end"
+    @submit.prevent="submit"
+  >
+    <Input
+      v-model="draft.requestId"
+      :label="t('admin.promptTemplates.events.filters.requestId')"
+      :placeholder="t('admin.promptTemplates.events.filters.requestIdPlaceholder')"
+      data-test="event-filter-request-id"
+    />
     <Input
       v-model="draft.groupId"
       :label="t('admin.promptTemplates.events.filters.groupId')"
@@ -31,11 +32,11 @@
       </select>
     </div>
 
-    <div class="flex items-end gap-3 md:col-span-2 lg:col-span-6">
-      <button type="submit" class="btn btn-primary" :disabled="loading" data-test="event-filter-search">
+    <div class="flex items-end gap-2">
+      <button type="submit" class="btn btn-primary btn-sm" :disabled="loading" data-test="event-filter-search">
         {{ loading ? t('admin.promptTemplates.events.filters.searching') : t('admin.promptTemplates.events.filters.search') }}
       </button>
-      <button type="button" class="btn btn-secondary" :disabled="loading" @click="reset">
+      <button type="button" class="btn btn-secondary btn-sm" :disabled="loading" @click="reset">
         {{ t('admin.promptTemplates.events.filters.reset') }}
       </button>
     </div>

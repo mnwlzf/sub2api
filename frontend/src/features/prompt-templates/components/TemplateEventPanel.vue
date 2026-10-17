@@ -1,11 +1,11 @@
 <template>
-  <section class="rounded-xl border border-gray-200 p-4 dark:border-dark-700 sm:p-5">
-    <header class="mb-4 flex flex-wrap items-start justify-between gap-3">
-      <div>
-        <h2 class="text-base font-semibold text-gray-900 dark:text-white">
+  <section class="card">
+    <header class="card-header flex flex-wrap items-center justify-between gap-3">
+      <div class="min-w-0">
+        <h2 class="text-sm font-semibold text-gray-900 dark:text-white">
           {{ t('admin.promptTemplates.audit.title') }}
         </h2>
-        <p class="mt-1 max-w-3xl text-xs text-gray-500 dark:text-dark-400">
+        <p class="mt-0.5 text-xs text-gray-500 dark:text-dark-400">
           {{ t('admin.promptTemplates.audit.description') }}
         </p>
       </div>
@@ -14,83 +14,82 @@
       </button>
     </header>
 
-    <div
-      role="status"
-      class="mb-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-xs text-gray-600 dark:border-dark-600 dark:bg-dark-700/50 dark:text-dark-300"
-    >
-      {{ t('admin.promptTemplates.audit.rawNotice') }}
-    </div>
+    <div class="card-body">
+      <p class="mb-3 text-[11px] text-gray-400 dark:text-dark-500">
+        {{ t('admin.promptTemplates.audit.rawNotice') }}
+      </p>
 
-    <p v-if="error" role="alert" class="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">
-      {{ error }}
-    </p>
+      <p v-if="error" role="alert" class="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">
+        {{ error }}
+      </p>
 
-    <DataTable
-      v-else
-      :columns="columns"
-      :data="rows"
-      :loading="loading"
-      row-key="id"
-      :virtualize-threshold="50"
-    >
-      <template #cell-action="{ row }">
-        <span class="text-gray-900 dark:text-white">{{ actionLabel(row.event.action) }}</span>
-        <span class="ml-1 font-mono text-xs text-gray-400 dark:text-dark-500">{{ row.event.action }}</span>
-      </template>
+      <DataTable
+        v-else
+        :columns="columns"
+        :data="rows"
+        :loading="loading"
+        row-key="id"
+        :virtualize-threshold="50"
+      >
+        <template #cell-action="{ row }">
+          <span class="text-gray-900 dark:text-white">{{ actionLabel(row.event.action) }}</span>
+          <span class="ml-1 font-mono text-xs text-gray-400 dark:text-dark-500">{{ row.event.action }}</span>
+        </template>
 
-      <template #cell-scope="{ row }">
-        <span class="badge badge-gray">{{ scopeLabel(row.event.scope) }}</span>
-      </template>
+        <template #cell-scope="{ row }">
+          <span class="badge badge-gray">{{ scopeLabel(row.event.scope) }}</span>
+        </template>
 
-      <template #cell-actor="{ row }">
-        <span class="text-gray-700 dark:text-dark-200">{{ actorLabel(row.event) }}</span>
-      </template>
+        <template #cell-actor="{ row }">
+          <span class="text-gray-700 dark:text-dark-200">{{ actorLabel(row.event) }}</span>
+        </template>
 
-      <template #cell-state="{ row }">
-        <div class="max-w-xl space-y-1.5">
-          <div
-            v-for="side in STATE_SIDES"
-            :key="side"
-            class="flex flex-wrap items-center gap-1.5"
-          >
-            <span class="w-10 flex-none text-xs text-gray-400 dark:text-dark-500">
-              {{ side === 'before' ? t('admin.promptTemplates.audit.stateBefore') : t('admin.promptTemplates.audit.stateAfter') }}
-            </span>
-            <template v-if="chipsOf(stateOf(row.event, side)).length">
-              <span
-                v-for="chip in chipsOf(stateOf(row.event, side))"
-                :key="`${side}-${chip.key}`"
-                class="inline-flex max-w-full items-center gap-1 rounded-md bg-gray-100 px-1.5 py-0.5 text-xs dark:bg-dark-700"
-                :title="chip.title"
-              >
-                <span class="flex-none text-gray-500 dark:text-dark-400">{{ chip.label }}</span>
-                <span class="min-w-0 truncate font-mono text-gray-800 dark:text-dark-100">{{ chip.value }}</span>
+        <template #cell-state="{ row }">
+          <div class="max-w-xl space-y-1.5">
+            <div
+              v-for="side in STATE_SIDES"
+              :key="side"
+              class="flex flex-wrap items-center gap-1.5"
+            >
+              <span class="w-10 flex-none text-xs text-gray-400 dark:text-dark-500">
+                {{ side === 'before' ? t('admin.promptTemplates.audit.stateBefore') : t('admin.promptTemplates.audit.stateAfter') }}
               </span>
-            </template>
-            <span v-else class="text-xs text-gray-400 dark:text-dark-500">
-              {{ t('admin.promptTemplates.audit.stateNone') }}
-            </span>
+              <template v-if="chipsOf(stateOf(row.event, side)).length">
+                <span
+                  v-for="chip in chipsOf(stateOf(row.event, side))"
+                  :key="`${side}-${chip.key}`"
+                  class="inline-flex max-w-full items-center gap-1 rounded-md bg-gray-100 px-1.5 py-0.5 text-xs dark:bg-dark-700"
+                  :title="chip.title"
+                >
+                  <span class="flex-none text-gray-500 dark:text-dark-400">{{ chip.label }}</span>
+                  <span class="min-w-0 truncate font-mono text-gray-800 dark:text-dark-100">{{ chip.value }}</span>
+                </span>
+              </template>
+              <span v-else class="text-xs text-gray-400 dark:text-dark-500">
+                {{ t('admin.promptTemplates.audit.stateNone') }}
+              </span>
+            </div>
+
+            <button
+              type="button"
+              class="text-xs text-primary-600 hover:underline dark:text-primary-400"
+              :data-test="`audit-raw-${row.id}`"
+              @click="toggleRaw(row.id)"
+            >
+              {{ isRawOpen(row.id) ? t('admin.promptTemplates.audit.hideRaw') : t('admin.promptTemplates.audit.showRaw') }}
+            </button>
+            <pre
+              v-if="isRawOpen(row.id)"
+              class="max-h-64 overflow-auto rounded-lg bg-gray-50 p-3 text-xs text-gray-700 dark:bg-dark-900/60 dark:text-dark-200"
+            >{{ rawJson(row.event) }}</pre>
           </div>
+        </template>
 
-          <button
-            type="button"
-            class="text-xs text-primary-600 hover:underline dark:text-primary-400"
-            :data-test="`audit-raw-${row.id}`"
-            @click="toggleRaw(row.id)"
-          >
-            {{ isRawOpen(row.id) ? t('admin.promptTemplates.audit.hideRaw') : t('admin.promptTemplates.audit.showRaw') }}
-          </button>
-          <pre
-            v-if="isRawOpen(row.id)"
-            class="max-h-64 overflow-auto rounded-lg bg-gray-50 p-3 text-xs text-gray-700 dark:bg-dark-900/60 dark:text-dark-200"
-          >{{ rawJson(row.event) }}</pre>
-        </div>
-      </template>
-
-      <template #empty>
-        <p class="text-sm text-gray-500 dark:text-dark-400">{{ t('admin.promptTemplates.audit.empty') }}</p>
-      </template>
-    </DataTable>
+        <template #empty>
+          <p class="text-sm text-gray-500 dark:text-dark-400">{{ t('admin.promptTemplates.audit.empty') }}</p>
+        </template>
+      </DataTable>
+    </div>
   </section>
 </template>
 
