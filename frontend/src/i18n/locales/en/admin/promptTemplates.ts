@@ -73,6 +73,7 @@ export default {
       saveSuccess: 'Template metadata saved.',
       saveFailed: 'Failed to save template metadata.',
       archivedAt: 'Archived at {time}',
+      archivedBadge: 'Archived',
       archivedNotice: 'This template is archived.',
       archivedNoticeDescription:
         'Existing bindings keep running, but no new binding can be added and the draft can no longer be edited.',
@@ -91,6 +92,7 @@ export default {
       bodyLabel: 'Prompt body',
       bodyPlaceholder: 'System prompt text injected into the outbound request',
       bodyBytes: '{bytes} / {max} bytes',
+      bodyStats: '{bytes} / {max} bytes · {lines} lines',
       bodyBytesOverLimit: 'Body exceeds the {max} byte limit.',
       clientModels: 'Applicable client models',
       clientModelsHint:

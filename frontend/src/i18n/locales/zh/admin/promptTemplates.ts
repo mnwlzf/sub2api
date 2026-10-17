@@ -73,6 +73,7 @@ export default {
       saveSuccess: '模板元数据已保存。',
       saveFailed: '保存模板元数据失败。',
       archivedAt: '归档于 {time}',
+      archivedBadge: '已归档',
       archivedNotice: '该模板已归档。',
       archivedNoticeDescription:
         '既有绑定继续运行，但不能再新增绑定，草稿也无法继续编辑。',
@@ -90,6 +91,7 @@ export default {
       bodyLabel: '提示词正文',
       bodyPlaceholder: '会被注入到出站请求中的 system 提示词文本',
       bodyBytes: '{bytes} / {max} 字节',
+      bodyStats: '{bytes} / {max} 字节 · {lines} 行',
       bodyBytesOverLimit: '正文超过 {max} 字节上限。',
       clientModels: '适用客户端模型',
       clientModelsHint: '精确的客户端模型名，每行一个或用逗号分隔。留空不表示“全部”。',
