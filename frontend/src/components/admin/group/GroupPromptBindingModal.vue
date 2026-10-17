@@ -5,19 +5,21 @@
     width="extra-wide"
     @close="handleClose"
   >
-    <div v-if="group" class="space-y-5">
+    <div v-if="group" class="space-y-4">
+      <!-- 分组标识 + 当前生效状态（保存后的真实状态，不跟随未保存的编辑） -->
       <div class="flex flex-wrap items-center gap-3 rounded-lg bg-gray-50 px-4 py-2.5 text-sm dark:bg-dark-700">
         <PlatformIcon :platform="group.platform" size="sm" />
         <span class="font-medium text-gray-900 dark:text-white">{{ group.name }}</span>
         <span class="text-gray-400">#{{ group.id }}</span>
-        <span v-if="binding" class="ml-auto text-xs text-gray-500 dark:text-dark-400">
-          {{ t('admin.promptTemplates.binding.revision', { revision: binding.revision }) }}
+        <span
+          class="ml-auto inline-flex items-center gap-1.5 text-xs"
+          :class="savedDisabled ? 'text-gray-500 dark:text-dark-400' : 'text-emerald-600 dark:text-emerald-400'"
+          data-test="binding-status"
+        >
+          <span class="h-1.5 w-1.5 rounded-full" :class="savedDisabled ? 'bg-gray-400' : 'bg-emerald-500'"></span>
+          {{ statusText }}
         </span>
       </div>
-
-      <p class="text-sm text-gray-500 dark:text-dark-300">
-        {{ t('admin.promptTemplates.binding.description') }}
-      </p>
 
       <p v-if="loadError" role="alert" class="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">
         {{ loadError }}
@@ -28,20 +30,15 @@
       </div>
 
       <template v-else-if="binding">
-        <p
-          v-if="isDisabled"
-          role="status"
-          class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-700 dark:border-dark-600 dark:bg-dark-700/50 dark:text-dark-200"
-        >
-          {{ t('admin.promptTemplates.binding.groupDisabledNotice') }}
-        </p>
-        <p
-          v-else-if="boundVersionLabel"
-          role="status"
-          class="rounded-lg border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm text-sky-900 dark:border-sky-900/70 dark:bg-sky-950/30 dark:text-sky-200"
-        >
-          {{ t('admin.promptTemplates.binding.fixedVersionNotice', { version: boundVersionLabel }) }}
-        </p>
+        <!-- 注入语义：始终是追加，不覆盖客户端自带 system 提示词 -->
+        <div class="rounded-lg border border-gray-200 px-4 py-2.5 text-xs dark:border-dark-600" data-test="injection-mode">
+          <p class="font-medium text-gray-800 dark:text-dark-100">
+            {{ t('admin.promptTemplates.binding.injectionModeTitle') }}
+          </p>
+          <p class="mt-1 leading-relaxed text-gray-500 dark:text-dark-400">
+            {{ t('admin.promptTemplates.binding.injectionModeDetail') }}
+          </p>
+        </div>
 
         <p
           v-if="boundTemplateArchived"
@@ -51,91 +48,77 @@
           {{ t('admin.promptTemplates.binding.archivedTemplateNotice') }}
         </p>
 
-        <!-- 模式 -->
-        <div>
-          <p class="mb-2 text-sm font-medium text-gray-700 dark:text-dark-200">
-            {{ t('admin.promptTemplates.binding.mode') }}
-          </p>
-          <div class="flex flex-wrap gap-3">
-            <button
-              type="button"
-              class="btn"
-              :class="mode === 'disabled' ? 'btn-primary' : 'btn-secondary'"
-              data-test="binding-mode-disabled"
-              @click="mode = 'disabled'"
-            >
-              {{ t('admin.promptTemplates.binding.disabled') }}
-            </button>
-            <button
-              type="button"
-              class="btn"
-              :class="mode === 'version' ? 'btn-primary' : 'btn-secondary'"
-              data-test="binding-mode-version"
-              @click="mode = 'version'"
-            >
-              {{ t('admin.promptTemplates.binding.version') }}
-            </button>
+        <!-- 模式 + 版本 -->
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-start">
+          <div class="shrink-0">
+            <p class="mb-2 text-sm font-medium text-gray-700 dark:text-dark-200">
+              {{ t('admin.promptTemplates.binding.mode') }}
+            </p>
+            <div class="flex flex-wrap gap-2">
+              <button
+                type="button"
+                class="btn btn-sm"
+                :class="mode === 'disabled' ? 'btn-primary' : 'btn-secondary'"
+                data-test="binding-mode-disabled"
+                @click="mode = 'disabled'"
+              >
+                {{ t('admin.promptTemplates.binding.disabled') }}
+              </button>
+              <button
+                type="button"
+                class="btn btn-sm"
+                :class="mode === 'version' ? 'btn-primary' : 'btn-secondary'"
+                data-test="binding-mode-version"
+                @click="mode = 'version'"
+              >
+                {{ t('admin.promptTemplates.binding.version') }}
+              </button>
+            </div>
+          </div>
+
+          <div v-if="mode === 'version'" class="min-w-0 flex-1">
+            <label class="input-label mb-2 block text-sm font-medium text-gray-700 dark:text-dark-200" for="binding-version">
+              {{ t('admin.promptTemplates.binding.selectVersion') }}
+            </label>
+            <Select
+              id="binding-version"
+              v-model="selectedVersionId"
+              :options="versionOptions"
+              :placeholder="t('admin.promptTemplates.binding.selectVersionPlaceholder')"
+              :disabled="versionOptions.length === 0"
+              searchable
+              data-test="binding-version-select"
+            />
+            <div v-if="versionOptions.length === 0" class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-200">
+              <p class="font-medium">{{ t('admin.promptTemplates.binding.noVersions') }}</p>
+              <p class="mt-1">{{ t('admin.promptTemplates.binding.noVersionsHint') }}</p>
+              <button type="button" class="btn btn-secondary btn-sm mt-2" @click="goToTemplates">
+                {{ t('admin.promptTemplates.binding.goToTemplates') }}
+              </button>
+            </div>
           </div>
         </div>
 
-        <!-- 固定版本 -->
-        <div v-if="mode === 'version'">
-          <label class="input-label mb-1.5 block text-sm font-medium text-gray-700 dark:text-dark-200" for="binding-version">
-            {{ t('admin.promptTemplates.binding.selectVersion') }}
-          </label>
-          <Select
-            id="binding-version"
-            v-model="selectedVersionId"
-            :options="versionOptions"
-            :placeholder="t('admin.promptTemplates.binding.selectVersionPlaceholder')"
-            :disabled="versionOptions.length === 0"
-            searchable
-            data-test="binding-version-select"
-          />
-          <div v-if="versionOptions.length === 0" class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-200">
-            <p class="font-medium">{{ t('admin.promptTemplates.binding.noVersions') }}</p>
-            <p class="mt-1">{{ t('admin.promptTemplates.binding.noVersionsHint') }}</p>
-            <button type="button" class="btn btn-secondary btn-sm mt-2" @click="goToTemplates">
-              {{ t('admin.promptTemplates.binding.goToTemplates') }}
-            </button>
-          </div>
-        </div>
-
-        <div class="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-4 dark:border-dark-700">
-          <span class="text-xs text-gray-500 dark:text-dark-400">
-            {{ t('admin.promptTemplates.binding.affectedAccounts') }}:
-            {{ accountsLoaded ? t('admin.promptTemplates.binding.affectedAccountsValue', { count: groupAccounts.length }) : t('admin.promptTemplates.binding.affectedAccountsUnknown') }}
-          </span>
-          <div class="flex items-center gap-3">
-            <button
-              type="button"
-              class="btn btn-secondary"
-              :disabled="savingBinding || isDisabled"
-              data-test="binding-disable"
-              @click="showDisableConfirm = true"
-            >
-              {{ t('admin.promptTemplates.binding.clear') }}
-            </button>
-            <button
-              type="button"
-              class="btn btn-primary"
-              :disabled="savingBinding || !bindingDirty || (mode === 'version' && !selectedVersionId)"
-              data-test="binding-save"
-              @click="saveBinding"
-            >
-              {{ savingBinding ? t('admin.promptTemplates.binding.saving') : t('admin.promptTemplates.binding.save') }}
-            </button>
-          </div>
+        <div class="flex items-center justify-end gap-3 border-t border-gray-100 pt-4 dark:border-dark-700">
+          <button
+            type="button"
+            class="btn btn-primary"
+            :disabled="savingBinding || !bindingDirty || (mode === 'version' && !selectedVersionId)"
+            data-test="binding-save"
+            @click="saveBinding"
+          >
+            {{ savingBinding ? t('admin.promptTemplates.binding.saving') : t('admin.promptTemplates.binding.save') }}
+          </button>
         </div>
 
         <!-- 账号覆盖 -->
         <section class="border-t border-gray-100 pt-5 dark:border-dark-700">
-          <header class="mb-3 flex flex-wrap items-start justify-between gap-3">
+          <header class="mb-3 flex flex-wrap items-center justify-between gap-3">
             <div>
               <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
                 {{ t('admin.promptTemplates.binding.overrides.title') }}
               </h3>
-              <p class="mt-1 max-w-3xl text-xs text-gray-500 dark:text-dark-400">
+              <p class="mt-1 text-xs text-gray-500 dark:text-dark-400">
                 {{ t('admin.promptTemplates.binding.overrides.description') }}
               </p>
             </div>
@@ -151,7 +134,7 @@
           </header>
 
           <p
-            v-if="isDisabled"
+            v-if="savedDisabled"
             role="status"
             class="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-900 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-200"
           >
@@ -170,13 +153,11 @@
           </p>
 
           <div v-else class="overflow-hidden rounded-lg border border-gray-200 dark:border-dark-600">
-            <div class="max-h-[360px] overflow-auto">
+            <div class="max-h-[320px] overflow-auto">
               <table class="w-full min-w-max text-sm">
                 <thead class="sticky top-0 z-[1] bg-gray-50 dark:bg-dark-700">
                   <tr>
                     <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-dark-400">{{ t('admin.promptTemplates.binding.overrides.columns.account') }}</th>
-                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-dark-400">{{ t('admin.promptTemplates.binding.overrides.columns.mode') }}</th>
-                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-dark-400">{{ t('admin.promptTemplates.binding.overrides.columns.version') }}</th>
                     <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-dark-400">{{ t('admin.promptTemplates.binding.overrides.currentEffective') }}</th>
                     <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-dark-400">{{ t('admin.promptTemplates.binding.overrides.columns.updatedAt') }}</th>
                     <th class="w-40 px-3 py-2 text-right text-xs font-medium text-gray-500 dark:text-dark-400">{{ t('admin.promptTemplates.binding.overrides.columns.actions') }}</th>
@@ -187,11 +168,7 @@
                     <td class="px-3 py-2 text-gray-900 dark:text-white">
                       {{ accountLabel(override.account_id) }}
                     </td>
-                    <td class="px-3 py-2 text-gray-700 dark:text-dark-200">{{ overrideModeLabel(override) }}</td>
-                    <td class="px-3 py-2 text-gray-700 dark:text-dark-200">
-                      {{ override.version_id ? versionLabelOf(override.version_id) : t('admin.promptTemplates.events.notRecorded') }}
-                    </td>
-                    <td class="px-3 py-2 text-xs text-gray-500 dark:text-dark-400">{{ effectiveLabel(override) }}</td>
+                    <td class="px-3 py-2 text-gray-700 dark:text-dark-200">{{ effectiveLabel(override) }}</td>
                     <td class="px-3 py-2 text-xs text-gray-500 dark:text-dark-400">{{ formatDateTime(override.updated_at, locale) }}</td>
                     <td class="px-3 py-2 text-right">
                       <div class="flex items-center justify-end gap-2">
@@ -231,20 +208,10 @@
     :accounts="groupAccounts"
     :existing="editingOverride"
     :version-options="overrideVersionOptions"
-    :group-binding-disabled="isDisabled"
+    :group-binding-disabled="savedDisabled"
     @close="showOverrideDialog = false"
     @saved="handleOverrideSaved"
     @reload="loadAll"
-  />
-
-  <ConfirmDialog
-    :show="showDisableConfirm"
-    :title="t('admin.promptTemplates.binding.clearConfirmTitle')"
-    :message="t('admin.promptTemplates.binding.clearConfirmMessage')"
-    :confirm-text="t('admin.promptTemplates.binding.clear')"
-    danger
-    @confirm="disableBinding"
-    @cancel="showDisableConfirm = false"
   />
 
   <ConfirmDialog
@@ -283,7 +250,6 @@ import { useAppStore } from '@/stores/app'
 import { extractApiErrorCode, extractI18nErrorMessage } from '@/utils/apiError'
 import {
   clearAccountOverride,
-  clearGroupBinding,
   getGroupBinding,
   listAccountOverrides,
   listTemplates,
@@ -333,13 +299,11 @@ const overrides = ref<AccountGroupPromptOverride[]>([])
 const overridesError = ref('')
 const groupAccounts = ref<AccountOption[]>([])
 const accountsError = ref('')
-const accountsLoaded = ref(false)
 
 const mode = ref<PromptBindingMode>('disabled')
 const selectedVersionId = ref<number | null>(null)
 const savingBinding = ref(false)
 
-const showDisableConfirm = ref(false)
 const showRemoveConfirm = ref(false)
 const showConflict = ref(false)
 const pendingRemove = ref<AccountGroupPromptOverride | null>(null)
@@ -359,7 +323,10 @@ const versionsById = computed(() => {
   return map
 })
 
-const isDisabled = computed(() => mode.value === 'disabled')
+/** 已保存的真实状态：状态行、覆盖提示都以它为准，避免未保存的编辑误导管理员。 */
+const savedDisabled = computed(
+  () => !binding.value || binding.value.mode !== 'version' || !binding.value.version_id,
+)
 
 const boundVersion = computed(() =>
   binding.value?.version_id ? versionsById.value.get(binding.value.version_id) ?? null : null,
@@ -371,6 +338,18 @@ const boundTemplateArchived = computed(() => {
   const version = boundVersion.value
   if (!version) return false
   return Boolean(templatesById.value.get(version.template_id)?.archived_at)
+})
+
+const statusText = computed(() => {
+  if (savedDisabled.value) return t('admin.promptTemplates.binding.statusDisabled')
+  const version = boundVersion.value
+  const templateName = version
+    ? templatesById.value.get(version.template_id)?.name ?? `#${version.template_id}`
+    : ''
+  return t('admin.promptTemplates.binding.statusBound', {
+    template: templateName,
+    version: boundVersionLabel.value,
+  })
 })
 
 const bindingDirty = computed(() => {
@@ -420,19 +399,13 @@ function accountLabel(accountId: number): string {
   return t('admin.promptTemplates.events.accountValue', { id: accountId })
 }
 
-function overrideModeLabel(override: AccountGroupPromptOverride): string {
-  if (override.mode === 'inherit') return t('admin.promptTemplates.binding.overrides.inherit')
-  if (override.mode === 'disabled') return t('admin.promptTemplates.binding.overrides.accountDisabled')
-  return t('admin.promptTemplates.binding.overrides.accountVersion')
-}
-
 /**
  * 当前实际生效说明。
  *
  * 分组绑定是总开关：分组禁用时，账号覆盖一律不生效——这一点必须如实展示。
  */
 function effectiveLabel(override: AccountGroupPromptOverride): string {
-  if (isDisabled.value) return t('admin.promptTemplates.binding.overrides.effectiveDisabled')
+  if (savedDisabled.value) return t('admin.promptTemplates.binding.overrides.effectiveDisabled')
   if (override.mode === 'inherit') {
     if (!binding.value?.version_id) return t('admin.promptTemplates.binding.overrides.effectiveDisabled')
     return t('admin.promptTemplates.binding.overrides.effectiveInherit', { version: boundVersionLabel.value })
@@ -489,10 +462,8 @@ async function loadAll() {
         id: account.id,
         name: account.name,
       }))
-      accountsLoaded.value = true
     } else {
       groupAccounts.value = []
-      accountsLoaded.value = false
       accountsError.value = extractI18nErrorMessage(
         accountResult.reason,
         t,
@@ -540,31 +511,6 @@ async function saveBinding() {
         ),
       )
     }
-  } finally {
-    savingBinding.value = false
-  }
-}
-
-async function disableBinding() {
-  if (!props.group) return
-  showDisableConfirm.value = false
-  savingBinding.value = true
-  try {
-    await clearGroupBinding(props.group.id)
-    binding.value = { group_id: props.group.id, mode: 'disabled', revision: 0 }
-    mode.value = 'disabled'
-    selectedVersionId.value = null
-    appStore.showSuccess(t('admin.promptTemplates.binding.clearSuccess'))
-    emit('success')
-  } catch (error) {
-    appStore.showError(
-      extractI18nErrorMessage(
-        error,
-        t,
-        'admin.promptTemplates.errors',
-        t('admin.promptTemplates.binding.clearFailed'),
-      ),
-    )
   } finally {
     savingBinding.value = false
   }
@@ -629,12 +575,10 @@ watch(
   () => props.show,
   (visible) => {
     if (!visible) return
-    showDisableConfirm.value = false
     showRemoveConfirm.value = false
     showOverrideDialog.value = false
     editingOverride.value = null
     pendingRemove.value = null
-    accountsLoaded.value = false
     void loadAll()
   },
 )

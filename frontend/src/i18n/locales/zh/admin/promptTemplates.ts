@@ -204,9 +204,12 @@ export default {
     },
     binding: {
       title: '提示词绑定',
-      description:
-        '为该分组启用提示词注入，并固定到某个已发布版本。发布新版本不会移动这个绑定。',
       loadFailed: '加载分组提示词绑定失败。',
+      statusDisabled: '未启用',
+      statusBound: '已启用 · {template} · {version}',
+      injectionModeTitle: '注入方式：追加，不覆盖原有 system 提示词',
+      injectionModeDetail:
+        '客户端自带的 system / developer 提示词会被完整保留，本提示词作为额外的一条 system 消息插在它后面；Responses 请求则追加到 instructions 末尾。',
       mode: '模式',
       disabled: '已禁用',
       version: '绑定固定版本',
@@ -221,40 +224,23 @@ export default {
       saving: '保存中…',
       saveSuccess: '分组提示词绑定已保存。',
       saveFailed: '保存分组提示词绑定失败。',
-      clear: '对该分组禁用',
-      clearSuccess: '分组提示词绑定已删除，该分组现在为禁用状态。',
-      clearFailed: '删除分组提示词绑定失败。',
-      clearConfirmTitle: '确认对该分组禁用提示词注入？',
-      clearConfirmMessage:
-        '会删除绑定行，等价于禁用。分组内的账号覆盖将不再产生任何效果。',
-      fixedVersionNotice:
-        '该分组会一直停留在版本 {version}，直到管理员修改此绑定。发布更新的版本不会自动升级。',
-      groupDisabledNotice: '该分组已禁用提示词注入，组内请求会以无提示词的方式运行。',
       groupDisabledOverridesNotice:
         '分组处于禁用状态，因此组内账号覆盖不会生效。启用分组才是总开关。',
-      affectedAccounts: '该分组下的账号',
-      affectedAccountsValue: '{count}',
-      affectedAccountsUnknown: '未知',
-      revision: '绑定修订号 {revision}',
       archivedTemplateNotice:
         '所绑定的模板已归档。绑定会继续运行，但不能把它重新指向该归档模板的新版本。',
       publishFirst: '发布一个版本',
       goToTemplates: '打开模板列表',
       overrides: {
         title: '分组内账号覆盖',
-        description: '覆盖只在该分组内生效。分组绑定被禁用时，覆盖完全不起作用。',
-        empty: '该分组内没有任何账号覆盖，所有账号都继承分组绑定。',
+        description: '覆盖只在该分组内生效。',
+        empty: '没有账号覆盖，全部继承分组绑定。',
         loadFailed: '加载分组内账号覆盖失败。',
         columns: {
           account: '账号',
-          mode: '覆盖',
-          version: '版本',
           updatedAt: '更新时间',
           actions: '操作',
         },
         inherit: '继承分组',
-        accountDisabled: '对该账号禁用',
-        accountVersion: '固定到某个版本',
         edit: '编辑',
         clear: '移除覆盖',
         clearSuccess: '覆盖已移除，该账号重新继承分组。',
