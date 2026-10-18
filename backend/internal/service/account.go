@@ -2298,6 +2298,26 @@ func (a *Account) IsOpenAIResponsesEnsureCodexSignatureEnabled() bool {
 	return ok && enabled
 }
 
+// IsOpenAIResponsesStripForeignReplayStateEnabled 返回账号级"剥离跨资源回放状态"开关。
+// 字段：accounts.extra.openai_responses_strip_foreign_replay_state，缺省 false（原样转发）。
+//
+// Responses 的 reasoning 项（encrypted_content）与 item id 绑定创建它的上游资源。
+// store:false 下客户端每轮回放完整历史；若上游是"同一账号背后多个资源轮转"的池化
+// 中转（典型：Azure OpenAI 资源池），相邻两轮落到不同资源即 400
+// "The requested item was created under a different Azure OpenAI resource"。
+//
+// 打开后本账号的 store:false / compact 请求会在转发前剥离这些绑定资源的状态
+// （reasoning/item_reference/compaction 项整条删除，其余 item 去掉 id 与
+// encrypted_content），退化为纯内容重放；代价是跨轮推理链不再复用。
+// 只对池化上游账号开启，默认关闭。
+func (a *Account) IsOpenAIResponsesStripForeignReplayStateEnabled() bool {
+	if a == nil || !a.IsOpenAI() || a.Extra == nil {
+		return false
+	}
+	enabled, ok := a.Extra["openai_responses_strip_foreign_replay_state"].(bool)
+	return ok && enabled
+}
+
 // IsOpenAIWSAllowStoreRecoveryEnabled 返回账号级 store 恢复开关。
 // 字段：accounts.extra.openai_ws_allow_store_recovery。
 func (a *Account) IsOpenAIWSAllowStoreRecoveryEnabled() bool {

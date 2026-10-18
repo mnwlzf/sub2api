@@ -1966,6 +1966,37 @@
         </div>
       </div>
 
+      <!-- 池化上游（Azure 资源池等）：剥离跨资源回放状态（仅 API Key） -->
+      <div
+        v-if="account?.platform === 'openai' && account?.type === 'apikey'"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <div class="flex items-center justify-between">
+          <div>
+            <label class="input-label mb-0">{{ t('admin.accounts.openai.stripForeignReplayState') }}</label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.openai.stripForeignReplayStateDesc') }}
+            </p>
+          </div>
+          <button
+            type="button"
+            data-testid="edit-openai-strip-foreign-replay-state-toggle"
+            @click="openaiStripForeignReplayStateEnabled = !openaiStripForeignReplayStateEnabled"
+            :class="[
+              'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
+              openaiStripForeignReplayStateEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+            ]"
+          >
+            <span
+              :class="[
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                openaiStripForeignReplayStateEnabled ? 'translate-x-5' : 'translate-x-0'
+              ]"
+            />
+          </button>
+        </div>
+      </div>
+
       <!-- OpenAI Codex hosted image_generation bridge policy -->
       <div
         v-if="account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'setup-token' || account?.type === 'apikey')"
@@ -3900,6 +3931,8 @@ const openaiPassthroughEnabled = ref(false)
 const openaiFlattenNamespacesEnabled = ref(false)
 // 严格校验 Codex 签名的兼容中转（仅 API Key）补齐 include / prompt_cache_key，缺省关闭
 const openaiEnsureCodexSignatureEnabled = ref(false)
+// 池化上游（Azure 资源池等）剥离跨资源回放状态（仅 API Key），缺省关闭
+const openaiStripForeignReplayStateEnabled = ref(false)
 const openAILongContextBillingEnabled = ref(false)
 // OpenAI 订阅档位（Plus / Pro 20x / Pro 5x / Business Standard / Business Premium / Free）手动覆盖值,
 // 存于 credentials.plan_type;'' 表示清空/自动识别
@@ -4401,6 +4434,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   openaiPassthroughEnabled.value = false
   openaiFlattenNamespacesEnabled.value = false
   openaiEnsureCodexSignatureEnabled.value = false
+  openaiStripForeignReplayStateEnabled.value = false
   openAILongContextBillingEnabled.value = false
   editPlanType.value = ''
   openAICompactMode.value = 'auto'
@@ -4422,6 +4456,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
       newAccount.type === 'oauth' && extra?.openai_responses_flatten_namespaces === true
     openaiEnsureCodexSignatureEnabled.value =
       newAccount.type === 'apikey' && extra?.openai_responses_ensure_codex_signature === true
+    openaiStripForeignReplayStateEnabled.value =
+      newAccount.type === 'apikey' && extra?.openai_responses_strip_foreign_replay_state === true
     const longContextBillingValue = extra?.openai_long_context_billing_enabled
     openAILongContextBillingEnabled.value = longContextBillingValue === true
     // plan_type 手动覆盖仅 OAuth 有实际调度语义(IsOpenAIChatGPTSubscription 要求 oauth),故只对 oauth 回填
@@ -6001,6 +6037,11 @@ const handleSubmit = async () => {
         newExtra.openai_responses_ensure_codex_signature = true
       } else {
         delete newExtra.openai_responses_ensure_codex_signature
+      }
+      if (props.account.type === 'apikey' && openaiStripForeignReplayStateEnabled.value) {
+        newExtra.openai_responses_strip_foreign_replay_state = true
+      } else {
+        delete newExtra.openai_responses_strip_foreign_replay_state
       }
       if (isSparkShadow.value) {
         delete newExtra.openai_long_context_billing_enabled

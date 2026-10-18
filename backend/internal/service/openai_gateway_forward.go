@@ -172,6 +172,23 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			body = normalized
 			originalBody = normalized
 		}
+		// 池化上游（同一账号背后多个资源轮转，典型为 Azure OpenAI 资源池）无法承接
+		// 绑定资源的回放状态：store:false 历史里的 reasoning 密文 / item id 换个资源
+		// 就被 400 拒绝。账号级开关打开后剥离这些状态，退化为纯内容重放。
+		if account.IsOpenAIResponsesStripForeignReplayStateEnabled() &&
+			(gjson.GetBytes(body, "store").Type == gjson.False || compactPath) {
+			bodyLenBefore := len(body)
+			if stripped, changed, stripStats, stripErr := StripOpenAIResponsesForeignReplayState(body); stripErr != nil {
+				return nil, stripErr
+			} else if changed {
+				body = stripped
+				originalBody = stripped
+				logger.LegacyPrintf("service.openai_gateway",
+					"[OpenAI] Stripped foreign replay state account=%d reasoning=%d references=%d compaction=%d item_ids=%d body_bytes=%d->%d",
+					account.ID, stripStats.DroppedReasoning, stripStats.DroppedReferences,
+					stripStats.DroppedCompaction, stripStats.StrippedItemIDs, bodyLenBefore, len(stripped))
+			}
+		}
 		// 严格校验 Codex 签名的兼容中转（new-api 系）要求 include 与非空
 		// prompt_cache_key 齐备，否则 400 invalid codex request；账号级开关显式开启。
 		if account.IsOpenAIResponsesEnsureCodexSignatureEnabled() {

@@ -824,6 +824,9 @@ export default {
         ensureCodexSignature: '补齐 Codex 请求签名（兼容）',
         ensureCodexSignatureDesc:
           '默认关闭。仅当该 API Key 账号指向会校验 Codex 客户端签名的兼容中转时才开启：这类中转要求 /responses 同时带 include:["reasoning.encrypted_content"] 与非空 prompt_cache_key，缺任一项即回 400 invalid codex request。而 Codex 并非每次请求都带齐这两项，表现为同一模型"有的请求正常、有的报错"。开启后出站请求会自动补齐缺失项；prompt_cache_key 缺失时按会话派生，同一会话的各轮共用一个键。',
+        stripForeignReplayState: '剥离跨资源回放状态（池化中转）',
+        stripForeignReplayStateDesc:
+          '默认关闭。仅当该 API Key 账号的上游是"同一账号背后多个资源轮转"的池化中转（典型：Azure OpenAI 资源池）时开启。这类上游的 reasoning 密文与 item id 绑定创建它的资源，而 store:false 的客户端每轮都会回放历史，相邻两轮落到不同资源即 400 "The requested item was created under a different Azure OpenAI resource"。开启后出站请求会删除历史回放中的 reasoning / item_reference / compaction 项以及其余 item 的 id 与 encrypted_content，退化为纯内容重放，任何资源都能接受；代价是该账号的跨轮推理链不再复用。',
         longContextBilling: 'API 长上下文计费',
         longContextBillingDesc: '默认关闭。仅当该账号的上游会按模型阈值收取 OpenAI API 长上下文费率时开启。',
         responsesWebsocketsV2: 'Responses WebSocket v2',

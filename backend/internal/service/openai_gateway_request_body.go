@@ -1424,6 +1424,16 @@ func normalizeOpenAIResponsesCompatibilityBodyWithOptions(body []byte, account *
 			normalized = next
 			changed = true
 		}
+		// 池化上游账号：剥离绑定上游资源的回放状态（reasoning 密文 / item id）。
+		if account.IsOpenAIResponsesStripForeignReplayStateEnabled() &&
+			(gjson.GetBytes(normalized, "store").Type == gjson.False || opts.Compact) {
+			if stripped, strippedChanged, _, stripErr := StripOpenAIResponsesForeignReplayState(normalized); stripErr != nil {
+				return body, false, stripErr
+			} else if strippedChanged {
+				normalized = stripped
+				changed = true
+			}
+		}
 	}
 	if sanitized, idsChanged, err := sanitizeOpenAIResponsesInputItemIDs(normalized); err != nil {
 		return body, false, fmt.Errorf("sanitize websocket Responses input item IDs: %w", err)

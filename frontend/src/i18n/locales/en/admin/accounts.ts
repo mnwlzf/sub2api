@@ -706,6 +706,9 @@ export default {
         ensureCodexSignature: 'Complete the Codex request signature (compatibility)',
         ensureCodexSignatureDesc:
           'Disabled by default. Enable only when this API Key account is routed to a relay that validates the Codex client signature — such relays require include:["reasoning.encrypted_content"] and a non-empty prompt_cache_key on /responses, and answer 400 "invalid codex request" when either is missing. Codex does not send both on every request, which shows up as some requests succeeding and others failing on the same model. When enabled, outbound requests are completed with the missing field; a missing prompt_cache_key is derived from the session so turns of one conversation share it.',
+        stripForeignReplayState: 'Strip cross-resource replay state (pooled relays)',
+        stripForeignReplayStateDesc:
+          'Disabled by default. Enable only when this API Key account is routed to a pooled relay that rotates between multiple upstream resources behind one account (typically an Azure OpenAI resource pool). Such upstreams bind reasoning encrypted_content and item ids to the resource that created them, while store:false clients replay their full history on every turn, so two consecutive turns landing on different resources fail with 400 "The requested item was created under a different Azure OpenAI resource". When enabled, outbound requests drop reasoning / item_reference / compaction items and strip id and encrypted_content from the remaining items, degrading to a pure content replay that any resource accepts; the trade-off is that cross-turn reasoning continuity is no longer reused for this account.',
         longContextBilling: 'API long-context pricing',
         longContextBillingDesc:
           'Disabled by default. Enable only when this account\'s upstream charges OpenAI API long-context rates above the model threshold.',
