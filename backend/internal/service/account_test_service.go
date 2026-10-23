@@ -387,11 +387,16 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 	// Route to platform-specific test method
 	// 按入站协议分流的多协议供应商（国产厂商等）：按账号协议选测试路径。
 	if account.RoutesProtocolByInbound() {
+		testMode := normalizeAccountTestMode(mode)
+		if testMode == AccountTestModeEmbeddings {
+			// embeddings 是协议无关的 OpenAI 格式端点：显式选择时优先探测它。
+			return s.testOpenAIEmbeddingsConnection(c, account, modelID)
+		}
 		switch account.GetAPIProtocol() {
 		case APIProtocolAdaptive:
 			return s.testCNProviderAdaptiveConnection(c, account, modelID, prompt)
 		case APIProtocolResponses:
-			return s.testOpenAIAccountConnection(c, account, modelID, prompt, normalizeAccountTestMode(mode))
+			return s.testOpenAIAccountConnection(c, account, modelID, prompt, testMode)
 		case APIProtocolChatCompletions:
 			return s.testCNProviderChatCompletionsConnection(c, account, modelID, prompt)
 		case APIProtocolAnthropic:
@@ -800,6 +805,12 @@ func (s *AccountTestService) testBedrockAccountConnection(c *gin.Context, ctx co
 func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account *Account, modelID string, prompt string, mode string) error {
 	ctx := c.Request.Context()
 	mode = normalizeAccountTestMode(mode)
+
+	// Embeddings 是独立端点：模型缺省值、响应校验都与 Responses 不同，显式
+	// 模式优先分流，避免把 chat 默认模型发给 /v1/embeddings。
+	if mode == AccountTestModeEmbeddings {
+		return s.testOpenAIEmbeddingsConnection(c, account, modelID)
+	}
 
 	// Default to openai.DefaultTestModel for OpenAI testing
 	testModelID := modelID

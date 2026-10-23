@@ -92,8 +92,12 @@ const openAILongContextBillingEnabledKey = "openai_long_context_billing_enabled"
 const (
 	OpenAIEndpointCapabilityChatCompletions OpenAIEndpointCapability = "chat_completions"
 	OpenAIEndpointCapabilityEmbeddings      OpenAIEndpointCapability = "embeddings"
-	OpenAIEndpointCapabilityAlphaSearch     OpenAIEndpointCapability = "alpha_search"
-	OpenAIEndpointCapabilityLive            OpenAIEndpointCapability = "live"
+	// OpenAIEndpointCapabilityRerank 表示上游提供 /v1/rerank。与 embeddings
+	// 同属 OpenAI 协议族纯文本端点：只有 API key 账号具备可注入的 Bearer
+	// 凭证与 OpenAI 格式 base_url；OAuth/Codex 账号不提供该端点。
+	OpenAIEndpointCapabilityRerank      OpenAIEndpointCapability = "rerank"
+	OpenAIEndpointCapabilityAlphaSearch OpenAIEndpointCapability = "alpha_search"
+	OpenAIEndpointCapabilityLive        OpenAIEndpointCapability = "live"
 	// OpenAIEndpointCapabilityGrokMediaGeneration keeps image/video generation
 	// away from Grok accounts that are explicitly disabled or whose billing
 	// entitlement probe was forbidden. Video status lookups intentionally do not
@@ -1881,7 +1885,9 @@ func (a *Account) SupportsOpenAIEndpointCapability(capability OpenAIEndpointCapa
 		if a.Type != AccountTypeOAuth && a.Type != AccountTypeAPIKey {
 			return false
 		}
-	case OpenAIEndpointCapabilityEmbeddings:
+	case OpenAIEndpointCapabilityEmbeddings, OpenAIEndpointCapabilityRerank:
+		// 两者都只能由 API key 账号承接：OAuth/Codex 凭证没有对应的
+		// OpenAI 格式 base_url + Bearer key 组合。
 		if a.Type != AccountTypeAPIKey {
 			return false
 		}

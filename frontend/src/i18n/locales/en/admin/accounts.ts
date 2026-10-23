@@ -807,6 +807,7 @@ export default {
         capabilityChatCompletions: 'Chat Completions',
         capabilityChatCompletionsAuto: 'Chat Completions (auto probe)',
         capabilityEmbeddings: 'Embeddings',
+        capabilityRerank: 'Rerank',
         responsesStatusAutoSupported: 'Auto probe: Responses',
         responsesStatusAutoUnsupported: 'Auto probe: Chat Completions',
         responsesStatusAutoUnknown: 'Auto probe: unknown',
@@ -860,6 +861,7 @@ export default {
         testMode: 'Test mode',
         testModeDefault: 'Default request',
         testModeCompact: 'Compact probe',
+        testModeEmbeddings: 'Embedding test',
         modelRestrictionDisabledByPassthrough: 'Automatic passthrough is enabled: model whitelist/mapping will not take effect.',
       },
       grok: {

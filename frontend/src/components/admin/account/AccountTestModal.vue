@@ -413,7 +413,7 @@ const generatedImages = ref<PreviewMedia[]>([])
 const generatedAudios = ref<PreviewMedia[]>([])
 const generatedVideos = ref<PreviewMedia[]>([])
 const previewImageUrl = ref('')
-const testMode = ref<'default' | 'compact'>('default')
+const testMode = ref<'default' | 'compact' | 'embeddings'>('default')
 const grokTestMode = ref<'text' | 'image' | 'video' | 'search' | 'tts' | 'stt' | 'realtime'>('text')
 const uploadImageDataURL = ref('')
 const uploadImagePreview = ref('')
@@ -426,7 +426,8 @@ const isOpenAIAccount = computed(() => props.account?.platform === 'openai')
 const isGrokAccount = computed(() => props.account?.platform === 'grok')
 const openAITestModeOptions = computed(() => [
   { value: 'default', label: t('admin.accounts.openai.testModeDefault') },
-  { value: 'compact', label: t('admin.accounts.openai.testModeCompact') }
+  { value: 'compact', label: t('admin.accounts.openai.testModeCompact') },
+  { value: 'embeddings', label: t('admin.accounts.openai.testModeEmbeddings') }
 ])
 const grokTestModeOptions = computed(() => [
   { value: 'text', label: t('admin.accounts.grok.testModeText') },
@@ -669,6 +670,7 @@ const testModeSummary = computed(() => {
         return t('admin.accounts.grok.textTestMode')
     }
   }
+  if (testMode.value === 'embeddings') return t('admin.accounts.openai.testModeEmbeddings')
   if (supportsImageTest.value) return t('admin.accounts.imageTestMode')
   return t('admin.accounts.testPrompt')
 })

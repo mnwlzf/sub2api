@@ -4001,7 +4001,7 @@ const openAICompactMode = ref<OpenAICompactMode>('auto')
 const openAIResponsesMode = ref<OpenAIResponsesMode>('auto')
 // Images 非流式响应缺 b64_json 时由网关下载 url 回填（仅 OpenAI API Key）。
 const openAIImagesUrlToB64JsonEnabled = ref(false)
-const openAIEndpointCapabilities = ref<OpenAIEndpointCapability[]>(['chat_completions', 'embeddings'])
+const openAIEndpointCapabilities = ref<OpenAIEndpointCapability[]>(['chat_completions', 'embeddings', 'rerank'])
 const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const codexCLIOnlyEnabled = ref(false)
@@ -4163,6 +4163,7 @@ const openAITextEndpointCapabilityLabel = computed(() => {
 const openAIEndpointCapabilityOptions = computed<{ value: OpenAIEndpointCapability; label: string }[]>(() => [
   { value: 'chat_completions', label: openAITextEndpointCapabilityLabel.value },
   { value: 'embeddings', label: t('admin.accounts.openai.capabilityEmbeddings') },
+  { value: 'rerank', label: t('admin.accounts.openai.capabilityRerank') },
   { value: 'seedance', label: 'Seedance (Ark)' }
 ])
 const openAITextGenerationCapabilityEnabled = computed(() =>
@@ -4170,9 +4171,9 @@ const openAITextGenerationCapabilityEnabled = computed(() =>
 )
 
 const normalizeOpenAIEndpointCapabilities = (values: OpenAIEndpointCapability[]) => {
-  const allowed: OpenAIEndpointCapability[] = ['chat_completions', 'embeddings', 'seedance']
+  const allowed: OpenAIEndpointCapability[] = ['chat_completions', 'embeddings', 'seedance', 'rerank']
   const selected = allowed.filter((value) => values.includes(value))
-  return selected.length > 0 ? selected : ['chat_completions', 'embeddings'] as OpenAIEndpointCapability[]
+  return selected.length > 0 ? selected : ['chat_completions', 'embeddings', 'rerank'] as OpenAIEndpointCapability[]
 }
 
 const readOpenAIEndpointCapabilities = (credentials?: Record<string, unknown>): OpenAIEndpointCapability[] => {
@@ -4192,7 +4193,7 @@ const readOpenAIEndpointCapabilities = (credentials?: Record<string, unknown>): 
         .filter((value) => capabilityMap[value] === true)
     )
   }
-  return ['chat_completions', 'embeddings']
+  return ['chat_completions', 'embeddings', 'rerank']
 }
 
 const toggleOpenAIEndpointCapability = (capability: OpenAIEndpointCapability, event?: Event) => {
@@ -4513,7 +4514,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   editPlanType.value = ''
   openAICompactMode.value = 'auto'
   openAIResponsesMode.value = 'auto'
-  openAIEndpointCapabilities.value = ['chat_completions', 'embeddings']
+  openAIEndpointCapabilities.value = ['chat_completions', 'embeddings', 'rerank']
   openAICompactModelMappings.value = []
   openaiOAuthResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
   openaiAPIKeyResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF

@@ -919,6 +919,7 @@ export default {
         capabilityChatCompletions: 'Chat Completions',
         capabilityChatCompletionsAuto: 'Chat Completions（自动探测）',
         capabilityEmbeddings: 'Embeddings',
+        capabilityRerank: 'Rerank',
         responsesStatusAutoSupported: '自动探测：Responses',
         responsesStatusAutoUnsupported: '自动探测：Chat Completions',
         responsesStatusAutoUnknown: '自动探测：未探测',
@@ -969,6 +970,7 @@ export default {
         testMode: '测试模式',
         testModeDefault: '常规请求',
         testModeCompact: 'Compact 探测',
+        testModeEmbeddings: 'Embedding 测试',
         modelRestrictionDisabledByPassthrough: '已开启自动透传：模型白名单/映射不会生效。',
       },
       grok: {
