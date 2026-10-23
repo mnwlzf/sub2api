@@ -40,6 +40,8 @@ const (
 const (
 	PlatformAnthropic   = domain.PlatformAnthropic
 	PlatformOpenAI      = domain.PlatformOpenAI
+	// PlatformOpenAIBPS 是 ChatGPT Excel/BPS 权益的独立平台（固定上游 + Access Token）。
+	PlatformOpenAIBPS   = domain.PlatformOpenAIBPS
 	PlatformGemini      = domain.PlatformGemini
 	PlatformAntigravity = domain.PlatformAntigravity
 	PlatformGrok        = domain.PlatformGrok

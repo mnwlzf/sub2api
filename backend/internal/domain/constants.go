@@ -20,6 +20,10 @@ const (
 const (
 	PlatformAnthropic   = "anthropic"
 	PlatformOpenAI      = "openai"
+	// PlatformOpenAIBPS 是 ChatGPT Excel/BPS 权益账号的独立平台：固定上游
+	// bps.openai.com、ChatGPT Access Token 鉴权、仅 Responses HTTP 协议。
+	// 独立平台而非 OpenAI 子类型，避免其非公开协议与风控特征扩散到既有 OpenAI 流量。
+	PlatformOpenAIBPS   = "openai_bps"
 	PlatformGemini      = "gemini"
 	PlatformAntigravity = "antigravity"
 	PlatformGrok        = "grok"

@@ -1356,6 +1356,11 @@ func (a *Account) IsOpenAI() bool {
 	return a.Platform == PlatformOpenAI
 }
 
+// IsOpenAIBPS 报告账号是否属于 OpenAI BPS 平台（ChatGPT Excel 权益，独立上游）。
+func (a *Account) IsOpenAIBPS() bool {
+	return a != nil && a.Platform == PlatformOpenAIBPS
+}
+
 func (a *Account) IsOpenAILongContextBillingEnabled() bool {
 	if a == nil || !a.IsOpenAI() || a.Extra == nil {
 		return false
@@ -1381,8 +1386,9 @@ func (a *Account) IsOpenAIOAuthLike() bool {
 
 // UsesOpenAICodexProtocol preserves legacy OpenAI gateway OAuth routing for
 // accounts whose platform is implicit, while adding OpenAI SetupToken.
+// BPS 账号也是 oauth 类型，但它走独立网关与固定上游，绝不能被当成 Codex 协议账号。
 func (a *Account) UsesOpenAICodexProtocol() bool {
-	return a != nil && (a.Type == AccountTypeOAuth || a.IsOpenAIOAuthLike())
+	return a != nil && !a.IsOpenAIBPS() && (a.Type == AccountTypeOAuth || a.IsOpenAIOAuthLike())
 }
 
 func (a *Account) IsOpenAIChatGPTSubscription() bool {

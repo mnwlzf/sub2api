@@ -4,19 +4,19 @@
 
 ## 0. 立项与参考冻结
 
-- [ ] 0.1 冻结参考实现提交：`ranxi2001/sub2api@055a1cd1`（LGPL-3.0）、`Nonary/ghcp_proxy@ad23ce2d`（Unlicense）、`1812095643/sub2api-excel2api-plugin@ad203907`；把来源、提交号、文件映射写入 `docs/openai-bps-sources.md`
+- [x] 0.1 冻结参考实现提交：`ranxi2001/sub2api@055a1cd1`（LGPL-3.0）、`Nonary/ghcp_proxy@ad23ce2d`（Unlicense）、`1812095643/sub2api-excel2api-plugin@ad203907`；把来源、提交号、文件映射写入 `docs/openai-bps-sources.md`
 - [ ] 0.2 用真实 BPS 账号手工验证：端点、鉴权头、`store` 语义、SSE 事件序列、usage 字段、错误码（验收前必须完成）
 - [ ] 0.3 输出 `docs/openai-bps.md`（面向管理员：配置、支持范围、限制、风险提示）
 
 ## 1. 数据模型、平台注册与迁移
 
-- [ ] 1.1 `internal/domain` 新增 `PlatformOpenAIBPS = "openai_bps"` 与显示名/排序/图标映射
-- [ ] 1.2 迁移 `backend/migrations/2xx_openai_bps_platform.sql`：平台枚举/约束扩展（`IF NOT EXISTS`、纯加性）；`migrations/` 增加迁移形状测试
-- [ ] 1.3 `service.Account` 平台判定（`IsOpenAIBPS`、`IsOpenAICompatible` 口径）、账号创建/更新校验（仅 oauth、凭证必填 AT、平台互斥）
+- [x] 1.1 `internal/domain` 新增 `PlatformOpenAIBPS = "openai_bps"` 与显示名/排序/图标映射
+- [x] 1.2 迁移：核对后确认**无需新增迁移**——本地已在 `242_drop_platform_check_constraints.sql` 移除平台 CHECK 约束，平台由 `domain/platforms.go` 清单派生；在 tasks 中记录该偏差，不再新增迁移
+- [x] 1.3 `service.Account` 平台判定（`IsOpenAIBPS`、`IsOpenAICompatible` 口径）、账号创建/更新校验（仅 oauth、凭证必填 AT、平台互斥）
 - [ ] 1.4 `repository` 平台过滤、分组平台约束、账号列表/统计的 BPS 分支
-- [ ] 1.5 `config` 默认值：`gateway.openai_bps.enabled=false`、`default_models=[gpt-6-astra, gpt-5.6-sol]`、`context_window=200000`、`compact_threshold=160000`
-- [ ] 1.6 平台级 kill switch 生效路径：关闭时调度排除、入口返回明确错误
-- [ ] 1.7 验收：`go build ./...`；平台常量/校验/迁移单测通过；既有平台回归无变化
+- [x] 1.5 `config` 默认值：`gateway.openai_bps.enabled=false`、`default_models=[gpt-6-astra, gpt-5.6-sol]`、`context_window=200000`、`compact_threshold=160000`
+- [x] 1.6 平台级 kill switch 生效路径：关闭时调度排除、入口返回明确错误
+- [x] 1.7 验收：`go build ./...`；平台常量/校验/迁移单测通过；既有平台回归无变化
 
 ## 2. 凭证与账号生命周期
 
