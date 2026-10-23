@@ -84,6 +84,14 @@ type OpenAIBPSHandlerDeps struct {
 	Resolver   OpenAIBPSAccountResolver
 	Sessions   *OpenAIBPSSessionStore
 	HTTPClient *http.Client
+	// Usage 记录用量（Lead 用 OpenAIGatewayService 适配；nil 时跳过计费）。
+	Usage OpenAIBPSUsageRecorder
+	// AccountState 写错误分类后的账号状态（冷却/认证失败；nil 时只记日志）。
+	AccountState OpenAIBPSAccountStateWriter
+	// Billing 是选号前的计费资格闸门（可选；nil 时保持既有行为）。
+	Billing OpenAIBPSBillingGate
+	// APIKeyService 在用量记录后更新 API Key 配额（可选）。
+	APIKeyService APIKeyQuotaUpdater
 }
 
 // OpenAIBPSHandler 是 OpenAI BPS 的 /responses 文本网关入口。
@@ -151,6 +159,12 @@ func (h *OpenAIBPSHandler) handleResponses(c *gin.Context, compact bool) {
 			OpenAIBPSErrorUnauthorized, "API key context is missing"))
 		return
 	}
+	apiKey := getAPIKeyFromContext(c)
+	// 计费资格：在选号前检查，避免把余额/订阅/平台配额不足的请求打到上游。
+	// 闸门由 Lead 适配（BillingCacheService）；未注入时保持既有行为。
+	if !h.checkOpenAIBPSBillingEligibility(c, apiKey) {
+		return
+	}
 	ctx := openAIBPSContext(c)
 
 	sessionKey, explicitSession := OpenAIBPSSessionKey(apiKeyID, body)
@@ -178,7 +192,7 @@ func (h *OpenAIBPSHandler) handleResponses(c *gin.Context, compact bool) {
 		return
 	}
 
-	account, release, err := h.selectUpstreamAccount(ctx, c, apiKeyID, sessionKey, model)
+	account, release, boundSession, err := h.selectUpstreamAccount(ctx, c, apiKeyID, sessionKey, model)
 	if release != nil {
 		defer release()
 	}
@@ -228,12 +242,27 @@ func (h *OpenAIBPSHandler) handleResponses(c *gin.Context, compact bool) {
 	if client == nil {
 		client = http.DefaultClient
 	}
+	forwardStart := time.Now()
 	resp, err := client.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
 			return
 		}
-		log.Warn("openai bps: upstream request failed", zap.Error(err))
+		// 网络错误：按 spec D10 分类。换号本身需要「解绑 + 排除已失败账号」的
+		// 调度契约（Lead 接线），本阶段只产出决策并记录，绝不在这里静默重放。
+		action := ClassifyOpenAIBPSError(OpenAIBPSErrorInput{
+			StatusCode:    0,
+			Message:       err.Error(),
+			Model:         prepared.UpstreamModel,
+			SessionBound:  boundSession,
+			OutputStarted: c.Writer.Written(),
+		})
+		h.applyOpenAIBPSErrorAction(ctx, account, action, log)
+		log.Warn("openai bps: upstream request failed",
+			zap.String("error_kind", string(action.Kind)),
+			zap.Bool("failover_allowed", action.Retryable),
+			zap.Bool("session_bound", boundSession),
+			zap.Error(err))
 		WriteOpenAIBPSError(c, infraerrors.Newf(http.StatusBadGateway,
 			OpenAIBPSErrorUpstream, "OpenAI BPS upstream request failed"))
 		return
@@ -245,16 +274,44 @@ func (h *OpenAIBPSHandler) handleResponses(c *gin.Context, compact bool) {
 	c.Set(OpenAIBPSUpstreamRequestIDContextKey, requestID)
 	log = log.With(zap.Int("upstream_status", resp.StatusCode), zap.String("upstream_request_id", requestID))
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		// 上游错误不在这里换号：已绑定会话是硬约束；未绑定会话的换号重试
-		// 属于调度层（阶段 3 文本闭环先原样透传错误）。
-		log.Warn("openai bps: upstream returned error status")
+		// 上游错误：先预读错误体做分类与 usage 提取，再把 body 还原给转发层
+		//（原样透传语义不变）。错误状态不在这里换号：已绑定会话是硬约束；
+		// 未绑定新会话的有限换号由调度层按 action.Retryable 决定。
+		upstreamErr := openAIBPSPeekUpstreamError(c, resp)
+		action := ClassifyOpenAIBPSError(OpenAIBPSErrorInput{
+			StatusCode:    resp.StatusCode,
+			Code:          upstreamErr.DiagnosticCode(),
+			Message:       upstreamErr.Message,
+			RetryAfter:    resp.Header.Get("Retry-After"),
+			Model:         prepared.UpstreamModel,
+			SessionBound:  boundSession,
+			OutputStarted: c.Writer.Written(),
+		})
+		h.applyOpenAIBPSErrorAction(ctx, account, action, log)
+		// 429 的 Retry-After 必须透传给客户端，SDK 才能正确退避。
+		if retryAfter := openAIBPSUpstreamRetryAfter(resp); retryAfter != "" {
+			c.Header("Retry-After", retryAfter)
+		}
+		log.Warn("openai bps: upstream returned error status",
+			zap.String("error_kind", string(action.Kind)),
+			zap.String("normalized_code", action.Code),
+			zap.String("upstream_code", action.UpstreamCode),
+			zap.Bool("failover_allowed", action.Retryable),
+			zap.Bool("session_bound", boundSession),
+		)
 	}
 
-	if err := forwardOpenAIBPSProtocolResponse(ctx, c, h.deps.Sessions, prepared, resp); err != nil {
+	forwardErr := forwardOpenAIBPSProtocolResponse(ctx, c, h.deps.Sessions, prepared, resp)
+	// 只要协议层拿到了 usage（成功 JSON/SSE、response.failed、结构化校验失败、
+	// 上游错误体），终态一律记录；必须在 forward 之后读取，SSE 的 usage 是在
+	// 终止事件里写入的。客户端已断开时也要记（context.WithoutCancel）。
+	h.recordOpenAIBPSUsage(c, account, prepared, requestID, forwardStart,
+		prepared.Stream, resp.Header, compact, body, time.Time{})
+	if forwardErr != nil {
 		if ctx.Err() != nil {
 			return
 		}
-		log.Warn("openai bps: forward response failed", zap.Error(err))
+		log.Warn("openai bps: forward response failed", zap.Error(forwardErr))
 		if !c.Writer.Written() {
 			WriteOpenAIBPSError(c, infraerrors.Newf(http.StatusBadGateway,
 				OpenAIBPSErrorUpstream, "OpenAI BPS response forwarding failed"))
@@ -294,34 +351,37 @@ func (h *OpenAIBPSHandler) recoverCompactSessionKey(ctx context.Context, apiKeyI
 	}
 }
 
-// selectUpstreamAccount 解析本次请求使用的账号，返回可选的释放函数。
-func (h *OpenAIBPSHandler) selectUpstreamAccount(ctx context.Context, c *gin.Context, apiKeyID int64, sessionKey, model string) (*Account, func(), error) {
+// selectUpstreamAccount 解析本次请求使用的账号，返回可选的释放函数，以及
+// 「请求开始前会话是否已有绑定」。后者是换号边界的判据：已绑定上下文（续写）
+// 的会话遇到 5xx/429 绝不换号重放；只有新会话才允许有限换号。
+func (h *OpenAIBPSHandler) selectUpstreamAccount(ctx context.Context, c *gin.Context, apiKeyID int64, sessionKey, model string) (*Account, func(), bool, error) {
 	sessions := h.deps.Sessions
 	if sessions == nil {
-		return nil, nil, infraerrors.Newf(http.StatusServiceUnavailable,
+		return nil, nil, false, infraerrors.Newf(http.StatusServiceUnavailable,
 			OpenAIBPSErrorStateUnavailable, "OpenAI BPS conversation state is not configured")
 	}
 	boundID, boundWorkspace, bound, err := sessions.BoundAccount(ctx, apiKeyID, sessionKey)
 	if err != nil {
-		return nil, nil, openAIBPSStateError(ctx, err, "read session binding")
+		return nil, nil, false, openAIBPSStateError(ctx, err, "read session binding")
 	}
 	if bound {
-		return h.resolveBoundAccount(ctx, c, boundID, boundWorkspace, model)
+		account, release, resolveErr := h.resolveBoundAccount(ctx, c, boundID, boundWorkspace, model)
+		return account, release, true, resolveErr
 	}
 
 	account, release, err := h.selectAccount(ctx, c, model)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 	created, bindErr := sessions.Bind(ctx, apiKeyID, sessionKey, account.ID, openAIBPSWorkspace(account))
 	if bindErr != nil {
 		if release != nil {
 			release()
 		}
-		return nil, nil, openAIBPSStateError(ctx, bindErr, "bind session")
+		return nil, nil, false, openAIBPSStateError(ctx, bindErr, "bind session")
 	}
 	if created {
-		return account, release, nil
+		return account, release, false, nil
 	}
 	// 并发冲突：另一个请求先完成了绑定。绑定是赢家，必须重读并以它为准，
 	// 绝不能覆盖（否则同一会话会被两个账号交替服务）。
@@ -330,16 +390,17 @@ func (h *OpenAIBPSHandler) selectUpstreamAccount(ctx context.Context, c *gin.Con
 		if release != nil {
 			release()
 		}
-		return nil, nil, openAIBPSStateError(ctx, err, "re-read session binding")
+		return nil, nil, false, openAIBPSStateError(ctx, err, "re-read session binding")
 	}
 	if !bound {
 		// 两次调用之间绑定过期/被删：本次继续用刚选中的账号，下次请求重建绑定。
-		return account, release, nil
+		return account, release, false, nil
 	}
 	if release != nil {
 		release()
 	}
-	return h.resolveBoundAccount(ctx, c, boundID, boundWorkspace, model)
+	account, release, resolveErr := h.resolveBoundAccount(ctx, c, boundID, boundWorkspace, model)
+	return account, release, true, resolveErr
 }
 
 // selectAccount 通过 Resolver 选号，并把可选的租约释放函数一并返回。

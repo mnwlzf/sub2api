@@ -88,12 +88,18 @@ func (s *OpenAIBPSAccountSelector) OpenAIBPSAccountByID(ctx context.Context, acc
 func (s *OpenAIBPSAccountSelector) ReleaseOpenAIBPSAccount(_ context.Context, _ *Account) {}
 
 // openAIBPSAccountSelectable 判断账号是否可作为候选：
-// 平台匹配、可调度、模型支持、凭证状态不是过期/撤销/认证失败。
+// 平台匹配、可调度、模型支持、凭证状态不是过期/撤销/认证失败，且该模型
+// 不在冷却窗口内（模型权限错误只冷却映射后的模型，账号其它模型仍可用）。
 func openAIBPSAccountSelectable(account *Account, model string) bool {
 	if account == nil || !account.IsOpenAIBPS() || !account.IsSchedulable() {
 		return false
 	}
 	if !account.IsModelSupported(model) {
+		return false
+	}
+	// 模型级冷却写在 extra.model_rate_limits[映射后模型]；BPS 的 scope 就是
+	// account.GetMappedModel(model)（与 modelRateLimitKeysForRequest 一致）。
+	if account.isModelRateLimitedWithContext(context.Background(), model) {
 		return false
 	}
 	switch ResolveOpenAIBPSCredentialState(account, time.Now()).Status {

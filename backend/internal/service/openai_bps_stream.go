@@ -31,6 +31,10 @@ import (
 // 供计费/日志中间件读取（结构化输出失败不丢用量）。
 const OpenAIBPSUsageContextKey = "openai_bps_usage"
 
+// OpenAIBPSResponseIDContextKey 是上游终态响应的 response.id 的 gin 上下文键。
+// 用量记录用它作为 response_id（与 x-request-id 分开：后者是传输层请求 ID）。
+const OpenAIBPSResponseIDContextKey = "openai_bps_response_id"
+
 // forwardOpenAIBPSProtocolResponse 把上游响应按 BPS 协议转换后写给客户端。
 //
 // 返回 error 仅表示本地读写失败（协议错误已在函数内写成 JSON 错误信封或
@@ -214,6 +218,11 @@ func (p *openAIBPSResponsePipeline) handle(typ string, payload map[string]any) e
 	if p.completed {
 		return nil
 	}
+	// 任何事件里出现 usage 都先保留：BPS 可能在非终态事件（如 in_progress）
+	// 就带上用量，若此后断流/校验失败，已到达的用量仍必须能计费。
+	if response, ok := payload["response"].(map[string]any); ok {
+		p.recordUsage(response)
+	}
 	switch typ {
 	case "response.failed", "response.incomplete", "error":
 		if response, ok := payload["response"].(map[string]any); ok {
@@ -304,6 +313,9 @@ func (p *openAIBPSResponsePipeline) handle(typ string, payload map[string]any) e
 func (p *openAIBPSResponsePipeline) recordUsage(response map[string]any) {
 	if p == nil || p.c == nil || response == nil {
 		return
+	}
+	if id := stringValue(response["id"]); id != "" {
+		p.c.Set(OpenAIBPSResponseIDContextKey, id)
 	}
 	if usage, exists := response["usage"]; exists && usage != nil {
 		p.c.Set(OpenAIBPSUsageContextKey, usage)

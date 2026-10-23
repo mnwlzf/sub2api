@@ -518,12 +518,22 @@ func provideCodexTicketService(
 // 不可用时 handler 返回 bps_state_unavailable，不做进程内降级；平台级开关默认
 // 关闭，关闭时入口返回 bps_platform_disabled(503)。上游 HTTP 客户端超时留足流式
 // 响应时间；账号级代理在后续阶段接入。
-func provideOpenAIBPSGateway(accountRepo service.AccountRepository, redisClient *redis.Client) *service.OpenAIBPSHandler {
+func provideOpenAIBPSGateway(
+	accountRepo service.AccountRepository,
+	redisClient *redis.Client,
+	openAIGateway *service.OpenAIGatewayService,
+	billingCache *service.BillingCacheService,
+	apiKeyService *service.APIKeyService,
+) *service.OpenAIBPSHandler {
 	selector := service.NewOpenAIBPSAccountSelector(accountRepo)
 	sessions := service.NewOpenAIBPSSessionStore(redisClient)
 	return service.NewOpenAIBPSHandler(service.OpenAIBPSHandlerDeps{
-		Resolver:   selector,
-		Sessions:   sessions,
-		HTTPClient: &http.Client{Timeout: 15 * time.Minute},
+		Resolver:      selector,
+		Sessions:      sessions,
+		HTTPClient:    &http.Client{Timeout: 15 * time.Minute},
+		Usage:         openAIGateway,
+		AccountState:  service.OpenAIBPSAccountStateStoreFromRepository(accountRepo),
+		Billing:       &service.OpenAIBPSBillingCacheGate{Billing: billingCache},
+		APIKeyService: apiKeyService,
 	})
 }
