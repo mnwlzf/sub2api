@@ -1,6 +1,6 @@
 # OpenAI BPS 平台接入
 
-> 状态：**阶段 0–3 实现中**。平台默认关闭；文本闭环落地后再灰度，工具桥/压缩/结构化输出按 `openspec/changes/add-openai-bps-platform/tasks.md` 推进。
+> 状态：**阶段 0–3 已实现（文本闭环），阶段 4–10 待做**。平台默认关闭；工具桥/压缩/结构化输出按 `openspec/changes/add-openai-bps-platform/tasks.md` 推进。
 
 BPS（Basis Points / ChatGPT Excel 权益）是 ChatGPT 账号的一种额度形态，上游固定为
 `https://bps.openai.com/basispoints/api/responses`，用 **ChatGPT Access Token** 鉴权、只提供

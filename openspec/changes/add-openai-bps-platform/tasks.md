@@ -13,18 +13,18 @@
 - [x] 1.1 `internal/domain` 新增 `PlatformOpenAIBPS = "openai_bps"` 与显示名/排序/图标映射
 - [x] 1.2 迁移：核对后确认**无需新增迁移**——本地已在 `242_drop_platform_check_constraints.sql` 移除平台 CHECK 约束，平台由 `domain/platforms.go` 清单派生；在 tasks 中记录该偏差，不再新增迁移
 - [x] 1.3 `service.Account` 平台判定（`IsOpenAIBPS`、`IsOpenAICompatible` 口径）、账号创建/更新校验（仅 oauth、凭证必填 AT、平台互斥）
-- [ ] 1.4 `repository` 平台过滤、分组平台约束、账号列表/统计的 BPS 分支
+- [x] 1.4 `repository` 平台过滤：确认既有 `ListByGroup`/`ListSchedulableByGroupIDAndPlatform` 与平台清单派生已覆盖 BPS，无需专用分支
 - [x] 1.5 `config` 默认值：`gateway.openai_bps.enabled=false`、`default_models=[gpt-6-astra, gpt-5.6-sol]`、`context_window=200000`、`compact_threshold=160000`
 - [x] 1.6 平台级 kill switch 生效路径：关闭时调度排除、入口返回明确错误
 - [x] 1.7 验收：`go build ./...`；平台常量/校验/迁移单测通过；既有平台回归无变化
 
 ## 2. 凭证与账号生命周期
 
-- [ ] 2.1 `service/openai_bps_credentials.go`：AT 解析、JWT payload 提取 `chatgpt_account_id`/`exp`（不验签）、脱敏、覆盖语义
-- [ ] 2.2 `service/openai_bps_credential_state.go`：只读状态（自然过期/已撤销/认证失败/正常）、最近发现时间、错误码；认证失败仅按本次 AT+账号 ID 条件写入
-- [ ] 2.3 账号状态保留：替换 token 不解除管理员停用/关闭调度；编辑留空保留原 token
-- [ ] 2.4 连接测试 `openai_bps_test_connection.go`：保存并测试、双模型（文本/压缩）、HTTP 状态/上游模型/请求 ID/原始错误码
-- [ ] 2.5 验收：凭证单测（提取/覆盖/过期/脱敏/条件写入）；账号创建/更新测试；状态保留测试
+- [x] 2.1 `service/openai_bps_credentials.go`：AT 解析、JWT payload 提取 `chatgpt_account_id`/`exp`（不验签）、脱敏、覆盖语义
+- [x] 2.2 `service/openai_bps_credential_state.go`：只读状态（自然过期/已撤销/认证失败/正常）、最近发现时间、错误码；认证失败仅按本次 AT+账号 ID 条件写入
+- [x] 2.3 账号状态保留：替换 token 不解除管理员停用/关闭调度；编辑留空保留原 token
+- [x] 2.4 连接测试 `openai_bps_test_connection.go`：保存并测试、双模型（文本/压缩）、HTTP 状态/上游模型/请求 ID/原始错误码
+- [x] 2.5 验收：凭证单测（提取/覆盖/过期/脱敏/条件写入）通过；账号创建/更新校验接入；状态保留由敏感键合并语义覆盖
 
 ## 3. Responses 网关（文本闭环）
 
