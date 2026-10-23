@@ -6,7 +6,7 @@
 
 - [x] 0.1 冻结参考实现提交：`ranxi2001/sub2api@055a1cd1`（LGPL-3.0）、`Nonary/ghcp_proxy@ad23ce2d`（Unlicense）、`1812095643/sub2api-excel2api-plugin@ad203907`；把来源、提交号、文件映射写入 `docs/openai-bps-sources.md`
 - [ ] 0.2 用真实 BPS 账号手工验证：端点、鉴权头、`store` 语义、SSE 事件序列、usage 字段、错误码（验收前必须完成）
-- [ ] 0.3 输出 `docs/openai-bps.md`（面向管理员：配置、支持范围、限制、风险提示）
+- [x] 0.3 输出 `docs/openai-bps.md`（面向管理员：配置、支持范围、限制、风险提示）
 
 ## 1. 数据模型、平台注册与迁移
 

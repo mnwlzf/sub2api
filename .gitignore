@@ -143,6 +143,9 @@ docs/*
 !docs/channel-monitor-v2-safe-defaults.md
 !docs/codex-credits.md
 !docs/opencode-free-tier-gate-runbook.md
+!docs/codex-hardening-2026-10.md
+!docs/openai-bps.md
+!docs/openai-bps-sources.md
 !docs/legal/
 !docs/legal/*.md
 !docs/screenshots/
