@@ -270,6 +270,11 @@
                 >
                   {{ getAntigravityTierLabel(row) }}
                 </span>
+                <!-- OpenAI BPS 凭证状态（仅 BPS 账号返回 bps_credential_state）。 -->
+                <OpenAIBPSCredentialStatusBadge
+                  :platform="row.platform"
+                  :state="row.bps_credential_state"
+                />
               </div>
               <div
                 v-if="getOpenAICompactMeta(row)"
@@ -474,6 +479,7 @@
     <EditAccountModal :show="showEdit" :account="edAcc" :proxies="proxies" :groups="groups" @close="showEdit = false" @updated="handleAccountUpdated" />
     <ReAuthAccountModal :show="showReAuth" :account="reAuthAcc" @close="closeReAuthModal" @reauthorized="handleAccountUpdated" />
     <AccountTestModal :show="showTest" :account="testingAcc" @close="closeTestModal" />
+    <OpenAIBPSConnectionTestModal :show="showBPSTest" :account="bpsTestingAcc" @close="closeBPSTestModal" />
     <AccountStatsModal :show="showStats" :account="statsAcc" @close="closeStatsModal" />
     <CodexTicketCenterModal
       :show="showTicketCenter"
@@ -487,7 +493,7 @@
       @close="closeDegradation"
     />
     <ScheduledTestsPanel :show="showSchedulePanel" :account-id="scheduleAcc?.id ?? null" :model-options="scheduleModelOptions" @close="closeSchedulePanel" />
-    <AccountActionMenu :show="menu.show" :account="menu.acc" :anchor-rect="menu.anchorRect" @close="menu.show = false" @test="handleTest" @stats="handleViewStats" @schedule="handleSchedule" @duplicate="handleDuplicateAccount" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @reset-quota="handleResetQuota" @set-privacy="handleSetPrivacy" @create-spark-shadow="handleCreateSparkShadow" @codex-tickets="handleOpenTicketCenter" @codex-degradation="handleOpenDegradation" />
+    <AccountActionMenu :show="menu.show" :account="menu.acc" :anchor-rect="menu.anchorRect" @close="menu.show = false" @test="handleTest" @bps-test="handleBPSTest" @stats="handleViewStats" @schedule="handleSchedule" @duplicate="handleDuplicateAccount" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @reset-quota="handleResetQuota" @set-privacy="handleSetPrivacy" @create-spark-shadow="handleCreateSparkShadow" @codex-tickets="handleOpenTicketCenter" @codex-degradation="handleOpenDegradation" />
     <SyncFromCrsModal :show="showSync" @close="showSync = false" @synced="reload" />
     <ImportDataModal :show="showImportData" @close="showImportData = false" @imported="handleDataImported" />
     <BulkEditAccountModal
@@ -542,6 +548,8 @@ import AccountActionMenu from '@/components/admin/account/AccountActionMenu.vue'
 import ImportDataModal from '@/components/admin/account/ImportDataModal.vue'
 import ReAuthAccountModal from '@/components/admin/account/ReAuthAccountModal.vue'
 import AccountTestModal from '@/components/admin/account/AccountTestModal.vue'
+import OpenAIBPSConnectionTestModal from '@/components/account/OpenAIBPSConnectionTestModal.vue'
+import OpenAIBPSCredentialStatusBadge from '@/components/account/OpenAIBPSCredentialStatusBadge.vue'
 import AccountStatsModal from '@/components/admin/account/AccountStatsModal.vue'
 import ScheduledTestsPanel from '@/components/admin/account/ScheduledTestsPanel.vue'
 import type { SelectOption } from '@/components/common/Select.vue'
@@ -638,6 +646,7 @@ const showDeleteDialog = ref(false)
 const showCreateShadowDialog = ref(false)
 const showReAuth = ref(false)
 const showTest = ref(false)
+const showBPSTest = ref(false)
 const showStats = ref(false)
 const showErrorPassthrough = ref(false)
 const showTLSFingerprintProfiles = ref(false)
@@ -647,6 +656,7 @@ const deletingAcc = ref<Account | null>(null)
 const creatingShadowAcc = ref<Account | null>(null)
 const reAuthAcc = ref<Account | null>(null)
 const testingAcc = ref<Account | null>(null)
+const bpsTestingAcc = ref<Account | null>(null)
 const statsAcc = ref<Account | null>(null)
 // Codex 票据中心 / 降智检测弹窗
 const showTicketCenter = ref(false)
@@ -1420,6 +1430,7 @@ const isAnyModalOpen = computed(() => {
     showDeleteDialog.value ||
     showReAuth.value ||
     showTest.value ||
+    showBPSTest.value ||
     showStats.value ||
     showSchedulePanel.value ||
     showErrorPassthrough.value ||
@@ -2397,6 +2408,14 @@ const handleTest = async (a: AccountListItem) => {
   testingAcc.value = account
   showTest.value = true
 }
+// OpenAI BPS 测试连接：走专用端点，读取完整账号（含脱敏凭证状态）。
+const handleBPSTest = async (a: AccountListItem) => {
+  const account = await loadAccountDetails(a)
+  if (!account) return
+  bpsTestingAcc.value = account
+  showBPSTest.value = true
+}
+const closeBPSTestModal = () => { showBPSTest.value = false; bpsTestingAcc.value = null }
 const handleViewStats = async (a: AccountListItem) => {
   const account = await loadAccountDetails(a)
   if (!account) return

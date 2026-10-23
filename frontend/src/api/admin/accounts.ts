@@ -32,7 +32,8 @@ import type {
   GrokMediaEligibilityMode,
   GrokMediaEligibilityState,
   OpenCodeGoUsageSettings,
-  OpenCodeGoUsageState
+  OpenCodeGoUsageState,
+  OpenAIBPSTestConnectionResult
 } from '@/types'
 
 /**
@@ -307,6 +308,30 @@ export async function testAccount(id: number): Promise<{
     message: string
     latency_ms?: number
   }>(`/admin/accounts/${id}/test`)
+  return data
+}
+
+/**
+ * Test an OpenAI BPS account connection.
+ *
+ * The backend always answers HTTP 200 for an executed test; failures are carried by
+ * `http_status` / `error_code` in the result. Only invalid requests (bad id, non-BPS
+ * account) reject.
+ *
+ * @param id - Account ID
+ * @param options - Optional model override and compact (compressed) probe flag
+ */
+export async function testOpenAIBPSConnection(
+  id: number,
+  options?: { model?: string; compact?: boolean }
+): Promise<OpenAIBPSTestConnectionResult> {
+  const { data } = await apiClient.post<OpenAIBPSTestConnectionResult>(
+    `/admin/accounts/${id}/openai-bps/test-connection`,
+    {
+      model: options?.model?.trim() || undefined,
+      compact: options?.compact === true
+    }
+  )
   return data
 }
 
@@ -1167,6 +1192,7 @@ export const accountsAPI = {
   delete: deleteAccount,
   toggleStatus,
   testAccount,
+  testOpenAIBPSConnection,
   refreshCredentials,
   applyOAuthCredentials,
   getStats,

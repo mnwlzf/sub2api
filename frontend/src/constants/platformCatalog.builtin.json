@@ -15,6 +15,12 @@
       "litellm_provider": "openai"
     },
     {
+      "id": "openai_bps",
+      "display_name": "OpenAI BPS",
+      "gateway": "openai_bps",
+      "cn_provider": false
+    },
+    {
       "id": "gemini",
       "display_name": "Gemini",
       "gateway": "gemini",
@@ -284,6 +290,7 @@
     "anthropic",
     "gemini",
     "openai",
+    "openai_bps",
     "antigravity",
     "grok",
     "kimi",

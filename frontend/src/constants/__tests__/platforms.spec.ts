@@ -17,6 +17,7 @@ import { platformQuotaPlatforms } from '@/api/admin/users'
 const concretePlatforms = [
   'anthropic',
   'openai',
+  'openai_bps',
   'gemini',
   'antigravity',
   'grok',
@@ -59,11 +60,11 @@ describe('platform catalog with a newly registered platform', () => {
   it('keeps the built-in catalog equal to the legacy literals', () => {
     expect(listPlatformIds()).toEqual(concretePlatforms)
     expect(compositePrecedencePlatformIds()).toEqual([
-      'anthropic', 'gemini', 'openai', 'antigravity', 'grok',
+      'anthropic', 'gemini', 'openai', 'openai_bps', 'antigravity', 'grok',
       'kimi', 'zhipu', 'deepseek', 'minimax', 'opencode_go', 'typesafe', 'command_code', 'cline'
     ])
     expect(CONCRETE_PLATFORM_OPTIONS.map((option) => option.label)).toEqual([
-      'Anthropic', 'OpenAI', 'Gemini', 'Antigravity', 'Grok',
+      'Anthropic', 'OpenAI', 'OpenAI BPS', 'Gemini', 'Antigravity', 'Grok',
       'Kimi', 'Zhipu GLM', 'DeepSeek', 'MiniMax', 'OpenCode', 'TypeSafe / Jev', 'Command Code', 'Cline'
     ])
     expect(platformLabel('zhipu')).toBe('Zhipu GLM')

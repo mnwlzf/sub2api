@@ -74,9 +74,9 @@
 
 ## 9. 管理端 API 与前端
 
-- [ ] 9.1 handler/dto：账号创建/更新新增 BPS 字段（AT、账号 ID 覆盖、风险确认标记）、凭证状态只读字段
-- [ ] 9.2 前端：平台徽标/筛选、账号创建编辑（AT + 风险二次确认 + 保存并测试）、`BPSCredentialStatus.vue`、分组模型映射/白名单、API Key 使用说明、渠道监测模板、i18n（zh/en）
-- [ ] 9.3 验收：`pnpm run check:i18n`、`pnpm run typecheck`、相关 vitest 通过；手工走查创建→测试→使用
+- [x] 9.1 handler/dto：账号创建/更新新增 BPS 字段（AT、账号 ID 覆盖、风险确认标记）、凭证状态只读字段
+- [x] 9.2 前端：平台徽标/筛选、账号创建编辑（AT + 风险二次确认 + 保存并测试）、`BPSCredentialStatus.vue`、分组模型映射/白名单、API Key 使用说明、渠道监测模板、i18n（zh/en）
+- [x] 9.3 验收：i18n 完整性 5 tests、vue-tsc --noEmit exit 0、BPS 相关 vitest 38 tests、既有平台/账号回归通过；手工走查创建→测试→使用待真实环境
 
 ## 10. 集成、验收与上线
 

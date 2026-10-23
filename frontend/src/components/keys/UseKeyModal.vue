@@ -1326,6 +1326,7 @@ function generateRoutedCodexFiles(
   const labels: Record<GroupPlatform, string> = {
     anthropic: 'Anthropic',
     openai: 'OpenAI',
+    openai_bps: 'OpenAI BPS',
     gemini: 'Gemini',
     antigravity: 'Antigravity',
     grok: 'Grok',

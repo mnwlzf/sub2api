@@ -26,6 +26,43 @@
         <p class="input-hint">{{ t('admin.accounts.notesHint') }}</p>
       </div>
 
+      <!-- OpenAI BPS 凭证：Access Token 留空保留原值；chatgpt_account_id 可选 -->
+      <div
+        v-if="isOpenAIBPS"
+        class="space-y-4 rounded-xl border border-cyan-200 bg-cyan-50/40 p-4 dark:border-cyan-800/40 dark:bg-cyan-900/10"
+        data-testid="edit-bps-fields"
+      >
+        <div>
+          <p class="text-sm font-semibold text-cyan-800 dark:text-cyan-200">{{ t('admin.accounts.bps.platformName') }}</p>
+          <p class="mt-1 text-xs text-cyan-700/80 dark:text-cyan-300/80">{{ t('admin.accounts.bps.banRiskHint') }}</p>
+        </div>
+        <div>
+          <label class="input-label">{{ t('admin.accounts.bps.accessToken') }}</label>
+          <input
+            v-model="editBPSAccessToken"
+            type="password"
+            autocomplete="new-password"
+            class="input font-mono"
+            :placeholder="hasStoredBPSAccessToken
+              ? t('admin.accounts.bps.accessTokenEditPlaceholder')
+              : t('admin.accounts.bps.accessTokenPlaceholder')"
+            data-testid="edit-bps-access-token"
+          />
+          <p class="input-hint">{{ t('admin.accounts.bps.accessTokenEditHint') }}</p>
+        </div>
+        <div>
+          <label class="input-label">{{ t('admin.accounts.bps.accountId') }}</label>
+          <input
+            v-model="editBPSAccountId"
+            type="text"
+            class="input font-mono"
+            :placeholder="t('admin.accounts.bps.accountIdPlaceholder')"
+            data-testid="edit-bps-account-id"
+          />
+          <p class="input-hint">{{ t('admin.accounts.bps.accountIdHint') }}</p>
+        </div>
+      </div>
+
       <!-- API Key fields (only for apikey type) -->
       <div v-if="account.type === 'apikey'" class="space-y-4">
         <div v-if="!isCNApiKeyAccount || editApiProtocol !== 'adaptive'">
@@ -3304,6 +3341,18 @@
     @confirm="handleMixedChannelConfirm"
     @cancel="handleMixedChannelCancel"
   />
+
+  <!-- OpenAI BPS 封禁风险二次确认（取消保留输入，不提交） -->
+  <ConfirmDialog
+    :show="showBPSRiskConfirm"
+    :title="t('admin.accounts.bps.riskConfirmTitle')"
+    :message="t('admin.accounts.bps.riskConfirmMessage')"
+    :confirm-text="t('admin.accounts.bps.riskConfirmConfirm')"
+    :cancel-text="t('common.cancel')"
+    :danger="true"
+    @confirm="handleBPSRiskConfirm"
+    @cancel="handleBPSRiskCancel"
+  />
 </template>
 
 <script setup lang="ts">
@@ -3336,6 +3385,7 @@ import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import UpstreamRequestIdHeaderField from '@/components/account/UpstreamRequestIdHeaderField.vue'
 import OpenAIRequestTimezoneSelect from '@/components/account/OpenAIRequestTimezoneSelect.vue'
 import { applyOpenAIRequestTimezoneExtra, normalizeOpenAIRequestTimezone } from '@/components/account/openaiRequestTimezone'
+import { buildOpenAIBPSCredentials, isOpenAIBPSPlatform, validateOpenAIBPSForm } from '@/utils/openaiBPS'
 import Toggle from '@/components/common/Toggle.vue'
 import Icon from '@/components/icons/Icon.vue'
 import ProxySelector from '@/components/common/ProxySelector.vue'
@@ -4295,6 +4345,14 @@ const form = reactive({
   expires_at: null as number | null
 })
 
+// OpenAI BPS：凭证编辑（Access Token 留空保留）+ 保存前封禁风险二次确认。
+const isOpenAIBPS = computed(() => isOpenAIBPSPlatform(props.account?.platform))
+const hasStoredBPSAccessToken = computed(() => Boolean(props.account?.credentials_status?.has_access_token))
+const editBPSAccessToken = ref('')
+const editBPSAccountId = ref('')
+const showBPSRiskConfirm = ref(false)
+const bpsPendingUpdate = ref<{ accountID: number; payload: Record<string, unknown> } | null>(null)
+
 const handleUpstreamBillingRateSyncChange = (enabled: boolean) => {
   upstreamBillingRateSyncEnabled.value = enabled
   if (enabled) {
@@ -4407,6 +4465,12 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   // Load intercept warmup requests setting (applies to all account types)
   const credentials = newAccount.credentials as Record<string, unknown> | undefined
   interceptWarmupRequests.value = credentials?.intercept_warmup_requests === true
+  // OpenAI BPS：token 已脱敏，编辑框始终从空开始（留空=保留）；账号 ID 非敏感可回填。
+  editBPSAccessToken.value = ''
+  editBPSAccountId.value =
+    typeof credentials?.chatgpt_account_id === 'string' ? credentials.chatgpt_account_id.trim() : ''
+  showBPSRiskConfirm.value = false
+  bpsPendingUpdate.value = null
   autoPauseOnExpired.value = newAccount.auto_pause_on_expired === true
   editVertexProjectId.value = ''
   editVertexClientEmail.value = ''
@@ -5775,6 +5839,37 @@ const handleSubmit = async () => {
       }
 
       updatePayload.credentials = newCredentials
+    } else if (props.account.platform === 'openai_bps') {
+      // OpenAI BPS：access_token 留空=保留（后端敏感键合并），chatgpt_account_id 空=清除。
+      const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
+      const newCredentials: Record<string, unknown> = { ...currentCredentials }
+      const validation = validateOpenAIBPSForm(
+        { accessToken: editBPSAccessToken.value, chatgptAccountId: editBPSAccountId.value },
+        'edit'
+      )
+      if (validation) {
+        appStore.showError(t(`admin.accounts.bps.${validation}`))
+        return
+      }
+      const bpsCredentials = buildOpenAIBPSCredentials({
+        accessToken: editBPSAccessToken.value,
+        chatgptAccountId: editBPSAccountId.value
+      })
+      if (bpsCredentials.access_token) {
+        newCredentials.access_token = bpsCredentials.access_token
+      }
+      delete newCredentials.chatgpt_account_id
+      if (bpsCredentials.chatgpt_account_id) {
+        newCredentials.chatgpt_account_id = bpsCredentials.chatgpt_account_id
+      }
+
+      applyInterceptWarmup(newCredentials, interceptWarmupRequests.value, 'edit')
+      applyAccountSchedulingThresholdOverridePatch(newCredentials, currentCredentials)
+      if (!applyTempUnschedConfig(newCredentials)) {
+        return
+      }
+
+      updatePayload.credentials = newCredentials
     } else {
       // For oauth/setup-token types, only update intercept_warmup_requests if changed
       const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
@@ -6241,6 +6336,13 @@ const handleSubmit = async () => {
       updatePayload.extra = newExtra
     }
 
+    // OpenAI BPS：保存前二次确认封禁风险（取消保留输入，不提交）。
+    if (isOpenAIBPS.value) {
+      bpsPendingUpdate.value = { accountID, payload: updatePayload }
+      showBPSRiskConfirm.value = true
+      return
+    }
+
     const canContinue = await ensureAntigravityMixedChannelConfirmed(async () => {
       await submitUpdateAccount(accountID, updatePayload)
     })
@@ -6252,6 +6354,25 @@ const handleSubmit = async () => {
   } catch (error: any) {
     appStore.showError(error.message || t('admin.accounts.failedToUpdate'))
   }
+}
+
+// OpenAI BPS 封禁风险确认：确认后提交暂存更新，取消则保留输入不提交。
+const handleBPSRiskConfirm = async () => {
+  const pending = bpsPendingUpdate.value
+  showBPSRiskConfirm.value = false
+  bpsPendingUpdate.value = null
+  if (!pending) return
+  const canContinue = await ensureAntigravityMixedChannelConfirmed(async () => {
+    await submitUpdateAccount(pending.accountID, pending.payload)
+  })
+  if (!canContinue) {
+    return
+  }
+  await submitUpdateAccount(pending.accountID, pending.payload)
+}
+const handleBPSRiskCancel = () => {
+  showBPSRiskConfirm.value = false
+  bpsPendingUpdate.value = null
 }
 
 // Handle mixed channel warning confirmation

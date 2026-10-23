@@ -371,6 +371,8 @@ func registerGroupRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 
 func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAuth middleware.StepUpAuthMiddleware) {
 	accounts := admin.Group("/accounts")
+	// OpenAI BPS 测试连接（独立平台、固定上游；凭证状态由账号 DTO 自动返回）。
+	adminhandler.RegisterOpenAIBPSAdminRoutes(admin, adminhandler.NewOpenAIBPSAccountHandlerFromAccountHandler(h.Admin.Account))
 	{
 		accounts.GET("", h.Admin.Account.List)
 		accounts.GET("/upstream-billing-rates", h.Admin.Account.GetUpstreamBillingRates)

@@ -937,7 +937,7 @@ export interface UpdateGroupRequest {
 // ==================== Account & Proxy Types ====================
 
 /** 前端内置专属界面（图标、配色、表单等）的平台。 */
-export type KnownAccountPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 'grok' | 'kimi' | 'zhipu' | 'deepseek' | 'minimax' | 'opencode_go' | 'typesafe' | 'command_code' | 'cline'
+export type KnownAccountPlatform = 'anthropic' | 'openai' | 'openai_bps' | 'gemini' | 'antigravity' | 'grok' | 'kimi' | 'zhipu' | 'deepseek' | 'minimax' | 'opencode_go' | 'typesafe' | 'command_code' | 'cline'
 /**
  * 账号平台：内置平台，或后端平台清单中新登记的平台（任意字符串）。
  * `string & {}` 保留内置平台的字面量补全。
@@ -1264,6 +1264,36 @@ export interface OpenCodeGoUsageSettings {
   debounce_minutes: number
 }
 
+/**
+ * OpenAI BPS 凭证只读状态（后端 bps_credential_state）。
+ * - normal：无已知认证问题；
+ * - expired：本地 JWT exp 已过；
+ * - revoked：上游 401 / 已撤销；
+ * - auth_failed：其它认证失败。
+ * 非 BPS 账号该字段缺省。
+ */
+export type OpenAIBPSCredentialStatus = 'normal' | 'expired' | 'revoked' | 'auth_failed'
+
+export interface OpenAIBPSCredentialState {
+  status: OpenAIBPSCredentialStatus
+  expires_at?: string | null
+  last_seen_at?: string | null
+  error_code?: string
+}
+
+/** POST /admin/accounts/:id/openai-bps/test-connection 的结果。 */
+export interface OpenAIBPSTestConnectionResult {
+  account_id: number
+  model: string
+  compact: boolean
+  /** 0 表示请求没有到达上游（本地校验失败 / 网络错误）。 */
+  http_status: number
+  upstream_model: string
+  request_id: string
+  error_code: string
+  duration_ms: number
+}
+
 export interface Account {
   id: number
   name: string
@@ -1276,6 +1306,8 @@ export interface Account {
   // 改为通过 credentials_status.has_<key> 暴露存在性。
   credentials?: Record<string, unknown>
   credentials_status?: Record<string, boolean>
+  /** OpenAI BPS 只读凭证状态（仅 openai_bps 平台返回）。 */
+  bps_credential_state?: OpenAIBPSCredentialState | null
   ollama_cloud_usage?: OllamaCloudUsageState
   opencode_go_usage?: OpenCodeGoUsageState
   // Extra fields including Codex usage, OpenAI compact capability, and model-level rate limits.
