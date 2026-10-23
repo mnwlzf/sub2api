@@ -289,6 +289,7 @@ export default {
         lastUsed: 'Last Used',
         createdAt: 'Created',
         expiresAt: 'Expires At',
+        ticket: 'Tickets',
         actions: 'Actions'
       },
       schedulerScore: {
@@ -1678,6 +1679,8 @@ export default {
       videoReceived: 'Received test video #{count}',
       // Stats Modal
       viewStats: 'View Stats',
+      codexTicketCenter: 'Ticket Center',
+      codexDegradationCheck: 'Degradation Check',
       usageStatistics: 'Usage Statistics',
       last30DaysUsage: 'Last 30 days usage statistics (based on actual usage days)',
       stats: {

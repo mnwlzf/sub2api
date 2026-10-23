@@ -287,6 +287,13 @@
           <template #cell-capacity="{ row }">
             <AccountCapacityCell :account="row" />
           </template>
+          <template #cell-ticket="{ row }">
+            <CodexTicketStatusCell
+              :account="row"
+              :refresh-token="ticketStatusRefreshToken"
+              @open="handleOpenTicketCenter"
+            />
+          </template>
           <template #cell-status="{ row }">
             <div class="flex items-center gap-1.5">
               <AccountStatusIndicator :account="row" @show-temp-unsched="handleShowTempUnsched" />
@@ -468,8 +475,19 @@
     <ReAuthAccountModal :show="showReAuth" :account="reAuthAcc" @close="closeReAuthModal" @reauthorized="handleAccountUpdated" />
     <AccountTestModal :show="showTest" :account="testingAcc" @close="closeTestModal" />
     <AccountStatsModal :show="showStats" :account="statsAcc" @close="closeStatsModal" />
+    <CodexTicketCenterModal
+      :show="showTicketCenter"
+      :account="ticketCenterAcc"
+      @close="closeTicketCenter"
+      @changed="handleTicketChanged"
+    />
+    <CodexDegradationModal
+      :show="showDegradation"
+      :account="degradationAcc"
+      @close="closeDegradation"
+    />
     <ScheduledTestsPanel :show="showSchedulePanel" :account-id="scheduleAcc?.id ?? null" :model-options="scheduleModelOptions" @close="closeSchedulePanel" />
-    <AccountActionMenu :show="menu.show" :account="menu.acc" :anchor-rect="menu.anchorRect" @close="menu.show = false" @test="handleTest" @stats="handleViewStats" @schedule="handleSchedule" @duplicate="handleDuplicateAccount" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @reset-quota="handleResetQuota" @set-privacy="handleSetPrivacy" @create-spark-shadow="handleCreateSparkShadow" />
+    <AccountActionMenu :show="menu.show" :account="menu.acc" :anchor-rect="menu.anchorRect" @close="menu.show = false" @test="handleTest" @stats="handleViewStats" @schedule="handleSchedule" @duplicate="handleDuplicateAccount" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @reset-quota="handleResetQuota" @set-privacy="handleSetPrivacy" @create-spark-shadow="handleCreateSparkShadow" @codex-tickets="handleOpenTicketCenter" @codex-degradation="handleOpenDegradation" />
     <SyncFromCrsModal :show="showSync" @close="showSync = false" @synced="reload" />
     <ImportDataModal :show="showImportData" @close="showImportData = false" @imported="handleDataImported" />
     <BulkEditAccountModal
@@ -539,6 +557,11 @@ import PlatformTypeBadge from '@/components/common/PlatformTypeBadge.vue'
 import Icon from '@/components/icons/Icon.vue'
 import ErrorPassthroughRulesModal from '@/components/admin/ErrorPassthroughRulesModal.vue'
 import TLSFingerprintProfilesModal from '@/components/admin/TLSFingerprintProfilesModal.vue'
+import CodexTicketStatusCell from '@/components/admin/codex/CodexTicketStatusCell.vue'
+import CodexTicketCenterModal from '@/components/admin/codex/CodexTicketCenterModal.vue'
+import CodexDegradationModal from '@/components/admin/codex/CodexDegradationModal.vue'
+import { invalidateTicketStatuses } from '@/features/codexTickets/useCodexTicketStatuses'
+import { isCodexTicketEligibleAccount } from '@/features/codexTickets/ticketStatus'
 import { fetchAllAccountIds } from '@/utils/accountSelection'
 import { buildGrokUsageRefreshKey, buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
 import { formatDateTime, formatRelativeTime } from '@/utils/format'
@@ -625,6 +648,13 @@ const creatingShadowAcc = ref<Account | null>(null)
 const reAuthAcc = ref<Account | null>(null)
 const testingAcc = ref<Account | null>(null)
 const statsAcc = ref<Account | null>(null)
+// Codex 票据中心 / 降智检测弹窗
+const showTicketCenter = ref(false)
+const ticketCenterAcc = ref<Account | null>(null)
+const showDegradation = ref(false)
+const degradationAcc = ref<Account | null>(null)
+// 票据中心操作后自增，触发「打票」列单元格重新拉取
+const ticketStatusRefreshToken = ref(0)
 const showSchedulePanel = ref(false)
 const scheduleAcc = ref<Account | null>(null)
 const scheduleModelOptions = ref<SelectOption[]>([])
@@ -1809,6 +1839,7 @@ const allColumns = computed(() => {
     { key: 'name', label: t('admin.accounts.columns.name'), sortable: true },
     { key: 'id', label: t('admin.accounts.columns.id'), sortable: true },
     { key: 'platform_type', label: t('admin.accounts.columns.platformType'), sortable: false },
+    { key: 'ticket', label: t('admin.accounts.columns.ticket'), sortable: false },
     { key: 'capacity', label: t('admin.accounts.columns.capacity'), sortable: false },
     { key: 'status', label: t('admin.accounts.columns.status'), sortable: true },
     { key: 'schedulable', label: t('admin.accounts.columns.schedulable'), sortable: true },
@@ -2371,6 +2402,30 @@ const handleViewStats = async (a: AccountListItem) => {
   if (!account) return
   statsAcc.value = account
   showStats.value = true
+}
+// Codex 票据中心：仅 OpenAI OAuth / SetupToken 非影子账号可打开（与后端一致）
+const handleOpenTicketCenter = (a: AccountListItem) => {
+  if (!isCodexTicketEligibleAccount(a)) return
+  ticketCenterAcc.value = a
+  showTicketCenter.value = true
+}
+const closeTicketCenter = () => {
+  showTicketCenter.value = false
+  ticketCenterAcc.value = null
+}
+const handleTicketChanged = (accountId: number) => {
+  invalidateTicketStatuses(accountId)
+  ticketStatusRefreshToken.value += 1
+}
+// 降智检测：所有 OpenAI 账号都可运行（服务端用账号自身凭据探测）
+const handleOpenDegradation = (a: AccountListItem) => {
+  if (a.platform !== 'openai') return
+  degradationAcc.value = a
+  showDegradation.value = true
+}
+const closeDegradation = () => {
+  showDegradation.value = false
+  degradationAcc.value = null
 }
 const handleSchedule = async (a: Account) => {
   scheduleAcc.value = a

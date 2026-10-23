@@ -1904,6 +1904,12 @@
         </div>
       </div>
 
+      <!-- OpenAI 请求时区（账号 extra.openai_request_timezone，缺省跟随默认） -->
+      <OpenAIRequestTimezoneSelect
+        v-if="account?.platform === 'openai'"
+        v-model="openaiRequestTimezone"
+      />
+
       <!-- OpenAI Codex namespace 工具摊平（兼容开关，仅 OAuth） -->
       <div
         v-if="account?.platform === 'openai' && account?.type === 'oauth'"
@@ -3328,6 +3334,8 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Select from '@/components/common/Select.vue'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import UpstreamRequestIdHeaderField from '@/components/account/UpstreamRequestIdHeaderField.vue'
+import OpenAIRequestTimezoneSelect from '@/components/account/OpenAIRequestTimezoneSelect.vue'
+import { applyOpenAIRequestTimezoneExtra, normalizeOpenAIRequestTimezone } from '@/components/account/openaiRequestTimezone'
 import Toggle from '@/components/common/Toggle.vue'
 import Icon from '@/components/icons/Icon.vue'
 import ProxySelector from '@/components/common/ProxySelector.vue'
@@ -3927,6 +3935,8 @@ const customBaseUrl = ref('')
 
 // OpenAI 自动透传开关（OAuth/API Key）
 const openaiPassthroughEnabled = ref(false)
+// OpenAI 请求时区（账号 extra.openai_request_timezone，'' = 跟随后端默认）
+const openaiRequestTimezone = ref('')
 // OpenAI Codex namespace 工具摊平兼容开关（仅 OAuth），缺省关闭即原样保留
 const openaiFlattenNamespacesEnabled = ref(false)
 // 严格校验 Codex 签名的兼容中转（仅 API Key）补齐 include / prompt_cache_key，缺省关闭
@@ -4452,6 +4462,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   webSearchEmulationMode.value = 'default'
   if (newAccount.platform === 'openai' && (newAccount.type === 'oauth' || newAccount.type === 'setup-token' || newAccount.type === 'apikey')) {
     openaiPassthroughEnabled.value = extra?.openai_passthrough === true || extra?.openai_oauth_passthrough === true
+    // 请求时区：历史值归一化（空串/非字符串 → 跟随默认）
+    openaiRequestTimezone.value = normalizeOpenAIRequestTimezone(extra?.openai_request_timezone, null)
     openaiFlattenNamespacesEnabled.value =
       newAccount.type === 'oauth' && extra?.openai_responses_flatten_namespaces === true
     openaiEnsureCodexSignatureEnabled.value =
@@ -6137,6 +6149,17 @@ const handleSubmit = async () => {
         }
       }
 
+      updatePayload.extra = newExtra
+    }
+
+    // OpenAI 请求时区：所有 OpenAI 账号类型都允许配置；空值 = 删除键（跟随默认）。
+    if (props.account.platform === 'openai') {
+      const currentExtra =
+        (updatePayload.extra as Record<string, unknown>) ||
+        (props.account.extra as Record<string, unknown>) ||
+        {}
+      const newExtra: Record<string, unknown> = { ...currentExtra }
+      applyOpenAIRequestTimezoneExtra(newExtra, props.account.platform, openaiRequestTimezone.value)
       updatePayload.extra = newExtra
     }
 

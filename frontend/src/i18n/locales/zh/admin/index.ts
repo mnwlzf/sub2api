@@ -8,6 +8,7 @@ import audit from './audit'
 import promptAudit from './promptAudit'
 import promptTemplates from './promptTemplates'
 import plugins from './plugins'
+import codex from './codex'
 
 export default {
   ...overview,
@@ -20,4 +21,5 @@ export default {
   ...promptAudit,
   ...promptTemplates,
   ...plugins,
+  ...codex,
 }

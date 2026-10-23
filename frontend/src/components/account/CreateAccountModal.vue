@@ -3327,6 +3327,12 @@
         </div>
       </div>
 
+      <!-- OpenAI 请求时区（账号 extra.openai_request_timezone，缺省跟随默认） -->
+      <OpenAIRequestTimezoneSelect
+        v-if="form.platform === 'openai'"
+        v-model="openaiRequestTimezone"
+      />
+
       <!-- OpenAI Codex namespace 工具摊平（兼容开关，仅 OAuth） -->
       <div
         v-if="form.platform === 'openai' && form.type === 'oauth'"
@@ -4228,6 +4234,8 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Select from '@/components/common/Select.vue'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import UpstreamRequestIdHeaderField from '@/components/account/UpstreamRequestIdHeaderField.vue'
+import OpenAIRequestTimezoneSelect from '@/components/account/OpenAIRequestTimezoneSelect.vue'
+import { applyOpenAIRequestTimezoneExtra } from '@/components/account/openaiRequestTimezone'
 import PlatformIcon from '@/components/common/PlatformIcon.vue'
 import Icon from '@/components/icons/Icon.vue'
 import ProxySelector from '@/components/common/ProxySelector.vue'
@@ -4783,6 +4791,8 @@ const applyGrokOAuthUpstreamConfig = (credentials: Record<string, unknown>) => {
 const interceptWarmupRequests = ref(false)
 const autoPauseOnExpired = ref(true)
 const openaiPassthroughEnabled = ref(false)
+// OpenAI 请求时区（账号 extra.openai_request_timezone，'' = 跟随后端默认）
+const openaiRequestTimezone = ref('')
 // OpenAI Codex namespace 工具摊平兼容开关（仅 OAuth），缺省关闭即原样保留
 const openaiFlattenNamespacesEnabled = ref(false)
 // 严格校验 Codex 签名的兼容中转（仅 API Key）补齐 include / prompt_cache_key，缺省关闭
@@ -5824,6 +5834,7 @@ const resetForm = () => {
 
 const handleClose = () => {
   antigravityMixedChannelConfirmed.value = false
+  openaiRequestTimezone.value = ''
   clearMixedChannelDialog()
   emit('close')
 }
@@ -5911,6 +5922,9 @@ const buildOpenAIExtra = (base?: Record<string, unknown>): Record<string, unknow
   } else {
     delete extra.images_url_to_b64_json
   }
+
+  // 请求时区：空值 = 跟随后端默认，不落键；非 OpenAI 平台在 helper 内自动清理。
+  applyOpenAIRequestTimezoneExtra(extra, form.platform, openaiRequestTimezone.value)
 
   return Object.keys(extra).length > 0 ? extra : undefined
 }

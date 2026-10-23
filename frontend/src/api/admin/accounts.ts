@@ -1110,6 +1110,22 @@ export async function getOpenCodeGoUsageSettings(): Promise<OpenCodeGoUsageSetti
   return data
 }
 
+/**
+ * OpenAI 账号可选请求时区（GET /admin/accounts/openai-request-timezones）。
+ * 列表不含中国大陆与港澳台时区，`default` 为未显式配置时的默认时区。
+ */
+export interface OpenAIRequestTimezoneOptions {
+  default: string
+  timezones: string[] | null
+}
+
+export async function getOpenAIRequestTimezones(): Promise<OpenAIRequestTimezoneOptions> {
+  const { data } = await apiClient.get<OpenAIRequestTimezoneOptions>(
+    '/admin/accounts/openai-request-timezones'
+  )
+  return data
+}
+
 export async function updateOpenCodeGoUsageSettings(
   settings: OpenCodeGoUsageSettings
 ): Promise<OpenCodeGoUsageSettings> {
@@ -1206,7 +1222,8 @@ export const accountsAPI = {
   updateOpenCodeGoUsageSettings,
   getOpenCodeGoUsage,
   setOpenCodeGoUsageAutoRefresh,
-  refreshOpenCodeGoUsage
+  refreshOpenCodeGoUsage,
+  getOpenAIRequestTimezones
 }
 
 export default accountsAPI

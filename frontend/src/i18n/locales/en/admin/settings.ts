@@ -9,6 +9,7 @@ export default {
         security: 'Security',
         users: 'Users',
         gateway: 'Gateway',
+        codex: 'Codex',
         email: 'Email',
         backup: 'Backup',
         payment: 'Payment',

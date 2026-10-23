@@ -38,6 +38,8 @@ import adminComplianceAPI from './compliance'
 import auditAPI from './audit'
 import pluginsAPI from './plugins'
 import adminStudentVerificationAPI from './studentVerification'
+import codexTicketAPI from './codexTicket'
+import codexDegradationAPI from './codexDegradation'
 
 /**
  * Unified admin API object for convenient access
@@ -77,7 +79,9 @@ export const adminAPI = {
   compliance: adminComplianceAPI,
   audit: auditAPI,
   plugins: pluginsAPI,
-  studentVerifications: adminStudentVerificationAPI
+  studentVerifications: adminStudentVerificationAPI,
+  codexTicket: codexTicketAPI,
+  codexDegradation: codexDegradationAPI
 }
 
 export {
@@ -115,7 +119,9 @@ export {
   adminComplianceAPI,
   auditAPI,
   pluginsAPI,
-  adminStudentVerificationAPI
+  adminStudentVerificationAPI,
+  codexTicketAPI,
+  codexDegradationAPI
 }
 
 export default adminAPI

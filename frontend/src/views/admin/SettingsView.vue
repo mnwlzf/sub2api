@@ -9065,8 +9065,14 @@
           <BackupSettings />
         </div>
 
+        <!-- Tab: Codex（打票设置 / 自动降智检测） -->
+        <div v-show="activeTab === 'codex'" class="space-y-6">
+          <CodexTicketSettings />
+          <CodexDegradationSettings />
+        </div>
+
         <!-- Save Button -->
-        <div v-show="activeTab !== 'backup'" class="flex justify-end">
+        <div v-show="activeTab !== 'backup' && activeTab !== 'codex'" class="flex justify-end">
           <button
             type="submit"
             :disabled="saving || loadFailed"
@@ -9195,6 +9201,8 @@ import Toggle from "@/components/common/Toggle.vue";
 import ProxySelector from "@/components/common/ProxySelector.vue";
 import ImageUpload from "@/components/common/ImageUpload.vue";
 import BackupSettings from "@/views/admin/BackupView.vue";
+import CodexTicketSettings from "@/components/admin/settings/CodexTicketSettings.vue";
+import CodexDegradationSettings from "@/components/admin/settings/CodexDegradationSettings.vue";
 import EmailTemplateEditor from "@/views/admin/settings/EmailTemplateEditor.vue";
 import RechargeBonusTierEditor from "@/components/admin/settings/RechargeBonusTierEditor.vue";
 import {
@@ -9261,6 +9269,7 @@ type SettingsTab =
   | "security"
   | "users"
   | "gateway"
+  | "codex"
   | "payment"
   | "email"
   | "backup";
@@ -9272,6 +9281,7 @@ const settingsTabs = [
   { key: "security" as SettingsTab, icon: "shield" as const },
   { key: "users" as SettingsTab, icon: "user" as const },
   { key: "gateway" as SettingsTab, icon: "server" as const },
+  { key: "codex" as SettingsTab, icon: "sparkles" as const },
   { key: "payment" as SettingsTab, icon: "creditCard" as const },
   { key: "email" as SettingsTab, icon: "mail" as const },
   { key: "backup" as SettingsTab, icon: "database" as const },

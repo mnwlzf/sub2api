@@ -126,6 +126,7 @@ export default {
         lastUsed: '最近使用',
         createdAt: '创建时间',
         expiresAt: '过期时间',
+        ticket: '打票',
         actions: '操作'
       },
       schedulerScore: {
@@ -1766,6 +1767,8 @@ export default {
       videoReceived: '已收到第 {count} 段测试视频',
       // Stats Modal
       viewStats: '查看统计',
+      codexTicketCenter: '票据中心',
+      codexDegradationCheck: '降智检测',
       usageStatistics: '使用统计',
       last30DaysUsage: '近30天使用统计（日均基于实际使用天数）',
       stats: {
