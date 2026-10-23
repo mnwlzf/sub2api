@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -167,4 +169,132 @@ func (s *OpenAIBPSSessionStore) Touch(ctx context.Context, apiKeyID int64, sessi
 		return fmt.Errorf("openai bps session store: touch: %w", err)
 	}
 	return nil
+}
+
+// ── 工具 item 状态 ─────────────────────────────────────────────────────────
+//
+// 工具隧道需要在多轮往返之间保存「上游原始工具调用 item」：客户端只回传
+// call_id 和结果，上游需要看到它自己产生的那条原始 item（name/arguments/
+// 加密字段一字不差），否则会重复调用或拒绝历史。状态按 API Key + 会话隔离，
+// 7 天闲置过期、每次读写都续期，跨实例共享；Redis 不可用时显式报错，绝不
+// 在进程内降级（降级会让同一会话在多实例间丢失工具历史）。
+
+const (
+	// OpenAIBPSToolItemTTL 是工具 item 的闲置过期时间；每次读写都会重置。
+	OpenAIBPSToolItemTTL = 7 * 24 * time.Hour
+
+	openAIBPSToolItemKeyPrefix = "bps:item:"
+)
+
+// ErrOpenAIBPSToolItemExpired 表示工具 item 不存在或已损坏：会话上下文已过期，
+// 调用方应返回 bps_context_expired，而不是静默重建历史。
+var ErrOpenAIBPSToolItemExpired = errors.New("openai bps tool item store: tool call state has expired")
+
+// openAIBPSToolItem 是 Redis 中保存的一次上游工具调用。
+//
+// Native 是上游原始 item 的完整副本（含 id/call_id/arguments/加密字段）；
+// Catalog 是本次请求声明的工具目录快照，供回放/审计时恢复工具语义。
+type openAIBPSToolItem struct {
+	CallID    string          `json:"call_id"`
+	ItemID    string          `json:"id"`
+	Name      string          `json:"name,omitempty"`
+	Namespace string          `json:"namespace,omitempty"`
+	Kind      string          `json:"kind,omitempty"`
+	Native    map[string]any  `json:"native"`
+	Arguments json.RawMessage `json:"arguments,omitempty"`
+	Catalog   []any           `json:"catalog,omitempty"`
+	SavedAt   int64           `json:"saved_at,omitempty"`
+}
+
+// OpenAIBPSToolItemRedisKey 返回工具 item 的 Redis 键：
+// bps:item:<apiKeyID>:<sessionKey>:<callID>。callID 含不安全字符时退化为其
+// sha256 摘要，避免客户端可控字符串破坏键结构。
+func OpenAIBPSToolItemRedisKey(apiKeyID int64, sessionKey, callID string) string {
+	return openAIBPSToolItemKeyPrefix + strconv.FormatInt(apiKeyID, 10) + ":" +
+		strings.TrimSpace(sessionKey) + ":" + openAIBPSToolItemKeyComponent(callID)
+}
+
+// openAIBPSToolItemKeyComponent 归一化 callID 作为键片段。
+func openAIBPSToolItemKeyComponent(callID string) string {
+	callID = strings.TrimSpace(callID)
+	if openAIBPSSafeKeyComponent(callID) {
+		return callID
+	}
+	sum := sha256.Sum256([]byte(callID))
+	return hex.EncodeToString(sum[:])
+}
+
+// openAIBPSSafeKeyComponent 报告字符串是否只含键安全字符。
+func openAIBPSSafeKeyComponent(value string) bool {
+	if value == "" || len(value) > 128 {
+		return false
+	}
+	for i := 0; i < len(value); i++ {
+		ch := value[i]
+		if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_' || ch == '-' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func openAIBPSToolItemKeyFor(apiKeyID int64, sessionKey, callID string) (string, error) {
+	if apiKeyID <= 0 {
+		return "", fmt.Errorf("openai bps tool item store: invalid api key id %d", apiKeyID)
+	}
+	if strings.TrimSpace(sessionKey) == "" {
+		return "", errors.New("openai bps tool item store: session key is empty")
+	}
+	if strings.TrimSpace(callID) == "" {
+		return "", errors.New("openai bps tool item store: call id is empty")
+	}
+	return OpenAIBPSToolItemRedisKey(apiKeyID, sessionKey, callID), nil
+}
+
+// SaveToolItem 保存一次上游工具调用（完整原始 item + 工具目录快照）。
+func (s *OpenAIBPSSessionStore) SaveToolItem(ctx context.Context, apiKeyID int64, sessionKey string, item *openAIBPSToolItem) error {
+	if err := s.available(); err != nil {
+		return err
+	}
+	if item == nil || item.Native == nil || strings.TrimSpace(item.CallID) == "" {
+		return errors.New("openai bps tool item store: invalid tool item")
+	}
+	key, err := openAIBPSToolItemKeyFor(apiKeyID, sessionKey, item.CallID)
+	if err != nil {
+		return err
+	}
+	data, err := json.Marshal(item)
+	if err != nil {
+		return fmt.Errorf("openai bps tool item store: encode tool item: %w", err)
+	}
+	if err := s.client.Set(ctx, key, data, OpenAIBPSToolItemTTL).Err(); err != nil {
+		return fmt.Errorf("openai bps tool item store: save tool item: %w", err)
+	}
+	return nil
+}
+
+// LoadToolItem 读取一次上游工具调用并续期 TTL。
+// 缺失/损坏都返回 ErrOpenAIBPSToolItemExpired（损坏键会被删除，避免永久卡死）。
+func (s *OpenAIBPSSessionStore) LoadToolItem(ctx context.Context, apiKeyID int64, sessionKey, callID string) (*openAIBPSToolItem, error) {
+	if err := s.available(); err != nil {
+		return nil, err
+	}
+	key, err := openAIBPSToolItemKeyFor(apiKeyID, sessionKey, callID)
+	if err != nil {
+		return nil, err
+	}
+	data, err := s.client.GetEx(ctx, key, OpenAIBPSToolItemTTL).Bytes()
+	if errors.Is(err, redis.Nil) {
+		return nil, ErrOpenAIBPSToolItemExpired
+	}
+	if err != nil {
+		return nil, fmt.Errorf("openai bps tool item store: load tool item: %w", err)
+	}
+	var item openAIBPSToolItem
+	if err := json.Unmarshal(data, &item); err != nil || item.Native == nil || strings.TrimSpace(item.CallID) == "" {
+		_ = s.client.Del(ctx, key).Err()
+		return nil, ErrOpenAIBPSToolItemExpired
+	}
+	return &item, nil
 }

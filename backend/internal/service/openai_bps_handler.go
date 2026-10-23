@@ -136,7 +136,6 @@ func (h *OpenAIBPSHandler) Responses(c *gin.Context) {
 			OpenAIBPSErrorUnauthorized, "API key context is missing"))
 		return
 	}
-	stream := gjson.GetBytes(body, "stream").Bool()
 	ctx := openAIBPSContext(c)
 
 	sessionKey, explicitSession := OpenAIBPSSessionKey(apiKeyID, body)
@@ -169,7 +168,15 @@ func (h *OpenAIBPSHandler) Responses(c *gin.Context) {
 		return
 	}
 
-	req, err := BuildOpenAIBPSUpstreamRequest(ctx, account, body, stream)
+	// 请求准备（阶段 4 工具隧道）：工具目录写进 developer 协议消息、历史工具
+	// 调用从 Redis 回放、加密 reasoning 重建；发往上游的 body 与客户端 body
+	// 结构上不同，上游只会看到 run_officejs 协议载体。
+	prepared, err := prepareOpenAIBPSRequest(ctx, h.deps.Sessions, account, apiKeyID, sessionKey, body)
+	if err != nil {
+		WriteOpenAIBPSError(c, err)
+		return
+	}
+	req, err := BuildOpenAIBPSUpstreamRequest(ctx, account, prepared.Body, prepared.Stream)
 	if err != nil {
 		WriteOpenAIBPSError(c, err)
 		return
@@ -180,8 +187,9 @@ func (h *OpenAIBPSHandler) Responses(c *gin.Context) {
 		zap.Int64("account_id", account.ID),
 		zap.String("model", model),
 		zap.String("session_key", sessionKey),
-		zap.Bool("stream", stream),
+		zap.Bool("stream", prepared.Stream),
 		zap.Bool("explicit_session", explicitSession),
+		zap.Int("client_tools", len(prepared.Tools)),
 	)
 
 	client := h.deps.HTTPClient
@@ -210,7 +218,7 @@ func (h *OpenAIBPSHandler) Responses(c *gin.Context) {
 		log.Warn("openai bps: upstream returned error status")
 	}
 
-	if err := ForwardOpenAIBPSResponse(c, resp); err != nil {
+	if err := forwardOpenAIBPSProtocolResponse(ctx, c, h.deps.Sessions, prepared, resp); err != nil {
 		if ctx.Err() != nil {
 			return
 		}

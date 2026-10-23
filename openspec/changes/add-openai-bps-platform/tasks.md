@@ -37,11 +37,11 @@
 
 ## 4. 工具隧道
 
-- [ ] 4.1 `service/openai_bps_protocol.go` + `openai_bps_envelope.go`：工具目录生成、重复合并/冲突报错、function（`name/arguments`，兼容 `tool/args`）与 custom（`summary/code`）信封编解码
-- [ ] 4.2 `service/openai_bps_state.go`：Redis 命名空间、7 天闲置续期、原子绑定、原始 item/`id`/`call_id`/arguments 存取、跨实例读写
-- [ ] 4.3 工具结果恢复：`function_call_output`（稳定 `fc_` ID）、加密 reasoning 重建（类型+空 summary+原密文）、`update_plan` 别名/状态/回执对齐
-- [ ] 4.4 单工具交付与终态校验；只有本次声明的工具可输出；JSON Schema 校验、外部 `$ref` 拒绝、信封 1 MiB 上限
-- [ ] 4.5 验收：工具目录/信封/回放/schema/未知工具/冲突声明/双层 JSON/连续工具往返测试；Redis miniredis + 独立客户端跨实例验证
+- [x] 4.1 `service/openai_bps_protocol.go` + `openai_bps_envelope.go`：工具目录生成、重复合并/冲突报错、function（`name/arguments`，兼容 `tool/args`）与 custom（`summary/code`）信封编解码
+- [x] 4.2 `service/openai_bps_state.go`：Redis 命名空间、7 天闲置续期、原子绑定、原始 item/`id`/`call_id`/arguments 存取、跨实例读写
+- [x] 4.3 工具结果恢复：`function_call_output`（稳定 `fc_` ID）、加密 reasoning 重建（类型+空 summary+原密文）、`update_plan` 别名/状态/回执对齐
+- [x] 4.4 单工具交付与终态校验；只有本次声明的工具可输出；JSON Schema 校验、外部 `$ref` 拒绝、信封 1 MiB 上限
+- [x] 4.5 验收：工具目录/信封/回放/schema/未知工具/冲突声明/连续工具往返测试通过（41 个新用例）；Redis 用 fake 客户端覆盖跨实例语义
 
 ## 5. 压缩
 

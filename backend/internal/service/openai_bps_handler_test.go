@@ -14,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -151,6 +152,8 @@ func TestOpenAIBPSHandlerJSONForwardAndHeaderInjection(t *testing.T) {
 	store, _ := newOpenAIBPSTestStore(t)
 	body := `{"model":"gpt-6-astra","input":"hello bps"}`
 	upstreamBody := `{"id":"resp_1","object":"response","status":"completed","output":[]}`
+	// 阶段 4 起响应会经过转换：model 还原为客户端请求的模型名。
+	transformedBody := `{"id":"resp_1","model":"gpt-6-astra","object":"response","status":"completed","output":[]}`
 	var captured *http.Request
 	var capturedBody []byte
 	h := NewOpenAIBPSHandler(OpenAIBPSHandlerDeps{
@@ -173,7 +176,7 @@ func TestOpenAIBPSHandlerJSONForwardAndHeaderInjection(t *testing.T) {
 	h.Responses(c)
 
 	require.Equal(t, http.StatusOK, recorder.Code)
-	require.JSONEq(t, upstreamBody, recorder.Body.String())
+	require.JSONEq(t, transformedBody, recorder.Body.String())
 	require.Equal(t, "req_up_json", recorder.Header().Get("x-request-id"))
 	require.NotNil(t, captured)
 	require.Equal(t, OpenAIBPSUpstreamURL, captured.URL.String())
@@ -188,7 +191,17 @@ func TestOpenAIBPSHandlerJSONForwardAndHeaderInjection(t *testing.T) {
 	require.Empty(t, captured.Header.Get("x-api-key"))
 	require.Empty(t, captured.Header.Get("Cookie"))
 	require.NotEqual(t, "Bearer client-api-key", captured.Header.Get("Authorization"))
-	require.Equal(t, body, string(capturedBody))
+	// 上游 body 是协议翻译结果：客户端 tools 声明不再直发上游，工具目录写进
+	// developer 协议消息，store 固定 false。
+	require.False(t, gjson.GetBytes(capturedBody, "tools").Exists())
+	require.False(t, gjson.GetBytes(capturedBody, "store").Bool())
+	require.Equal(t, "gpt-6-astra", gjson.GetBytes(capturedBody, "model").String())
+	require.Equal(t, "explicit", gjson.GetBytes(capturedBody, "model_selection").String())
+	inputItems := gjson.GetBytes(capturedBody, "input").Array()
+	require.Len(t, inputItems, 2)
+	require.Equal(t, "developer", inputItems[0].Get("role").String())
+	require.Contains(t, inputItems[0].Get("content.0.text").String(), "external Responses client")
+	require.Equal(t, "user", inputItems[1].Get("role").String())
 
 	// 未绑定会话在首次请求时落库，且绑定内容与账号一致。
 	sessionKey, explicit := OpenAIBPSSessionKey(42, []byte(body))
@@ -210,10 +223,15 @@ func TestOpenAIBPSHandlerJSONForwardAndHeaderInjection(t *testing.T) {
 func TestOpenAIBPSHandlerStreamForward(t *testing.T) {
 	enableOpenAIBPSForTest(t)
 	store, _ := newOpenAIBPSTestStore(t)
+	messageItem := `{"id":"msg_1","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"hello"}]}`
 	sse := "event: response.created\n" +
 		`data: {"type":"response.created","response":{"id":"resp_1"}}` + "\n\n" +
+		"event: response.output_text.delta\n" +
+		`data: {"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"content_index":0,"delta":"hello"}` + "\n\n" +
+		"event: response.output_item.done\n" +
+		`data: {"type":"response.output_item.done","output_index":0,"item":` + messageItem + `}` + "\n\n" +
 		"event: response.completed\n" +
-		`data: {"type":"response.completed","response":{"id":"resp_1","status":"completed"}}` + "\n\n"
+		`data: {"type":"response.completed","response":{"id":"resp_1","status":"completed","model":"gpt-6-astra","output":[` + messageItem + `]}}` + "\n\n"
 	var captured *http.Request
 	h := NewOpenAIBPSHandler(OpenAIBPSHandlerDeps{
 		Resolver: &bpsTestResolver{selectFn: func(context.Context, *gin.Context, string) (*Account, error) {
@@ -229,7 +247,11 @@ func TestOpenAIBPSHandlerStreamForward(t *testing.T) {
 	h.Responses(c)
 
 	require.Equal(t, http.StatusOK, recorder.Code)
-	require.Equal(t, sse, recorder.Body.String())
+	forwarded := recorder.Body.String()
+	require.Contains(t, forwarded, "event: response.output_text.delta")
+	require.Contains(t, forwarded, "event: response.completed")
+	require.NotContains(t, forwarded, "response.failed")
+	require.Contains(t, forwarded, `"text":"hello"`)
 	require.Contains(t, recorder.Header().Get("Content-Type"), "text/event-stream")
 	require.Equal(t, "req_up_sse", recorder.Header().Get("x-request-id"))
 	require.NotNil(t, captured)
@@ -261,7 +283,7 @@ func TestOpenAIBPSHandlerBoundSessionUsesBoundAccount(t *testing.T) {
 		Sessions: store,
 		HTTPClient: newBPSUpstreamStub(t, func(req *http.Request) (*http.Response, error) {
 			authHeader = req.Header.Get("Authorization")
-			return bpsTestResponse(http.StatusOK, "application/json", "", `{"id":"resp_1","status":"completed"}`), nil
+			return bpsTestResponse(http.StatusOK, "application/json", "", `{"id":"resp_1","status":"completed","output":[]}`), nil
 		}),
 	})
 	c, recorder := newBPSHandlerTestContext(t, `{"model":"gpt-6-astra","session_id":"conv-bound","input":"hi"}`, nil)
@@ -368,7 +390,7 @@ func TestOpenAIBPSHandlerBindConflictRereadsWinner(t *testing.T) {
 		Sessions: store,
 		HTTPClient: newBPSUpstreamStub(t, func(req *http.Request) (*http.Response, error) {
 			authHeader = req.Header.Get("Authorization")
-			return bpsTestResponse(http.StatusOK, "application/json", "", `{"id":"resp_1","status":"completed"}`), nil
+			return bpsTestResponse(http.StatusOK, "application/json", "", `{"id":"resp_1","status":"completed","output":[]}`), nil
 		}),
 	})
 	c, recorder := newBPSHandlerTestContext(t, `{"model":"gpt-6-astra","input":"conflict"}`, nil)
@@ -411,7 +433,7 @@ func TestOpenAIBPSHandlerBoundSessionFallbackWithoutLookup(t *testing.T) {
 			Sessions: store,
 			HTTPClient: newBPSUpstreamStub(t, func(req *http.Request) (*http.Response, error) {
 				authHeader = req.Header.Get("Authorization")
-				return bpsTestResponse(http.StatusOK, "application/json", "", `{"id":"resp_1","status":"completed"}`), nil
+				return bpsTestResponse(http.StatusOK, "application/json", "", `{"id":"resp_1","status":"completed","output":[]}`), nil
 			}),
 		})
 		c, recorder := newBPSHandlerTestContext(t, body, nil)
