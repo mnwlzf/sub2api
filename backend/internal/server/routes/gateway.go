@@ -224,9 +224,13 @@ func RegisterGatewayRoutes(
 		})
 		gateway.POST("/responses/*subpath", guardResponsesSubpath(func(c *gin.Context) {
 			if getGroupPlatform(c) == service.PlatformOpenAIBPS {
-				c.JSON(http.StatusNotImplemented, gin.H{"error": gin.H{
-					"type": "not_implemented_error", "code": "bps_compact_not_supported",
-					"message": "OpenAI BPS compaction is not available yet",
+				if strings.Trim(c.Param("subpath"), "/") == "compact" {
+					h.BPSGateway.Compact(c)
+					return
+				}
+				c.JSON(http.StatusNotFound, gin.H{"error": gin.H{
+					"type": "not_found_error", "code": "bps_unsupported_subpath",
+					"message": "OpenAI BPS only supports /responses/compact",
 				}})
 				return
 			}

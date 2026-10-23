@@ -66,7 +66,7 @@ type openAIBPSTool struct {
 }
 
 // openAIBPSPreparedRequest 是请求准备的结果：发往上游的 body + 转换响应所需
-// 的客户端工具目录/会话身份。
+// 的客户端工具目录/会话身份/轮次身份。
 type openAIBPSPreparedRequest struct {
 	APIKeyID      int64
 	SessionKey    string
@@ -78,6 +78,21 @@ type openAIBPSPreparedRequest struct {
 	UpstreamModel string
 	Stream        bool
 	RequireTool   bool
+	// Compact 表示本次请求是压缩（/responses/compact 或 compaction_trigger）。
+	// CompactEndpoint 额外记录入口路径，用于把响应 object 标成 response.compaction。
+	Compact         bool
+	CompactEndpoint bool
+	// TurnID/AgentIteration 是本轮身份（由不可变历史与压缩记录派生）。
+	TurnID         string
+	AgentIteration int
+	// Structured 是结构化输出声明（json_object/json_schema）；压缩请求为 nil。
+	Structured *openAIBPSStructuredOutput
+}
+
+// openAIBPSPrepareOptions 是请求准备的可选入口语义。
+type openAIBPSPrepareOptions struct {
+	// CompactEndpoint 表示客户端调用的是 /responses/compact。
+	CompactEndpoint bool
 }
 
 // openAIBPSJSON 是紧凑 JSON 编码（忽略错误，调用点只用于已知可编码的值）。
@@ -221,6 +236,12 @@ func openAIBPSCollectTools(raw any, namespace string, result map[string]openAIBP
 // account 用于账号级模型映射；store 为 nil 时只有需要回放历史的请求会显式
 // 返回 bps_state_unavailable（不降级）。
 func prepareOpenAIBPSRequest(ctx context.Context, store *OpenAIBPSSessionStore, account *Account, apiKeyID int64, sessionKey string, body []byte) (*openAIBPSPreparedRequest, error) {
+	return prepareOpenAIBPSRequestWithOptions(ctx, store, account, apiKeyID, sessionKey, body, openAIBPSPrepareOptions{})
+}
+
+// prepareOpenAIBPSRequestWithOptions 是请求准备的唯一实现：options 只影响
+// 入口语义（/responses/compact 强制压缩），其余校验与普通 Responses 一致。
+func prepareOpenAIBPSRequestWithOptions(ctx context.Context, store *OpenAIBPSSessionStore, account *Account, apiKeyID int64, sessionKey string, body []byte, options openAIBPSPrepareOptions) (*openAIBPSPreparedRequest, error) {
 	var source map[string]any
 	if openAIBPSDecode(body, &source) != nil || source == nil {
 		return nil, openAIBPSInvalidRequest("Invalid Responses request")
@@ -245,13 +266,17 @@ func prepareOpenAIBPSRequest(ctx context.Context, store *OpenAIBPSSessionStore, 
 		return nil, openAIBPSInvalidRequest("input must be a string or an array")
 	}
 	stream, _ := source["stream"].(bool)
+	// 压缩入口或 input 里的 compaction_trigger 都触发真实摘要请求。
+	compact := options.CompactEndpoint || openAIBPSInputHasCompactionTrigger(input)
 	prepared := &openAIBPSPreparedRequest{
-		APIKeyID:    apiKeyID,
-		SessionKey:  sessionKey,
-		Source:      source,
-		ClientModel: model,
-		Stream:      stream,
-		Tools:       map[string]openAIBPSTool{},
+		APIKeyID:        apiKeyID,
+		SessionKey:      sessionKey,
+		Source:          source,
+		ClientModel:     model,
+		Stream:          stream,
+		Tools:           map[string]openAIBPSTool{},
+		Compact:         compact,
+		CompactEndpoint: options.CompactEndpoint,
 	}
 	if account != nil {
 		prepared.UpstreamModel = account.GetMappedModel(model)
@@ -260,65 +285,75 @@ func prepareOpenAIBPSRequest(ctx context.Context, store *OpenAIBPSSessionStore, 
 		prepared.UpstreamModel = model
 	}
 
-	toolChoice := source["tool_choice"]
-	collectTools := true
-	if choice, ok := toolChoice.(string); ok && strings.TrimSpace(choice) == "none" {
-		collectTools = false
-	}
-	if collectTools {
-		var catalog []any
-		if err := openAIBPSCollectTools(source["tools"], "", prepared.Tools, &catalog, 0); err != nil {
-			return nil, err
+	// 压缩请求关闭客户端工具：不收集 tools、不注入工具目录、忽略 tool_choice。
+	// 上游只看到「摘要指令 + 历史」，绝不能被要求调用客户端工具。
+	if !compact {
+		toolChoice := source["tool_choice"]
+		collectTools := true
+		if choice, ok := toolChoice.(string); ok && strings.TrimSpace(choice) == "none" {
+			collectTools = false
 		}
-		for _, raw := range input {
-			item, ok := raw.(map[string]any)
-			if !ok || stringValue(item["type"]) != "additional_tools" {
-				continue
-			}
-			if err := openAIBPSCollectTools(item["tools"], "", prepared.Tools, &catalog, 0); err != nil {
+		if collectTools {
+			var catalog []any
+			if err := openAIBPSCollectTools(source["tools"], "", prepared.Tools, &catalog, 0); err != nil {
 				return nil, err
 			}
+			for _, raw := range input {
+				item, ok := raw.(map[string]any)
+				if !ok || stringValue(item["type"]) != "additional_tools" {
+					continue
+				}
+				if err := openAIBPSCollectTools(item["tools"], "", prepared.Tools, &catalog, 0); err != nil {
+					return nil, err
+				}
+			}
+			prepared.Catalog = catalog
 		}
-		prepared.Catalog = catalog
-	}
-	switch choice := toolChoice.(type) {
-	case nil:
-	case string:
-		switch strings.TrimSpace(choice) {
-		case "", "auto":
-		case "required":
+		switch choice := toolChoice.(type) {
+		case nil:
+		case string:
+			switch strings.TrimSpace(choice) {
+			case "", "auto":
+			case "required":
+				prepared.RequireTool = true
+			case "none":
+				prepared.RequireTool = false
+				prepared.Tools = map[string]openAIBPSTool{}
+				prepared.Catalog = nil
+			default:
+				return nil, openAIBPSInvalidRequest("Unsupported tool_choice")
+			}
+		case map[string]any:
+			name := stringValue(choice["name"])
+			if namespace := stringValue(choice["namespace"]); namespace != "" {
+				name = namespace + "." + name
+			}
+			tool, found := prepared.Tools[name]
+			if !found {
+				return nil, openAIBPSInvalidRequest("tool_choice must name a declared client tool")
+			}
+			prepared.Tools = map[string]openAIBPSTool{name: tool}
+			var catalog []any
+			if err := openAIBPSCollectTools([]any{tool.Spec}, tool.Namespace, map[string]openAIBPSTool{}, &catalog, 0); err != nil {
+				return nil, err
+			}
+			prepared.Catalog = catalog
 			prepared.RequireTool = true
-		case "none":
-			prepared.RequireTool = false
-			prepared.Tools = map[string]openAIBPSTool{}
-			prepared.Catalog = nil
 		default:
 			return nil, openAIBPSInvalidRequest("Unsupported tool_choice")
 		}
-	case map[string]any:
-		name := stringValue(choice["name"])
-		if namespace := stringValue(choice["namespace"]); namespace != "" {
-			name = namespace + "." + name
+		if prepared.RequireTool && len(prepared.Tools) == 0 {
+			return nil, openAIBPSInvalidRequest("tool_choice requires at least one client tool")
 		}
-		tool, found := prepared.Tools[name]
-		if !found {
-			return nil, openAIBPSInvalidRequest("tool_choice must name a declared client tool")
-		}
-		prepared.Tools = map[string]openAIBPSTool{name: tool}
-		var catalog []any
-		if err := openAIBPSCollectTools([]any{tool.Spec}, tool.Namespace, map[string]openAIBPSTool{}, &catalog, 0); err != nil {
+		// 结构化输出只作用于普通 Responses；压缩必须返回真实文本摘要。
+		structured, err := openAIBPSPrepareStructuredOutput(source["text"])
+		if err != nil {
 			return nil, err
 		}
-		prepared.Catalog = catalog
-		prepared.RequireTool = true
-	default:
-		return nil, openAIBPSInvalidRequest("Unsupported tool_choice")
-	}
-	if prepared.RequireTool && len(prepared.Tools) == 0 {
-		return nil, openAIBPSInvalidRequest("tool_choice requires at least one client tool")
+		prepared.Structured = structured
 	}
 
-	translated, err := openAIBPSTranslateInput(ctx, store, prepared, input)
+	translated, cursor, err := openAIBPSTranslateInput(ctx, store, prepared, input)
 	if err != nil {
 		return nil, err
 	}
@@ -333,13 +368,22 @@ func prepareOpenAIBPSRequest(ctx context.Context, store *OpenAIBPSSessionStore, 
 			protocol += " You must call one of the listed tools in this response."
 		}
 	}
+	if prepared.Structured != nil {
+		protocol += "\n" + prepared.Structured.instructions()
+	}
 	prologue = append(prologue, openAIBPSMessage("developer", protocol))
 	translated = append(prologue, translated...)
+	if compact {
+		// 真实摘要请求：最后一条用户消息是摘要指令，不是客户端历史的一部分。
+		translated = append(translated, openAIBPSMessage("user", openAIBPSSummaryPrompt))
+	}
 
 	effort, err := openAIBPSReasoningEffort(source)
 	if err != nil {
 		return nil, err
 	}
+	// 轮次身份只由原始历史与压缩记录派生：重试同一请求不会改变上游 body。
+	prepared.TurnID, prepared.AgentIteration = openAIBPSTurnState(sessionKey, input, cursor.Index, cursor.Ref, cursor.State)
 	taskID := uuid.NewSHA1(uuid.NameSpaceURL, []byte("openai_bps:"+sessionKey)).String()
 	upstream := map[string]any{
 		"model":            prepared.UpstreamModel,
@@ -348,13 +392,15 @@ func prepareOpenAIBPSRequest(ctx context.Context, store *OpenAIBPSSessionStore, 
 		"store":            false,
 		"input":            translated,
 		"reasoning_effort": effort,
-		"metadata":         map[string]any{"task_id": taskID},
+		"metadata": map[string]any{
+			"task_id":         taskID,
+			"turn_id":         prepared.TurnID,
+			"agent_iteration": fmt.Sprint(prepared.AgentIteration),
+		},
 		"prompt_cache_key": sessionKey,
 	}
-	if text, exists := source["text"]; exists && text != nil {
-		// 结构化输出校验属于阶段 6；本阶段先把 text 配置原样带给上游。
-		upstream["text"] = text
-	}
+	// 结构化输出用 developer 提示词约束 + 本地终态校验实现；原生 text.format
+	// 绝不发给上游（BPS 不支持约束解码）。
 	encoded, err := json.Marshal(upstream)
 	if err != nil {
 		return nil, fmt.Errorf("openai bps: encode upstream request: %w", err)
@@ -364,13 +410,18 @@ func prepareOpenAIBPSRequest(ctx context.Context, store *OpenAIBPSSessionStore, 
 }
 
 // openAIBPSTranslateInput 把客户端历史翻译成上游 input 数组。
-func openAIBPSTranslateInput(ctx context.Context, store *OpenAIBPSSessionStore, prepared *openAIBPSPreparedRequest, input []any) ([]any, error) {
+//
+// 返回的游标记录历史里最近一条压缩引用（供轮次锚点使用）。压缩引用只在
+// 服务端解析：上游看到的是 <conversation_summary> 包裹的摘要文本，引用
+// 字符串本身绝不进入上游 body。
+func openAIBPSTranslateInput(ctx context.Context, store *OpenAIBPSSessionStore, prepared *openAIBPSPreparedRequest, input []any) ([]any, openAIBPSCompactionCursor, error) {
+	cursor := openAIBPSCompactionCursor{Index: -1}
 	translated := make([]any, 0, len(input)+2)
 	restoredCalls := map[string]bool{}
-	for _, raw := range input {
+	for index, raw := range input {
 		item, ok := raw.(map[string]any)
 		if !ok {
-			return nil, openAIBPSInvalidRequest("input items must be objects")
+			return nil, cursor, openAIBPSInvalidRequest("input items must be objects")
 		}
 		delete(item, "internal_chat_message_metadata_passthrough")
 		kind := stringValue(item["type"])
@@ -378,22 +429,22 @@ func openAIBPSTranslateInput(ctx context.Context, store *OpenAIBPSSessionStore, 
 		case "function_call", "custom_tool_call":
 			callID := strings.TrimSpace(stringValue(item["call_id"]))
 			if callID == "" {
-				return nil, openAIBPSInvalidRequest("BPS tool history requires call_id")
+				return nil, cursor, openAIBPSInvalidRequest("BPS tool history requires call_id")
 			}
 			saved, err := openAIBPSLoadToolItemForReplay(ctx, store, prepared, callID)
 			if err != nil {
-				return nil, err
+				return nil, cursor, err
 			}
 			translated = append(translated, saved.Native)
 			restoredCalls[callID] = true
 		case "function_call_output", "custom_tool_call_output":
 			callID := strings.TrimSpace(stringValue(item["call_id"]))
 			if callID == "" {
-				return nil, openAIBPSInvalidRequest("BPS tool history requires call_id")
+				return nil, cursor, openAIBPSInvalidRequest("BPS tool history requires call_id")
 			}
 			saved, err := openAIBPSLoadToolItemForReplay(ctx, store, prepared, callID)
 			if err != nil {
-				return nil, err
+				return nil, cursor, err
 			}
 			if !restoredCalls[callID] {
 				translated = append(translated, saved.Native)
@@ -419,14 +470,29 @@ func openAIBPSTranslateInput(ctx context.Context, store *OpenAIBPSSessionStore, 
 				})
 			}
 		case "compaction", "compaction_summary":
-			// 压缩上下文属于阶段 5：在工具隧道里静默丢弃会改变模型上下文，
-			// 因此显式拒绝而不是降级。
-			return nil, openAIBPSInvalidRequest("BPS conversation compaction is not supported by this gateway phase")
+			ref := strings.TrimSpace(stringValue(item["encrypted_content"]))
+			if ref == "" {
+				if prepared.Compact {
+					// 压缩请求里的空引用占位：没有可恢复的上下文，忽略。
+					continue
+				}
+				return nil, cursor, openAIBPSInvalidRequest("BPS compaction item is missing its reference")
+			}
+			if !openAIBPSCompactPrefixMatches(ref) {
+				return nil, cursor, openAIBPSInvalidRequest("BPS cannot replay compaction created by another provider")
+			}
+			state, err := openAIBPSLoadCompactState(ctx, store, prepared, ref)
+			if err != nil {
+				return nil, cursor, err
+			}
+			// 引用只在这里解析：上游只看到摘要文本，永远看不到引用字符串。
+			translated = append(translated, openAIBPSMessage("user", "<conversation_summary>\n"+state.Summary+"\n</conversation_summary>"))
+			cursor = openAIBPSCompactionCursor{Index: index, Ref: ref, State: state}
 		case "compaction_trigger", "additional_tools":
 			// 服务端信号/工具目录载体，不透传给上游。
 			continue
 		case "item_reference":
-			return nil, openAIBPSInvalidRequest("BPS requires full items instead of item_reference")
+			return nil, cursor, openAIBPSInvalidRequest("BPS requires full items instead of item_reference")
 		default:
 			if parts, ok := item["content"].([]any); ok {
 				for _, rawPart := range parts {
@@ -436,14 +502,14 @@ func openAIBPSTranslateInput(ctx context.Context, store *OpenAIBPSSessionStore, 
 					}
 					switch stringValue(part["type"]) {
 					case "input_image", "input_audio", "input_file":
-						return nil, openAIBPSInvalidRequest("BPS currently supports text input only")
+						return nil, cursor, openAIBPSInvalidRequest("BPS currently supports text input only")
 					}
 				}
 			}
 			translated = append(translated, item)
 		}
 	}
-	return translated, nil
+	return translated, cursor, nil
 }
 
 // openAIBPSReasoningEffort 解析客户端的 reasoning effort（顶层或 reasoning 对象）。
@@ -681,8 +747,9 @@ func openAIBPSConvertToolCall(native map[string]any, prepared *openAIBPSPrepared
 }
 
 // openAIBPSTransformResponse 把上游完成的响应转换成客户端 Responses 响应：
-// 工具 item 转换为客户端调用、保存 Redis 原始 item、做单工具/必选工具终态
-// 校验，并把 model 还原成客户端请求的模型名。
+// 压缩响应保存摘要并只回写不透明引用；结构化响应先做终态校验再回写声明；
+// 普通响应转换工具 item、保存 Redis 原始 item、做单工具/必选工具终态校验，
+// 并把 model 还原成客户端请求的模型名。
 func openAIBPSTransformResponse(ctx context.Context, store *OpenAIBPSSessionStore, prepared *openAIBPSPreparedRequest, response map[string]any) (map[string]any, error) {
 	output, ok := response["output"].([]any)
 	if !ok {
@@ -698,6 +765,22 @@ func openAIBPSTransformResponse(ctx context.Context, store *OpenAIBPSSessionStor
 		default:
 			return nil, openAIBPSUpstreamProtocolError(OpenAIBPSErrorUnsupportedTool, "BPS returned an unsupported output item")
 		}
+	}
+	if prepared.Compact {
+		return openAIBPSCompactResponse(ctx, store, prepared, response, output)
+	}
+	if prepared.Structured != nil {
+		// 终态本地校验：只有校验通过才把文本交给客户端（JSON 与 SSE 同一规则）。
+		if err := prepared.Structured.validate(response); err != nil {
+			return nil, err
+		}
+		config, _ := response["text"].(map[string]any)
+		if config == nil {
+			config = map[string]any{}
+		}
+		config["format"] = prepared.Structured.Format
+		response["text"] = config
+		delete(response, "output_text")
 	}
 	toolCount := 0
 	for _, raw := range output {

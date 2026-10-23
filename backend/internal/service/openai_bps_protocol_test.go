@@ -255,7 +255,6 @@ func TestOpenAIBPSPrepareRequestRejectsUnsupportedInputs(t *testing.T) {
 		{"model": "gpt-6-astra", "input": 42},
 		{"model": "gpt-6-astra", "input": []any{"not-an-object"}},
 		{"model": "gpt-6-astra", "input": []any{map[string]any{"type": "item_reference", "id": "x"}}},
-		{"model": "gpt-6-astra", "input": []any{map[string]any{"type": "compaction", "encrypted_content": "bpscmp_v1_x"}}},
 		{"model": "gpt-6-astra", "input": []any{map[string]any{"role": "user", "content": []any{map[string]any{"type": "input_image", "image_url": "https://x"}}}}},
 		{"model": "gpt-6-astra", "input": "hi", "reasoning": map[string]any{"effort": "max"}},
 		{"model": "gpt-6-astra", "input": "hi", "reasoning": "high"},
@@ -264,6 +263,16 @@ func TestOpenAIBPSPrepareRequestRejectsUnsupportedInputs(t *testing.T) {
 		_, err := bpsProtocolTestPrepare(t, store, "session-r", body)
 		bpsRequireErrorCode(t, err, OpenAIBPSErrorInvalidRequest)
 	}
+	// 压缩引用：其它 provider 的引用按 400 拒绝；本网关前缀但 Redis 无记录的
+	// 引用按上下文过期 409 处理（绝不静默丢弃摘要继续发送）。
+	_, err := bpsProtocolTestPrepare(t, store, "session-r", map[string]any{
+		"model": "gpt-6-astra", "input": []any{map[string]any{"type": "compaction", "encrypted_content": "foreign-ref"}},
+	})
+	bpsRequireErrorCode(t, err, OpenAIBPSErrorInvalidRequest)
+	_, err = bpsProtocolTestPrepare(t, store, "session-r", map[string]any{
+		"model": "gpt-6-astra", "input": []any{map[string]any{"type": "compaction", "encrypted_content": "bpscmp_v1_missing"}},
+	})
+	bpsRequireErrorCode(t, err, OpenAIBPSErrorContextExpired)
 	// x-high 别名归一化为 xhigh。
 	prepared, err := bpsProtocolTestPrepare(t, store, "session-r", map[string]any{
 		"model": "gpt-6-astra", "input": "hi", "reasoning": map[string]any{"effort": "x-high"},

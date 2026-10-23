@@ -97,12 +97,14 @@ func NewOpenAIBPSHandler(deps OpenAIBPSHandlerDeps) *OpenAIBPSHandler {
 }
 
 // RegisterOpenAIBPSRoutes 在给定 v1 路由组下注册 BPS 端点。
-// 阶段 3 只有文本闭环：POST /responses（压缩由后续阶段加 /responses/compact）。
+// POST /responses 在这里注册；POST /responses/compact 由上层接线（阶段 5
+// 交付 OpenAIBPSHandler.Compact 入口，路由挂载由 Lead 统一完成）。
 func RegisterOpenAIBPSRoutes(v1 *gin.RouterGroup, h *OpenAIBPSHandler) {
 	if v1 == nil || h == nil {
 		return
 	}
 	v1.POST("/responses", h.Responses)
+	v1.POST("/responses/compact", h.Compact)
 }
 
 // Responses 处理 POST /v1/responses。
@@ -111,6 +113,19 @@ func RegisterOpenAIBPSRoutes(v1 *gin.RouterGroup, h *OpenAIBPSHandler) {
 // 未绑定选号并原子绑定（并发冲突重读赢家）→ 构造固定上游请求 → 发送 →
 // 原样转发（JSON/SSE）→ 释放。
 func (h *OpenAIBPSHandler) Responses(c *gin.Context) {
+	h.handleResponses(c, false)
+}
+
+// Compact 处理 POST /v1/responses/compact。
+//
+// 与 Responses 共用平台开关、会话绑定、账号选择与错误信封；区别只在请求
+// 准备阶段强制走真实摘要请求（关闭客户端工具），响应只回写 bpscmp_v1_
+// 版本化不透明引用。路由由上层接线。
+func (h *OpenAIBPSHandler) Compact(c *gin.Context) {
+	h.handleResponses(c, true)
+}
+
+func (h *OpenAIBPSHandler) handleResponses(c *gin.Context, compact bool) {
 	if c == nil || c.Writer == nil || h == nil {
 		return
 	}
@@ -139,6 +154,18 @@ func (h *OpenAIBPSHandler) Responses(c *gin.Context) {
 	ctx := openAIBPSContext(c)
 
 	sessionKey, explicitSession := OpenAIBPSSessionKey(apiKeyID, body)
+	if !explicitSession {
+		// 没有显式会话 ID 时由压缩引用恢复原会话：否则压缩后仅回传引用+
+		// 工具结果的新请求会派生出一个新会话，丢掉绑定与摘要。
+		if ref := openAIBPSCompactRefFromBody(body); ref != "" {
+			recovered, err := h.recoverCompactSessionKey(ctx, apiKeyID, ref)
+			if err != nil {
+				WriteOpenAIBPSError(c, err)
+				return
+			}
+			sessionKey = recovered
+		}
+	}
 	c.Set(OpenAIBPSSessionKeyContextKey, sessionKey)
 	if sessionKey == "" {
 		if openAIBPSBodyLooksLikeContinuation(body) {
@@ -168,10 +195,11 @@ func (h *OpenAIBPSHandler) Responses(c *gin.Context) {
 		return
 	}
 
-	// 请求准备（阶段 4 工具隧道）：工具目录写进 developer 协议消息、历史工具
-	// 调用从 Redis 回放、加密 reasoning 重建；发往上游的 body 与客户端 body
-	// 结构上不同，上游只会看到 run_officejs 协议载体。
-	prepared, err := prepareOpenAIBPSRequest(ctx, h.deps.Sessions, account, apiKeyID, sessionKey, body)
+	// 请求准备（阶段 4 工具隧道 + 阶段 5 压缩 + 阶段 6 结构化）：工具目录写进
+	// developer 协议消息、历史工具调用从 Redis 回放、压缩引用解析成摘要；
+	// 发往上游的 body 与客户端 body 结构上不同。
+	prepared, err := prepareOpenAIBPSRequestWithOptions(ctx, h.deps.Sessions, account, apiKeyID, sessionKey, body,
+		openAIBPSPrepareOptions{CompactEndpoint: compact})
 	if err != nil {
 		WriteOpenAIBPSError(c, err)
 		return
@@ -190,6 +218,10 @@ func (h *OpenAIBPSHandler) Responses(c *gin.Context) {
 		zap.Bool("stream", prepared.Stream),
 		zap.Bool("explicit_session", explicitSession),
 		zap.Int("client_tools", len(prepared.Tools)),
+		zap.Bool("compact", prepared.Compact),
+		zap.Bool("structured", prepared.Structured != nil),
+		zap.String("turn_id", prepared.TurnID),
+		zap.Int("agent_iteration", prepared.AgentIteration),
 	)
 
 	client := h.deps.HTTPClient
@@ -236,6 +268,29 @@ func (h *OpenAIBPSHandler) Responses(c *gin.Context) {
 		if err := h.deps.Sessions.Touch(ctx, apiKeyID, sessionKey); err != nil {
 			log.Debug("openai bps: touch session failed", zap.Error(err))
 		}
+	}
+}
+
+// recoverCompactSessionKey 由压缩引用恢复原会话键（无显式会话 ID 时使用）。
+//
+// 引用索引按 API Key 隔离：别的租户的引用必然查不到，按上下文过期处理，
+// 绝不跨租户恢复摘要。Redis 不可用时显式 503，不降级。
+func (h *OpenAIBPSHandler) recoverCompactSessionKey(ctx context.Context, apiKeyID int64, ref string) (string, error) {
+	if h.deps.Sessions == nil {
+		return "", openAIBPSStateUnavailable()
+	}
+	reference, err := h.deps.Sessions.LoadCompactReference(ctx, apiKeyID, ref)
+	if err == nil {
+		return reference.SessionKey, nil
+	}
+	switch {
+	case errors.Is(err, ErrOpenAIBPSCompactExpired):
+		return "", infraerrors.Newf(http.StatusConflict, OpenAIBPSErrorContextExpired,
+			"BPS compaction state has expired; start a new conversation")
+	case errors.Is(err, ErrOpenAIBPSSessionStoreUnavailable):
+		return "", openAIBPSStateUnavailable()
+	default:
+		return "", openAIBPSStateUnavailable()
 	}
 }
 

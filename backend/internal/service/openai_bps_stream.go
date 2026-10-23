@@ -25,6 +25,12 @@ import (
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
 
+// OpenAIBPSUsageContextKey 是上游终态响应里 usage 的 gin 上下文键。
+//
+// 即使响应随后因为结构化校验失败/断流而报错，已取得的 usage 仍会写在这里，
+// 供计费/日志中间件读取（结构化输出失败不丢用量）。
+const OpenAIBPSUsageContextKey = "openai_bps_usage"
+
 // forwardOpenAIBPSProtocolResponse 把上游响应按 BPS 协议转换后写给客户端。
 //
 // 返回 error 仅表示本地读写失败（协议错误已在函数内写成 JSON 错误信封或
@@ -210,12 +216,17 @@ func (p *openAIBPSResponsePipeline) handle(typ string, payload map[string]any) e
 	}
 	switch typ {
 	case "response.failed", "response.incomplete", "error":
+		if response, ok := payload["response"].(map[string]any); ok {
+			// 上游已经给出的 usage 必须保留：失败/校验不通过也要能计费。
+			p.recordUsage(response)
+		}
 		return openAIBPSUpstreamProtocolError(OpenAIBPSErrorResponseFailed, "BPS failed to complete the response")
 	case "response.completed", "response.done":
 		response, ok := payload["response"].(map[string]any)
 		if !ok || stringValue(response["status"]) != "completed" {
 			return openAIBPSUpstreamProtocolError(OpenAIBPSErrorInvalidResponse, "BPS terminal event is not a completed response")
 		}
+		p.recordUsage(response)
 		if err := p.checkPendingTools(response); err != nil {
 			return err
 		}
@@ -243,6 +254,16 @@ func (p *openAIBPSResponsePipeline) handle(typ string, payload map[string]any) e
 		}
 		p.pendingTools[openAIBPSToolItemKey(item)] = true
 	}
+	// 压缩请求：摘要文本绝不能出现在客户端可见事件里，只交付终态压缩引用。
+	if p.prepared.Compact {
+		return nil
+	}
+	// 结构化输出：最终文本/拒答事件缓冲到终态校验通过后再交付（普通文本仍
+	// 实时转发）。response.created 等非文本事件照常开始 SSE，因此校验失败时
+	// 客户端收到 response.failed 而不是伪造的 completed。
+	if p.prepared.Structured != nil && openAIBPSStructuredMessageEvent(typ, item) {
+		return nil
+	}
 	// 原生工具事件一律缓冲到终态：只有解析/校验/落库都成功后客户端才能看到。
 	if strings.HasPrefix(typ, "response.function_call_arguments.") || strings.HasPrefix(typ, "response.custom_tool_call_input.") {
 		return nil
@@ -266,11 +287,27 @@ func (p *openAIBPSResponsePipeline) handle(typ string, payload map[string]any) e
 		// 不向上游模型名/内部条目泄漏给客户端。
 		response["model"] = p.prepared.ClientModel
 		response["output"] = []any{}
+		if p.prepared.Structured != nil {
+			// 返回客户端保留请求声明的格式（response.created/completed 一致）。
+			delete(response, "output_text")
+			response["text"] = map[string]any{"format": p.prepared.Structured.Format}
+		}
 	}
 	if !openAIBPSSafeStreamingEvent(typ) {
 		return openAIBPSUpstreamProtocolError(OpenAIBPSErrorUnsupportedEvent, "BPS returned an unsupported streaming event")
 	}
 	return p.emit(typ, payload)
+}
+
+// recordUsage 把上游已经给出的 usage 写进 gin 上下文：即使随后因为结构化
+// 校验失败/断流返回错误，调用方（计费/日志中间件）仍能读到这次用量。
+func (p *openAIBPSResponsePipeline) recordUsage(response map[string]any) {
+	if p == nil || p.c == nil || response == nil {
+		return
+	}
+	if usage, exists := response["usage"]; exists && usage != nil {
+		p.c.Set(OpenAIBPSUsageContextKey, usage)
+	}
 }
 
 // checkPendingTools 校验上游流里出现过的工具 item 在终态响应中仍然存在。

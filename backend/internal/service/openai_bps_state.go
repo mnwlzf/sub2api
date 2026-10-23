@@ -216,11 +216,17 @@ func OpenAIBPSToolItemRedisKey(apiKeyID int64, sessionKey, callID string) string
 
 // openAIBPSToolItemKeyComponent 归一化 callID 作为键片段。
 func openAIBPSToolItemKeyComponent(callID string) string {
-	callID = strings.TrimSpace(callID)
-	if openAIBPSSafeKeyComponent(callID) {
-		return callID
+	return openAIBPSKeyComponent(callID)
+}
+
+// openAIBPSKeyComponent 归一化客户端可控字符串作为键片段：含不安全字符时
+// 退化为其 sha256 摘要，避免客户端字符串破坏键结构（也防止构造跨键读取）。
+func openAIBPSKeyComponent(value string) string {
+	value = strings.TrimSpace(value)
+	if openAIBPSSafeKeyComponent(value) {
+		return value
 	}
-	sum := sha256.Sum256([]byte(callID))
+	sum := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(sum[:])
 }
 
@@ -297,4 +303,184 @@ func (s *OpenAIBPSSessionStore) LoadToolItem(ctx context.Context, apiKeyID int64
 		return nil, ErrOpenAIBPSToolItemExpired
 	}
 	return &item, nil
+}
+
+// ── 压缩摘要状态 ───────────────────────────────────────────────────────────
+//
+// 压缩需要把上游返回的真实文本摘要保存起来：客户端只持有版本化不透明引用
+// （bpscmp_v1_ 前缀），后续请求由服务端解析引用恢复摘要。摘要必须跨实例
+// 可恢复、7 天闲置续期，Redis 不可用时显式失败（绝不进程内降级，否则多副本
+// 下同一会话会丢上下文）。
+//
+// 两个键分工：
+//   - bps:compact:<apiKeyID>:<sessionKey>:<ref> 保存摘要本身与轮次锚点；
+//   - bps:compactref:<apiKeyID>:<ref> 保存引用对应的会话键，供「客户端没有
+//     显式会话 ID」时由引用恢复原会话（换号约束也依赖它）。
+
+const (
+	// OpenAIBPSCompactTTL 是压缩摘要/引用的闲置过期时间；每次读取都会续期。
+	OpenAIBPSCompactTTL = 7 * 24 * time.Hour
+
+	openAIBPSCompactKeyPrefix          = "bps:compact:"
+	openAIBPSCompactReferenceKeyPrefix = "bps:compactref:"
+)
+
+// ErrOpenAIBPSCompactExpired 表示压缩摘要不存在或已损坏：引用已不可恢复，
+// 调用方应返回 bps_context_expired，而不是伪造空摘要。
+var ErrOpenAIBPSCompactExpired = errors.New("openai bps compact store: compaction state has expired")
+
+// openAIBPSCompactState 是 Redis 中保存的一次压缩结果。
+//
+// Version 预留版本位；旧记录可能只有 summary（甚至只有一段 JSON 字符串），
+// 读取侧必须兼容：缺失的 TurnID/AgentIteration 由轮次派生逻辑补齐。
+type openAIBPSCompactState struct {
+	Summary        string `json:"summary"`
+	TurnID         string `json:"turn_id,omitempty"`
+	AgentIteration int    `json:"agent_iteration,omitempty"`
+	Version        int    `json:"version,omitempty"`
+	CreatedAt      int64  `json:"created_at,omitempty"`
+}
+
+// openAIBPSCompactReference 是引用 → 会话键的索引记录。
+type openAIBPSCompactReference struct {
+	SessionKey string `json:"session_key"`
+	CreatedAt  int64  `json:"created_at,omitempty"`
+}
+
+// OpenAIBPSCompactRedisKey 返回摘要的 Redis 键：
+// bps:compact:<apiKeyID>:<sessionKey>:<ref>。ref 是服务端生成的不透明引用，
+// 仍然做键片段归一化，防止客户端伪造引用破坏键结构。
+func OpenAIBPSCompactRedisKey(apiKeyID int64, sessionKey, ref string) string {
+	return openAIBPSCompactKeyPrefix + strconv.FormatInt(apiKeyID, 10) + ":" +
+		strings.TrimSpace(sessionKey) + ":" + openAIBPSKeyComponent(ref)
+}
+
+// OpenAIBPSCompactReferenceRedisKey 返回引用索引的 Redis 键：
+// bps:compactref:<apiKeyID>:<ref>。
+func OpenAIBPSCompactReferenceRedisKey(apiKeyID int64, ref string) string {
+	return openAIBPSCompactReferenceKeyPrefix + strconv.FormatInt(apiKeyID, 10) + ":" +
+		openAIBPSKeyComponent(ref)
+}
+
+func openAIBPSCompactKeyFor(apiKeyID int64, sessionKey, ref string) (string, error) {
+	if apiKeyID <= 0 {
+		return "", fmt.Errorf("openai bps compact store: invalid api key id %d", apiKeyID)
+	}
+	if strings.TrimSpace(sessionKey) == "" {
+		return "", errors.New("openai bps compact store: session key is empty")
+	}
+	if !openAIBPSCompactPrefixMatches(ref) {
+		return "", errors.New("openai bps compact store: invalid compaction reference")
+	}
+	return OpenAIBPSCompactRedisKey(apiKeyID, sessionKey, ref), nil
+}
+
+func openAIBPSCompactReferenceKeyFor(apiKeyID int64, ref string) (string, error) {
+	if apiKeyID <= 0 {
+		return "", fmt.Errorf("openai bps compact store: invalid api key id %d", apiKeyID)
+	}
+	if !openAIBPSCompactPrefixMatches(ref) {
+		return "", errors.New("openai bps compact store: invalid compaction reference")
+	}
+	return OpenAIBPSCompactReferenceRedisKey(apiKeyID, ref), nil
+}
+
+// SaveCompactState 保存一次压缩摘要（7 天闲置过期）。
+func (s *OpenAIBPSSessionStore) SaveCompactState(ctx context.Context, apiKeyID int64, sessionKey, ref string, state openAIBPSCompactState) error {
+	if err := s.available(); err != nil {
+		return err
+	}
+	if strings.TrimSpace(state.Summary) == "" {
+		return errors.New("openai bps compact store: summary is empty")
+	}
+	key, err := openAIBPSCompactKeyFor(apiKeyID, sessionKey, ref)
+	if err != nil {
+		return err
+	}
+	data, err := json.Marshal(state)
+	if err != nil {
+		return fmt.Errorf("openai bps compact store: encode summary: %w", err)
+	}
+	if err := s.client.Set(ctx, key, data, OpenAIBPSCompactTTL).Err(); err != nil {
+		return fmt.Errorf("openai bps compact store: save summary: %w", err)
+	}
+	return nil
+}
+
+// LoadCompactState 读取压缩摘要并续期 TTL。
+//
+// 缺失/损坏返回 ErrOpenAIBPSCompactExpired；旧记录（只有 summary 字段或只
+// 保存了 JSON 字符串）仍可读取，缺失的轮次字段交由调用方派生。
+func (s *OpenAIBPSSessionStore) LoadCompactState(ctx context.Context, apiKeyID int64, sessionKey, ref string) (openAIBPSCompactState, error) {
+	if err := s.available(); err != nil {
+		return openAIBPSCompactState{}, err
+	}
+	key, err := openAIBPSCompactKeyFor(apiKeyID, sessionKey, ref)
+	if err != nil {
+		return openAIBPSCompactState{}, err
+	}
+	data, err := s.client.GetEx(ctx, key, OpenAIBPSCompactTTL).Bytes()
+	if errors.Is(err, redis.Nil) {
+		return openAIBPSCompactState{}, ErrOpenAIBPSCompactExpired
+	}
+	if err != nil {
+		return openAIBPSCompactState{}, fmt.Errorf("openai bps compact store: load summary: %w", err)
+	}
+	var state openAIBPSCompactState
+	if err := json.Unmarshal(data, &state); err != nil || strings.TrimSpace(state.Summary) == "" {
+		// 旧版本只保存了摘要文本（JSON 字符串）：仍然可读，轮次按引用派生。
+		var legacy string
+		if err := json.Unmarshal(data, &legacy); err != nil || strings.TrimSpace(legacy) == "" {
+			_ = s.client.Del(ctx, key).Err()
+			return openAIBPSCompactState{}, ErrOpenAIBPSCompactExpired
+		}
+		state = openAIBPSCompactState{Summary: legacy}
+	}
+	return state, nil
+}
+
+// SaveCompactReference 保存引用 → 会话键索引（供无显式会话 ID 时恢复会话）。
+func (s *OpenAIBPSSessionStore) SaveCompactReference(ctx context.Context, apiKeyID int64, ref, sessionKey string) error {
+	if err := s.available(); err != nil {
+		return err
+	}
+	if strings.TrimSpace(sessionKey) == "" {
+		return errors.New("openai bps compact store: session key is empty")
+	}
+	key, err := openAIBPSCompactReferenceKeyFor(apiKeyID, ref)
+	if err != nil {
+		return err
+	}
+	data, err := json.Marshal(openAIBPSCompactReference{SessionKey: strings.TrimSpace(sessionKey), CreatedAt: time.Now().Unix()})
+	if err != nil {
+		return fmt.Errorf("openai bps compact store: encode reference: %w", err)
+	}
+	if err := s.client.Set(ctx, key, data, OpenAIBPSCompactTTL).Err(); err != nil {
+		return fmt.Errorf("openai bps compact store: save reference: %w", err)
+	}
+	return nil
+}
+
+// LoadCompactReference 读取引用索引并续期 TTL。缺失返回 ErrOpenAIBPSCompactExpired。
+func (s *OpenAIBPSSessionStore) LoadCompactReference(ctx context.Context, apiKeyID int64, ref string) (openAIBPSCompactReference, error) {
+	if err := s.available(); err != nil {
+		return openAIBPSCompactReference{}, err
+	}
+	key, err := openAIBPSCompactReferenceKeyFor(apiKeyID, ref)
+	if err != nil {
+		return openAIBPSCompactReference{}, err
+	}
+	data, err := s.client.GetEx(ctx, key, OpenAIBPSCompactTTL).Bytes()
+	if errors.Is(err, redis.Nil) {
+		return openAIBPSCompactReference{}, ErrOpenAIBPSCompactExpired
+	}
+	if err != nil {
+		return openAIBPSCompactReference{}, fmt.Errorf("openai bps compact store: load reference: %w", err)
+	}
+	var reference openAIBPSCompactReference
+	if err := json.Unmarshal(data, &reference); err != nil || strings.TrimSpace(reference.SessionKey) == "" {
+		_ = s.client.Del(ctx, key).Err()
+		return openAIBPSCompactReference{}, ErrOpenAIBPSCompactExpired
+	}
+	return reference, nil
 }

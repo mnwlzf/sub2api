@@ -45,18 +45,18 @@
 
 ## 5. 压缩
 
-- [ ] 5.1 `service/openai_bps_turn.go`：`turn_id`/`agent_iteration` 保持、压缩前后轮次语义
-- [ ] 5.2 真实摘要请求（关闭客户端工具）、摘要 Redis 存储、`bpscmp_v1_` 版本化引用、引用不发给上游
-- [ ] 5.3 连续压缩与旧摘要兼容；跨实例恢复；无显式会话 ID 时由引用恢复原会话
-- [ ] 5.4 压缩失败返回错误、不替换客户端历史；异常断流不伪造成功
-- [ ] 5.5 验收：压缩轮次保持、连续压缩、旧摘要、跨实例、失败路径测试；真实账号「压缩 → 新对话 → 工具调用」冒烟
+- [x] 5.1 `service/openai_bps_turn.go`：`turn_id`/`agent_iteration` 保持、压缩前后轮次语义
+- [x] 5.2 真实摘要请求（关闭客户端工具）、摘要 Redis 存储、`bpscmp_v1_` 版本化引用、引用不发给上游
+- [x] 5.3 连续压缩与旧摘要兼容；跨实例恢复；无显式会话 ID 时由引用恢复原会话
+- [x] 5.4 压缩失败返回错误、不替换客户端历史；异常断流不伪造成功
+- [x] 5.5 验收：压缩轮次保持、连续压缩、旧摘要、跨实例（miniredis）、失败路径测试通过；真实账号冒烟待 token
 
 ## 6. 结构化输出
 
-- [ ] 6.1 `service/openai_bps_structured.go`：`json_object`/`json_schema` 提示词注入、schema 校验（≤1 MiB、仅文档内引用、`strict=false` 也校验）、大整数精度
-- [ ] 6.2 JSON/SSE 同一套终态校验；未验证文本隔离；工具/拒答/压缩独立处理
-- [ ] 6.3 失败语义：HTTP 502 / `response.failed` / `bps_invalid_structured_output`；已取得 usage 仍记录
-- [ ] 6.4 验收：JSON/SSE、无效 schema、外部引用、大整数、未验证文本隔离、拒答测试
+- [x] 6.1 `service/openai_bps_structured.go`：`json_object`/`json_schema` 提示词注入、schema 校验（≤1 MiB、仅文档内引用、`strict=false` 也校验）、大整数精度
+- [x] 6.2 JSON/SSE 同一套终态校验；未验证文本隔离；工具/拒答/压缩独立处理
+- [x] 6.3 失败语义：HTTP 502 / `response.failed` / `bps_invalid_structured_output`；已取得 usage 仍记录
+- [x] 6.4 验收：JSON/SSE、无效 schema、外部引用、大整数、未验证文本隔离、拒答测试通过
 
 ## 7. 计费、错误与监测
 
