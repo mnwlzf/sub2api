@@ -1,6 +1,6 @@
 # OpenAI BPS 平台接入
 
-> 状态：**阶段 0–4、9 已实现（文本 + 工具桥 + 管理端）**。平台默认关闭；压缩/结构化输出/计费/目录按 `openspec/changes/add-openai-bps-platform/tasks.md` 推进。
+> 状态：**阶段 0–6、8、9 已实现（文本 + 工具桥 + 压缩 + 结构化 + 目录 + 管理端）**。平台默认关闭；计费/错误分类（阶段 7）与真实账号验收（阶段 10）按 `openspec/changes/add-openai-bps-platform/tasks.md` 推进。
 
 BPS（Basis Points / ChatGPT Excel 权益）是 ChatGPT 账号的一种额度形态，上游固定为
 `https://bps.openai.com/basispoints/api/responses`，用 **ChatGPT Access Token** 鉴权、只提供
@@ -39,13 +39,13 @@ gateway:
 
 | 能力 | 状态 |
 |---|---|
-| Responses 文本（JSON/SSE） | 阶段 3 |
-| function/custom/namespace 工具、`update_plan`、多轮工具结果、加密 reasoning | 阶段 4 |
-| `/responses/compact` 与 `compaction_trigger` 压缩 | 阶段 5 |
-| `text.format` 结构化输出（提示词约束 + 本地校验） | 阶段 6 |
-| 计费、错误分类与冷却、渠道监测 | 阶段 7 |
-| 模型目录、别名、Composite 显式路由 | 阶段 8 |
-| 管理端账号字段/凭证状态/使用说明 | 阶段 9 |
+| Responses 文本（JSON/SSE） | ✅ 已实现 |
+| function/custom/namespace 工具、`update_plan`、多轮工具结果、加密 reasoning | ✅ 已实现 |
+| `/responses/compact` 与 `compaction_trigger` 压缩 | ✅ 已实现 |
+| `text.format` 结构化输出（提示词约束 + 本地校验） | ✅ 已实现 |
+| 模型目录、别名、Composite 显式路由 | ✅ 已实现 |
+| 管理端账号字段/凭证状态/测试连接 | ✅ 已实现 |
+| 计费、错误分类与冷却、渠道监测 | ⏳ 阶段 7 |
 
 **不提供**：WebSocket、Chat Completions、Claude Messages、图像/音频、Token 自动续期、Excel 本地凭证读取、上游配额探测。
 不能使用 `previous_response_id` / `item_reference` 代替完整历史；客户端应保持 `session_id` 或 `prompt_cache_key` 并携带完整历史。
