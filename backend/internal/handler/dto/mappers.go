@@ -246,6 +246,12 @@ func AccountFromServiceShallow(a *service.Account) *Account {
 	if state := service.OpenCodeGoUsageStateFromAccount(a); state.Eligible {
 		openCodeGoUsage = state
 	}
+	var bpsCredentialState *service.OpenAIBPSCredentialState
+	if a.IsOpenAIBPS() {
+		if state := service.ResolveOpenAIBPSCredentialState(a, time.Now()); state.Status != "" {
+			bpsCredentialState = &state
+		}
+	}
 	out := &Account{
 		ID:                      a.ID,
 		Name:                    a.Name,
@@ -257,6 +263,7 @@ func AccountFromServiceShallow(a *service.Account) *Account {
 		Extra:                   extra,
 		OllamaCloudUsage:        ollamaCloudUsage,
 		OpenCodeGoUsage:         openCodeGoUsage,
+		BPSCredentialState:      bpsCredentialState,
 		ProxyID:                 a.ProxyID,
 		ProxyFallbackOriginID:   a.ProxyFallbackOriginID,
 		ProxyFallbackOriginName: a.ProxyFallbackOriginName,
@@ -421,7 +428,8 @@ func redactAccountManagedExtra(extra map[string]any) map[string]any {
 	redacted := make(map[string]any, len(extra))
 	for key, value := range extra {
 		switch key {
-		case service.OllamaCloudUsageSessionExtraKey,
+		case service.OpenAIBPSCredentialStateExtraKey,
+			service.OllamaCloudUsageSessionExtraKey,
 			service.OllamaCloudUsageAutoRefreshExtraKey,
 			service.OllamaCloudUsageSnapshotExtraKey,
 			service.OpenCodeGoUsageAutoRefreshExtraKey,

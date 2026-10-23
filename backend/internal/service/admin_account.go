@@ -509,6 +509,9 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 	if err := ValidateOpenAIRequestTimezoneExtra(input.Platform, accountExtra); err != nil {
 		return nil, err
 	}
+	if input.Platform == PlatformOpenAIBPS {
+		input.Credentials = NormalizeOpenAIBPSAccountCredentials(input.Credentials)
+	}
 	// BPS 平台：仅 oauth + Access Token 必填（独立上游，凭证形态与 OpenAI 不同）。
 	if err := ValidateOpenAIBPSAccountInput(input.Platform, input.Type, input.Credentials, nil); err != nil {
 		return nil, err
@@ -606,6 +609,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	}
 	// BPS 平台：类型固定 oauth；access_token 留空表示保留原值（敏感键合并语义）。
 	if account.Platform == PlatformOpenAIBPS {
+		input.Credentials = NormalizeOpenAIBPSAccountCredentials(input.Credentials)
 		effectiveType := account.Type
 		if input.Type != "" {
 			effectiveType = input.Type

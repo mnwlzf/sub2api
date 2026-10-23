@@ -19,7 +19,7 @@ const (
 	// 只会扩大 SSRF 与凭证外泄面。
 	OpenAIBPSUpstreamURL = "https://bps.openai.com/basispoints/api/responses"
 	// OpenAIBPSAuthModeHeader / OpenAIBPSAuthModeChatGPT 是上游要求的鉴权模式头。
-	OpenAIBPSAuthModeHeader = "x-basispoints-auth-mode"
+	OpenAIBPSAuthModeHeader  = "x-basispoints-auth-mode"
 	OpenAIBPSAuthModeChatGPT = "chatgpt"
 )
 
@@ -80,4 +80,27 @@ func OpenAIBPSDefaultModels() []string {
 // IsOpenAIBPSPlatform 报告平台值是否为 BPS。
 func IsOpenAIBPSPlatform(platform string) bool {
 	return platform == PlatformOpenAIBPS
+}
+
+// NormalizeOpenAIBPSAccountCredentials 归一化 BPS 账号提交的凭证：
+// 去空白、剥离误粘贴的 "Bearer " 前缀；把前端回传的脱敏占位符或空串视为
+// "未提供"（删除该键），交由更新路径的敏感键合并语义保留库中原 token。
+func NormalizeOpenAIBPSAccountCredentials(credentials map[string]any) map[string]any {
+	if credentials == nil {
+		return nil
+	}
+	raw, ok := credentials["access_token"]
+	if !ok {
+		return credentials
+	}
+	token, _ := raw.(string)
+	token = strings.TrimSpace(token)
+	token = strings.TrimPrefix(token, "Bearer ")
+	token = strings.TrimSpace(token)
+	if token == "" || token == OpenAIBPSRedactedAccessTokenPlaceholder {
+		delete(credentials, "access_token")
+		return credentials
+	}
+	credentials["access_token"] = token
+	return credentials
 }

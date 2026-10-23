@@ -221,7 +221,10 @@ type Account struct {
 	Extra                   map[string]any                 `json:"extra"`
 	OllamaCloudUsage        *service.OllamaCloudUsageState `json:"ollama_cloud_usage,omitempty"`
 	OpenCodeGoUsage         *service.OpenCodeGoUsageState  `json:"opencode_go_usage,omitempty"`
-	ProxyID                 *int64                         `json:"proxy_id"`
+	// BPSCredentialState 是 OpenAI BPS 账号的只读凭证状态（自然过期/上游撤销/
+	// 认证失败 + 到期时间 + 错误码）；非 BPS 账号为空。
+	BPSCredentialState *service.OpenAIBPSCredentialState `json:"bps_credential_state,omitempty"`
+	ProxyID            *int64                            `json:"proxy_id"`
 	ProxyFallbackOriginID   *int64                         `json:"proxy_fallback_origin_id"`
 	ProxyFallbackOriginName *string                        `json:"proxy_fallback_origin_name,omitempty"`
 	Concurrency             int                            `json:"concurrency"`
