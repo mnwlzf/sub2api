@@ -2,8 +2,8 @@ package handler
 
 import (
 	"github.com/Wei-Shaw/sub2api/internal/handler/admin"
-	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
 // AdminHandlers contains all admin-related HTTP handlers
@@ -53,18 +53,18 @@ type AdminHandlers struct {
 
 // Handlers contains all HTTP handlers
 type Handlers struct {
-	Auth                *AuthHandler
-	User                *UserHandler
-	APIKey              *APIKeyHandler
-	Usage               *UsageHandler
-	Redeem              *RedeemHandler
-	Subscription        *SubscriptionHandler
-	Announcement        *AnnouncementHandler
-	ChannelMonitor      *ChannelMonitorUserHandler
-	ChannelMonitorV2    *ChannelMonitorV2Handler
-	Admin               *AdminHandlers
-	Gateway             *GatewayHandler
-	OpenAIGateway       *OpenAIGatewayHandler
+	Auth             *AuthHandler
+	User             *UserHandler
+	APIKey           *APIKeyHandler
+	Usage            *UsageHandler
+	Redeem           *RedeemHandler
+	Subscription     *SubscriptionHandler
+	Announcement     *AnnouncementHandler
+	ChannelMonitor   *ChannelMonitorUserHandler
+	ChannelMonitorV2 *ChannelMonitorV2Handler
+	Admin            *AdminHandlers
+	Gateway          *GatewayHandler
+	OpenAIGateway    *OpenAIGatewayHandler
 	// BPSGateway 是 OpenAI BPS 平台的 Responses 文本网关（独立上游，平台默认关闭）。
 	BPSGateway          *service.OpenAIBPSHandler
 	Setting             *SettingHandler
