@@ -1217,6 +1217,11 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 		return
 	}
 
+	if platform == service.PlatformOpenAIBPS {
+		writeModelsList(c, platform, service.OpenAIBPSDefaultModels())
+		return
+	}
+
 	writeModelsListResponse(c, claude.DefaultModels)
 }
 
@@ -1341,7 +1346,7 @@ func (h *GatewayHandler) compositeAvailableModels(ctx context.Context, groupID *
 }
 
 func writeModelsList(c *gin.Context, platform string, modelIDs []string) {
-	if platform == service.PlatformOpenAI {
+	if platform == service.PlatformOpenAI || platform == service.PlatformOpenAIBPS {
 		writeOpenAIModelsList(c, modelIDs)
 		return
 	}
@@ -1362,7 +1367,7 @@ func writeModelsList(c *gin.Context, platform string, modelIDs []string) {
 }
 
 func writeAllowlistedModelsList(c *gin.Context, platform string, modelIDs []string) {
-	if platform == service.PlatformOpenAI {
+	if platform == service.PlatformOpenAI || platform == service.PlatformOpenAIBPS {
 		writeOpenAIModelsList(c, modelIDs)
 		return
 	}
@@ -1502,6 +1507,8 @@ func defaultModelIDsForPlatform(platform string) []string {
 		return service.DefaultOpenCodeGoModelIDs()
 	case service.PlatformTypeSafe:
 		return []string{"jev-latest"}
+	case service.PlatformOpenAIBPS:
+		return service.OpenAIBPSDefaultModels()
 	case service.PlatformComposite:
 		ids := make([]string, 0)
 		seen := make(map[string]struct{})

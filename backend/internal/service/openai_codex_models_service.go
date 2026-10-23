@@ -878,6 +878,15 @@ func (s *GatewayService) BuildCodexModelsManifestForGroup(
 		return BuildCodexModelsManifest(modelIDs)
 	}
 
+	// OpenAI BPS 没有上游 manifest 接口：目录由账号模型映射 + 配置默认模型静态生成。
+	if effectivePlatform == PlatformOpenAIBPS {
+		visible, _, err := loadCodexGroupCatalogAccounts(ctx, s.accountRepo, group.ID)
+		if err != nil {
+			return nil, err
+		}
+		return BuildOpenAIBPSGroupCodexModelsManifest(group, visible)
+	}
+
 	_, catalog, err := loadCodexGroupCatalogAccounts(ctx, s.accountRepo, group.ID)
 	if err != nil {
 		return BuildCodexModelsManifest(modelIDs)

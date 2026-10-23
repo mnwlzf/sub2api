@@ -68,9 +68,9 @@
 
 ## 8. 模型目录与 Composite
 
-- [ ] 8.1 `openai_bps_catalog.go`：BPS 目录（串行工具/文本/HTTP）、别名映射、白名单、候选模型
-- [ ] 8.2 `openai_bps_composite_catalog.go`：Composite 显式路由（精确别名/前缀筛选）、无候选返回空列表、普通 `gpt-*` 仍走 OpenAI
-- [ ] 8.3 验收：目录/别名/白名单/Composite 路由/空候选测试；Codex 客户端模型目录冒烟
+- [x] 8.1 `openai_bps_catalog.go`：BPS 目录（串行工具/文本/HTTP）、别名映射、白名单、候选模型
+- [x] 8.2 `openai_bps_composite_catalog.go`：Composite 显式路由（精确别名/前缀筛选）、无候选返回空列表、普通 `gpt-*` 仍走 OpenAI
+- [x] 8.3 验收：目录/别名/白名单/Composite 路由/空候选测试通过；接线已覆盖 manifest 与 /v1/models；Codex 客户端真实冒烟待环境
 
 ## 9. 管理端 API 与前端
 
