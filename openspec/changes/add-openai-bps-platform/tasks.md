@@ -28,12 +28,12 @@
 
 ## 3. Responses 网关（文本闭环）
 
-- [ ] 3.1 `handler` 新增 BPS Responses 入口与路由（仅 `/v1/responses` 与 `/responses/compact`；其它端点 404/明确错误）
-- [ ] 3.2 `service/openai_bps_gateway.go`：固定端点、服务端鉴权头注入、客户端认证头剥离、请求体白名单归一
-- [ ] 3.3 JSON/SSE 转发与错误透传；`store=false` 语义；超时/断流/客户端取消处理
-- [ ] 3.4 会话身份：`session_id`/`prompt_cache_key` → 稳定 session key（含首条用户消息派生）；Redis 绑定账号/workspace
-- [ ] 3.5 调度接入：账号选择、并发、代理、优先级；未绑定新会话的有限换号；已绑定不可用返回 `bps_account_unavailable`
-- [ ] 3.6 验收：httptest 模拟上游覆盖 JSON/SSE/错误/取消；会话绑定与换号边界测试；文本闭环真实账号冒烟
+- [x] 3.1 `handler` 新增 BPS Responses 入口与路由（仅 `/v1/responses` 与 `/responses/compact`；其它端点 404/明确错误）
+- [x] 3.2 `service/openai_bps_gateway.go`：固定端点、服务端鉴权头注入、客户端认证头剥离、请求体白名单归一
+- [x] 3.3 JSON/SSE 转发与错误透传；`store=false` 语义；超时/断流/客户端取消处理
+- [x] 3.4 会话身份：`session_id`/`prompt_cache_key` → 稳定 session key（含首条用户消息派生）；Redis 绑定账号/workspace
+- [x] 3.5 调度接入：账号选择、并发、代理、优先级；未绑定新会话的有限换号；已绑定不可用返回 `bps_account_unavailable`
+- [ ] 3.6 验收：httptest 模拟上游覆盖 JSON/SSE/错误/取消（已完成）；会话绑定与换号边界测试（已完成）；文本闭环真实账号冒烟（待真实 token）
 
 ## 4. 工具隧道
 

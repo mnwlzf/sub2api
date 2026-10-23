@@ -212,6 +212,10 @@ func RegisterGatewayRoutes(
 		gateway.GET("/live/:call_id", h.OpenAIGateway.LiveSideband)
 		// OpenAI Responses API: auto-route based on group platform
 		gateway.POST("/responses", func(c *gin.Context) {
+			if getGroupPlatform(c) == service.PlatformOpenAIBPS {
+				h.BPSGateway.Responses(c)
+				return
+			}
 			if isOpenAIResponsesCompatibleGatewayPlatform(c) {
 				h.OpenAIGateway.Responses(c)
 				return
@@ -219,6 +223,13 @@ func RegisterGatewayRoutes(
 			h.Gateway.Responses(c)
 		})
 		gateway.POST("/responses/*subpath", guardResponsesSubpath(func(c *gin.Context) {
+			if getGroupPlatform(c) == service.PlatformOpenAIBPS {
+				c.JSON(http.StatusNotImplemented, gin.H{"error": gin.H{
+					"type": "not_implemented_error", "code": "bps_compact_not_supported",
+					"message": "OpenAI BPS compaction is not available yet",
+				}})
+				return
+			}
 			if isOpenAIResponsesCompatibleGatewayPlatform(c) {
 				h.OpenAIGateway.Responses(c)
 				return

@@ -56,6 +56,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 
 		// Codex 打票服务（票据存储/收割/流水/失效），构造后注册为进程级运行时
 		provideCodexTicketService,
+		provideOpenAIBPSGateway,
 
 		// BuildInfo provider
 		provideServiceBuildInfo,
@@ -509,4 +510,20 @@ func provideCodexTicketService(
 	service.SetDefaultCodexTicketRuntime(tickets)
 	service.RegisterCodexBackgroundWorker(tickets.Start)
 	return tickets
+}
+
+// provideOpenAIBPSGateway 构造 OpenAI BPS 平台的 Responses 文本网关。
+//
+// 依赖说明：Redis 是 BPS 的强依赖（会话绑定，后续工具/压缩状态同库），未注入或
+// 不可用时 handler 返回 bps_state_unavailable，不做进程内降级；平台级开关默认
+// 关闭，关闭时入口返回 bps_platform_disabled(503)。上游 HTTP 客户端超时留足流式
+// 响应时间；账号级代理在后续阶段接入。
+func provideOpenAIBPSGateway(accountRepo service.AccountRepository, redisClient *redis.Client) *service.OpenAIBPSHandler {
+	selector := service.NewOpenAIBPSAccountSelector(accountRepo)
+	sessions := service.NewOpenAIBPSSessionStore(redisClient)
+	return service.NewOpenAIBPSHandler(service.OpenAIBPSHandlerDeps{
+		Resolver:   selector,
+		Sessions:   sessions,
+		HTTPClient: &http.Client{Timeout: 15 * time.Minute},
+	})
 }

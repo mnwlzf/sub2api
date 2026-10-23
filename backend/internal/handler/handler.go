@@ -2,6 +2,7 @@ package handler
 
 import (
 	"github.com/Wei-Shaw/sub2api/internal/handler/admin"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
 )
 
@@ -64,6 +65,8 @@ type Handlers struct {
 	Admin               *AdminHandlers
 	Gateway             *GatewayHandler
 	OpenAIGateway       *OpenAIGatewayHandler
+	// BPSGateway 是 OpenAI BPS 平台的 Responses 文本网关（独立上游，平台默认关闭）。
+	BPSGateway          *service.OpenAIBPSHandler
 	Setting             *SettingHandler
 	Totp                *TotpHandler
 	Passkey             *PasskeyHandler
