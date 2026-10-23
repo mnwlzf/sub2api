@@ -3,6 +3,7 @@ package routes
 
 import (
 	"github.com/Wei-Shaw/sub2api/internal/handler"
+	adminhandler "github.com/Wei-Shaw/sub2api/internal/handler/admin"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -45,6 +46,10 @@ func RegisterAdminRoutes(
 
 		// 账号管理
 		registerAccountRoutes(admin, h, stepUpAuth)
+
+		// Codex 票据中心与降智检测（P2/P4a）
+		adminhandler.RegisterCodexTicketRoutes(admin, h.Admin.CodexTicket)
+		adminhandler.RegisterCodexDiagnosticRoutes(admin, h.Admin.CodexDiagnostic)
 
 		// 公告管理
 		registerAnnouncementRoutes(admin, h)
@@ -376,6 +381,7 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.PUT("/ollama-cloud-usage/settings", h.Admin.Account.UpdateOllamaCloudUsageSettings)
 		accounts.GET("/opencode-go-usage/settings", h.Admin.Account.GetOpenCodeGoUsageSettings)
 		accounts.PUT("/opencode-go-usage/settings", h.Admin.Account.UpdateOpenCodeGoUsageSettings)
+		accounts.GET("/openai-request-timezones", h.Admin.Account.GetOpenAIRequestTimezones)
 		accounts.GET("/:id", h.Admin.Account.GetByID)
 		accounts.GET("/:id/claude/reset-credits", h.Admin.Account.ClaudeResetCredits)
 		// Same protection as the Codex reset-quota route (admin auth, audit, compliance guard).

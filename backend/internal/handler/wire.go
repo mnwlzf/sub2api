@@ -50,6 +50,8 @@ func ProvideAdminHandlers(
 	complianceHandler *admin.ComplianceHandler,
 	auditLogHandler *admin.AuditLogHandler,
 	studentVerificationHandler *admin.StudentVerificationHandler,
+	codexDiagnosticHandler *admin.CodexDiagnosticHandler,
+	codexTicketHandler *admin.CodexTicketHandler,
 	upstreamBillingProbe *service.UpstreamBillingProbeService,
 	ollamaCloudUsage *service.OllamaCloudUsageService,
 	opencodeGoUsage *service.OpenCodeGoUsageService,
@@ -99,6 +101,8 @@ func ProvideAdminHandlers(
 		Compliance:             complianceHandler,
 		AuditLog:               auditLogHandler,
 		StudentVerification:    studentVerificationHandler,
+		CodexDiagnostic:        codexDiagnosticHandler,
+		CodexTicket:            codexTicketHandler,
 	}
 }
 
@@ -309,9 +313,24 @@ var ProviderSet = wire.NewSet(
 	admin.NewComplianceHandler,
 	admin.NewAuditLogHandler,
 	admin.NewStudentVerificationHandler,
+	admin.NewCodexDiagnosticHandler,
+	ProvideCodexTicketHandler,
 	NewStudentVerificationHandler,
 
 	// AdminHandlers and Handlers constructors
 	ProvideAdminHandlers,
 	ProvideHandlers,
 )
+
+// ProvideCodexTicketHandler 把打票服务装配成管理端票据中心 handler。
+func ProvideCodexTicketHandler(
+	tickets *service.CodexTicketService,
+	settings *service.SettingService,
+	accounts service.AccountRepository,
+) *admin.CodexTicketHandler {
+	return admin.NewCodexTicketHandler(admin.CodexTicketHandlerDeps{
+		Tickets:  tickets,
+		Settings: settings,
+		Accounts: accounts,
+	})
+}

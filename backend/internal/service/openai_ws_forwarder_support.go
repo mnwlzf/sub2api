@@ -297,15 +297,64 @@ func openAIWSPayloadTransientStatus(payload []byte) int {
 	case code == "server_is_overloaded", code == "slow_down":
 		return http.StatusServiceUnavailable
 	case strings.Contains(code, "server_error"),
+		strings.Contains(code, "server_err"),
 		strings.Contains(code, "internal_error"),
 		strings.Contains(code, "upstream_error"),
 		strings.Contains(errType, "server_error"),
+		strings.Contains(errType, "server_err"),
 		strings.Contains(errType, "internal_error"),
 		strings.Contains(errType, "upstream_error"):
 		return http.StatusInternalServerError
 	default:
 		return 0
 	}
+}
+
+// openAIWSErrorEventPolicySignal 把 WS error 事件归一成"可供账号策略消费"的
+// (HTTP 状态, 规范化 body)。
+//
+// 上游在 WS 上会把同一类服务端故障写成多种 code/type（server_error、server_err、
+// internal_error、upstream_error…），其中一部分还是 400 包裹的瞬态错误。原实现
+// 只认 server_error 字面量，导致这些错误既不触发账号冷却、也不进入 failover，
+// 表现为连接反复失败但账号状态不变。这里统一识别并重写成策略层认识的
+// server_error/upstream_error 形状，原始错误信息保留在 upstream_message。
+func openAIWSErrorEventPolicySignal(payload []byte) (int, []byte) {
+	if len(payload) == 0 {
+		return 0, payload
+	}
+	message := extractOpenAISSEErrorMessage(payload)
+	rawStatus := openAIWSPayloadTransientStatus(payload)
+	if isOpenAIUpstreamCapacityShedEvent(payload) {
+		return http.StatusServiceUnavailable, payload
+	}
+	code, errType, rawMessage := parseOpenAIWSErrorEventFields(payload)
+	lowerCode := strings.ToLower(strings.TrimSpace(code))
+	lowerType := strings.ToLower(strings.TrimSpace(errType))
+	serverError := strings.Contains(lowerCode, "server_err") ||
+		strings.Contains(lowerType, "server_err") ||
+		isOpenAITransientProcessingError(http.StatusBadRequest, rawMessage, payload)
+	if !serverError && rawStatus == 0 {
+		return 0, payload
+	}
+	if rawStatus != 0 && rawStatus != http.StatusInternalServerError {
+		return rawStatus, payload
+	}
+	detail := strings.TrimSpace(rawMessage)
+	if detail == "" {
+		detail = strings.TrimSpace(message)
+	}
+	normalized, err := json.Marshal(map[string]any{
+		"error": map[string]any{
+			"code":             "server_error",
+			"type":             "upstream_error",
+			"message":          "Upstream request failed",
+			"upstream_message": detail,
+		},
+	})
+	if err != nil {
+		return http.StatusBadGateway, payload
+	}
+	return http.StatusBadGateway, normalized
 }
 
 func (s *OpenAIGatewayService) handleOpenAIWSTerminalTransientFailure(ctx context.Context, account *Account, canonicalModel string, headers http.Header, payload []byte) string {
@@ -323,13 +372,14 @@ func (s *OpenAIGatewayService) handleOpenAIWSErrorEventTransientFailure(ctx cont
 	if eventType != "error" {
 		return
 	}
-	status := openAIWSPayloadTransientStatus(payload)
-	if status != 0 {
-		if status == http.StatusTooManyRequests {
-			headers = openAIWSSemantic429Headers(account, canonicalModel, headers)
-		}
-		s.handleOpenAIAccountUpstreamError(ctx, account, status, headers, payload, canonicalModel)
+	status, policyBody := openAIWSErrorEventPolicySignal(payload)
+	if status == 0 {
+		return
 	}
+	if status == http.StatusTooManyRequests {
+		headers = openAIWSSemantic429Headers(account, canonicalModel, headers)
+	}
+	s.handleOpenAIAccountUpstreamError(ctx, account, status, headers, policyBody, canonicalModel)
 }
 
 // handleOpenAIWSFailureAccountSideEffects applies both structured credential
@@ -766,7 +816,8 @@ func classifyOpenAIWSErrorEventFromRaw(codeRaw, errTypeRaw, msgRaw string) (stri
 		(strings.Contains(msg, "previous response") && strings.Contains(msg, "not found")) {
 		return "previous_response_not_found", true
 	}
-	if strings.Contains(errType, "server_error") || strings.Contains(code, "server_error") {
+	if strings.Contains(errType, "server_error") || strings.Contains(errType, "server_err") ||
+		strings.Contains(code, "server_error") || strings.Contains(code, "server_err") {
 		return "upstream_error_event", true
 	}
 	return "event_error", false

@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"log"
 	"net/http"
 	"sync"
@@ -52,6 +53,9 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 
 		// opencode_go 429 的 WARP 出口轮换器（未配置 service_url 时为 nil）
 		provideOpenCodeWarpRotator,
+
+		// Codex 打票服务（票据存储/收割/流水/失效），构造后注册为进程级运行时
+		provideCodexTicketService,
 
 		// BuildInfo provider
 		provideServiceBuildInfo,
@@ -471,4 +475,38 @@ func provideCleanup(
 			log.Printf("[Cleanup] All cleanup steps completed")
 		}
 	}
+}
+
+// provideCodexTicketService 构造 Codex 打票服务并注册为进程级运行时。
+//
+// 依赖说明：accountRepo/settingService/proxyRepo/httpUpstream 均来自既有 wire
+// provider；TokenProvider 用网关服务（其 GetAccessToken 恰好实现窄接口）；
+// attempts 仓储同时实现 Attempt/Event/Recent 三个接口，lifecycle 单独构造。
+// 构造后登记后台收割 worker（默认 enabled=false，循环内空转不发请求）。
+func provideCodexTicketService(
+	accountRepo service.AccountRepository,
+	settingService *service.SettingService,
+	proxyRepo service.ProxyRepository,
+	cfg *config.Config,
+	upstream service.HTTPUpstream,
+	openAIGateway *service.OpenAIGatewayService,
+	db *sql.DB,
+) *service.CodexTicketService {
+	attempts := repository.NewCodexTicketAttemptRepository(db)
+	lifecycle := repository.NewCodexTicketInvalidationRepository(db)
+	tickets := service.NewCodexTicketService(service.CodexTicketDeps{
+		AccountRepo:   accountRepo,
+		SettingSvc:    settingService,
+		ProxyRepo:     proxyRepo,
+		Cfg:           cfg,
+		Upstream:      upstream,
+		TokenProvider: openAIGateway,
+		Attempts:      attempts,
+		Events:        attempts,
+		Recent:        attempts,
+		Lifecycle:     lifecycle,
+	})
+	service.SetDefaultCodexTicketRuntime(tickets)
+	service.RegisterCodexBackgroundWorker(tickets.Start)
+	return tickets
 }

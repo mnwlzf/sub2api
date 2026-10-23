@@ -159,8 +159,9 @@ func mergeExtraUpdates(base map[string]any, more map[string]any) map[string]any 
 // 否则上游能凭 "probe_compact_5" 这类字面量一眼区分出探测流量。
 // 账号级稳定派生：重复探测复用同一会话，而不是每次新开一个。
 func compactProbeSessionID(accountID int64) string {
-	if accountID <= 0 {
-		return deriveStableUUIDv4("sub2api:codex-compact-probe:v1:anonymous")
+	scope := "sub2api:codex-compact-probe:v2:anonymous"
+	if accountID > 0 {
+		scope = "sub2api:codex-compact-probe:v2:" + strconv.FormatInt(accountID, 10)
 	}
-	return deriveStableUUIDv4("sub2api:codex-compact-probe:v1:" + strconv.FormatInt(accountID, 10))
+	return deriveStableUUIDv7(scope, deriveCodexUUIDv7TimestampMs(scope))
 }

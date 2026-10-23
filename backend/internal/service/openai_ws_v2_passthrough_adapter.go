@@ -688,6 +688,8 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 	if err := validateOpenAIWSBearerToken(account, token); err != nil {
 		return err
 	}
+	// 请求时区/位置 persona 改写：WS 帧与 HTTP body 走同一套规则。
+	firstClientMessage = NormalizeOpenAIRequestLocale(ctx, account, firstClientMessage, "ws")
 	if isOpenAIResponsesLiteWebSocketPayload(firstClientMessage) {
 		liteFirstMessage, _, liteErr := normalizeOpenAIResponsesLitePayloadForAccount(firstClientMessage, account)
 		if liteErr != nil {
@@ -998,6 +1000,8 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 			}
 			responsesLite := isResponseCreate && isOpenAIResponsesLiteWebSocketPayload(payload)
 			if isResponseCreate {
+				// 请求时区/位置 persona 改写：WS 帧与 HTTP body 走同一套规则。
+				payload = NormalizeOpenAIRequestLocale(ctx, account, payload, "ws")
 				if normalized, compatibilityChanged, normalizeErr := normalizeOpenAIResponsesWebSocketCompatibilityBody(payload, account, responsesLite); normalizeErr != nil {
 					return payload, nil, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket request payload", normalizeErr)
 				} else if compatibilityChanged {

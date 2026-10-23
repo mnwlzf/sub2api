@@ -79,6 +79,9 @@ var openaiAllowedHeaders = map[string]bool{
 	"user-agent":              true,
 	"originator":              true,
 	"session_id":              true,
+	"session-id":              true,
+	"thread-id":               true,
+	"x-client-request-id":     true,
 	"x-codex-beta-features":   true,
 	"x-codex-installation-id": true,
 	"x-codex-turn-state":      true,
@@ -98,6 +101,9 @@ var openaiPassthroughAllowedHeaders = map[string]bool{
 	"user-agent":              true,
 	"originator":              true,
 	"session_id":              true,
+	"session-id":              true,
+	"thread-id":               true,
+	"x-client-request-id":     true,
 	"x-codex-beta-features":   true,
 	"x-codex-installation-id": true,
 	"x-codex-turn-state":      true,
@@ -475,6 +481,11 @@ type OpenAIGatewayService struct {
 	userPlatformQuotaRepo UserPlatformQuotaRepository
 	liveAttestation       liveattestation.Provider
 	liveAttestationCipher SecretEncryptor
+	// codexTickets 为可选注入的 Codex 打票运行时（见 openai_codex_feature_hooks.go）。
+	// 未注入时为空操作，不影响原有转发链路。
+	codexTickets codexTicketRuntime
+	// codexDegradation 为可选注入的降智检测运行时（见 openai_codex_feature_hooks.go）。
+	codexDegradation codexDegradationRuntime
 
 	openaiWSPoolOnce               sync.Once
 	openaiWSStateStoreOnce         sync.Once

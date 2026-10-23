@@ -20,6 +20,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/handler"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/Wei-Shaw/sub2api/internal/setup"
 	"github.com/Wei-Shaw/sub2api/internal/web"
 
@@ -167,6 +168,8 @@ func runMainServer() {
 			log.Printf("Prompt Audit started in degraded state: %v", err)
 		}
 	}
+	// Codex 打票收割与自动降智检测（默认关闭，功能未启用时 worker 内部自行退出）。
+	service.StartCodexBackgroundWorkers(context.Background())
 
 	// 启动服务器
 	go func() {

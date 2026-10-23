@@ -96,14 +96,39 @@ func scopeCodexAccountIdentityValue(account *Account, apiKeyID int64, kind, raw 
 	if raw == "" || namespace == "" {
 		return raw
 	}
-	return deriveStableUUIDv4(fmt.Sprintf(
+	seed := fmt.Sprintf(
 		"sub2api:codex-account-identity:%s:user:%d:account:%s:kind:%s:value:%s",
 		codexAccountIdentityNamespaceVersion,
 		apiKeyID,
 		namespace,
 		kind,
 		raw,
-	))
+	)
+	// 官方只对 installation_id 用 Uuid::new_v4()，session/thread/turn 一律
+	// Uuid::now_v7()；window_id 保持 <thread-uuid>:<ordinal> 形状。按 kind
+	// 分别派生，避免把 v4 的版本位当成"真实客户端"反证。
+	switch kind {
+	case "installation":
+		return deriveStableUUIDv4(seed)
+	case "window":
+		if thread, ordinal, ok := splitCodexWindowID(raw); ok {
+			return scopeCodexAccountIdentityValue(account, apiKeyID, "thread", thread) + ":" + ordinal
+		}
+		// 官方 window_id 恒为 <thread-uuid>:<ordinal>；裸 UUID 是可判别形态。
+		return scopeCodexAccountIdentityValue(account, apiKeyID, "thread", raw) + ":0"
+	case "context-window":
+		return deriveStableUUIDv7(seed, clampCodexUUIDv7TimestampMs(deriveCodexUUIDv7TimestampMs(seed)))
+	case "session", "thread", "turn", "request":
+		// 原值已是 v7 时沿用其 48-bit 时间戳，保证改写后 turn/time 仍然自洽；
+		// 但必须 clamp 到当前时间——客户端给出未来时间戳时原样保留会暴露合成身份。
+		timestampMs := deriveCodexUUIDv7TimestampMs(seed)
+		if original, ok := parseUUIDv7TimestampMs(raw); ok {
+			timestampMs = clampCodexUUIDv7TimestampMs(original)
+		}
+		return deriveStableUUIDv7(seed, timestampMs)
+	default:
+		return deriveStableUUIDv4(seed)
+	}
 }
 
 var codexAccountIdentityFields = []struct {

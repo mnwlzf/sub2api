@@ -3,6 +3,7 @@ package service
 import (
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -224,6 +225,74 @@ func deriveStableUUIDv4(seed string) string {
 		b[10:16])
 }
 
+// codexUUIDv7Anchor 是确定性 UUIDv7 时间戳的锚点。
+//
+// 真实 Codex 的 session/thread/turn 由 Uuid::now_v7() 生成，时间戳必然早于
+// 请求时刻；若用固定常量或随机值充当时间戳，上游把 id 与 turn_started_at /
+// 请求到达时间交叉一比就能判定为合成。因此这里以固定锚点为上界、按种子
+// 向后散射（只取过去的时间），既保证跨重启稳定，又永不产生未来时间戳。
+var codexUUIDv7Anchor = time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+
+// deriveCodexUUIDv7TimestampMs 从种子确定性派生一个锚点之前的时间戳。
+func deriveCodexUUIDv7TimestampMs(seed string) int64 {
+	h := sha256.Sum256([]byte("sub2api:codex-uuidv7-ts:v1:" + seed))
+	window := uint64(200 * 24 * time.Hour / time.Millisecond)
+	offset := binary.BigEndian.Uint64(h[:8]) % window
+	return codexUUIDv7Anchor.Add(-time.Duration(offset) * time.Millisecond).UnixMilli()
+}
+
+// deriveStableUUIDv7 从种子与时间戳确定性派生一个 UUIDv7 格式的字符串。
+// 同一种子与时间戳永远返回同一值；随机位来自种子哈希，版本位固定为 7。
+func deriveStableUUIDv7(seed string, timestampMs int64) string {
+	h := sha256.Sum256([]byte("sub2api:codex-uuidv7:v1:" + seed))
+	var b [16]byte
+	b[0] = byte(timestampMs >> 40)
+	b[1] = byte(timestampMs >> 32)
+	b[2] = byte(timestampMs >> 24)
+	b[3] = byte(timestampMs >> 16)
+	b[4] = byte(timestampMs >> 8)
+	b[5] = byte(timestampMs)
+	b[6] = (h[6] & 0x0f) | 0x70 // version 7
+	b[7] = h[7]
+	b[8] = (h[8] & 0x3f) | 0x80 // variant 1
+	copy(b[9:], h[9:16])
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
+		binary.BigEndian.Uint32(b[0:4]),
+		binary.BigEndian.Uint16(b[4:6]),
+		binary.BigEndian.Uint16(b[6:8]),
+		binary.BigEndian.Uint16(b[8:10]),
+		b[10:16])
+}
+
+// parseUUIDv7TimestampMs 解析 UUIDv7 的 48-bit 毫秒时间戳；非 v7 或非法值返回 false。
+func parseUUIDv7TimestampMs(raw string) (int64, bool) {
+	compact := strings.ReplaceAll(strings.TrimSpace(raw), "-", "")
+	if len(compact) != 32 {
+		return 0, false
+	}
+	b, err := hex.DecodeString(compact)
+	if err != nil || b[6]>>4 != 7 {
+		return 0, false
+	}
+	ms := int64(b[0])<<40 | int64(b[1])<<32 | int64(b[2])<<24 |
+		int64(b[3])<<16 | int64(b[4])<<8 | int64(b[5])
+	return ms, true
+}
+
+// splitCodexWindowID 拆分官方 window_id 的 <thread-uuid>:<ordinal> 形状。
+func splitCodexWindowID(value string) (string, string, bool) {
+	thread, ordinal, found := strings.Cut(strings.TrimSpace(value), ":")
+	if !found || thread == "" || ordinal == "" {
+		return "", "", false
+	}
+	for _, digit := range ordinal {
+		if digit < '0' || digit > '9' {
+			return "", "", false
+		}
+	}
+	return thread, ordinal, true
+}
+
 // resolveConvergedInstallationID 返回账号级恒定的 installation_id。
 // 优先使用管理员配置的真实 device_id，无则从系统管理的账号随机种子确定性派生。
 func resolveConvergedInstallationID(account *Account, seed string) string {
@@ -240,11 +309,14 @@ func resolveConvergedInstallationID(account *Account, seed string) string {
 }
 
 // resolveConvergedSessionID 返回账号级恒定的 session_id。
+// 官方 ThreadId 为 Uuid::now_v7()，故这里派生 v7（时间戳取锚点之前的确定性值），
+// 而不是 v4——版本位本身是上游可判别的特征。
 func resolveConvergedSessionID(seed string) string {
 	if seed == "" {
 		return ""
 	}
-	return deriveStableUUIDv4("sub2api:codex-session-id:v2:" + seed)
+	scope := "sub2api:codex-session-id:v3:" + seed
+	return deriveStableUUIDv7(scope, deriveCodexUUIDv7TimestampMs(scope))
 }
 
 // resolveConvergedThreadID 按客户端原始 session-id 确定性派生 thread_id。
@@ -254,7 +326,8 @@ func resolveConvergedThreadID(seed, clientSessionID string) string {
 	if seed == "" || clientSessionID == "" {
 		return ""
 	}
-	return deriveStableUUIDv4("sub2api:codex-thread-id:v2:" + seed + ":" + clientSessionID)
+	scope := "sub2api:codex-thread-id:v3:" + seed + ":" + clientSessionID
+	return deriveStableUUIDv7(scope, deriveCodexUUIDv7TimestampMs(scope))
 }
 
 // codexFingerprintIDs 收敛后的完整 ID 集合。
@@ -598,4 +671,21 @@ func rewriteClientMetadataEmbeddedTurnMetadata(clientMetadata map[string]any, fi
 	if rebuilt, err := marshalCodexTurnMetadata(metadata); err == nil {
 		clientMetadata["x-codex-turn-metadata"] = string(rebuilt)
 	}
+}
+
+// clampCodexUUIDv7TimestampMs 把时间戳限制在当前时刻之前。
+// 真实客户端的 Uuid::now_v7() 不可能产生未来时间戳；沿用客户端 v7 时间戳时
+// 必须 clamp，否则合成 ID 与请求到达时间交叉一比即可判定为伪造。
+func clampCodexUUIDv7TimestampMs(timestampMs int64) int64 {
+	now := time.Now().UnixMilli()
+	if timestampMs > now {
+		return now
+	}
+	return timestampMs
+}
+
+// newCodexUUIDv7String 生成一个官方同构的 UUIDv7 字符串（当前时刻）。
+// 用于合成探测/回放请求的 session/turn/context-window 标识。
+func newCodexUUIDv7String() string {
+	return uuid.Must(uuid.NewV7()).String()
 }

@@ -114,6 +114,21 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 				headers.Set(name, value)
 			}
 		}
+		// 官方 WS 握手会带上这组条件头（client.rs build_websocket_headers 的
+		// window / parent-thread / subagent / memgen / timing-metrics 分支），
+		// 只有客户端声明时才存在；缺失不影响兼容，但缺失会少一层"像真客户端"。
+		if account != nil && account.UsesOpenAICodexProtocol() {
+			for _, name := range [...]string{
+				"x-codex-parent-thread-id",
+				"x-openai-subagent",
+				"x-openai-memgen-request",
+				"x-responsesapi-include-timing-metrics",
+			} {
+				if value := strings.TrimSpace(c.Request.Header.Get(name)); value != "" {
+					headers.Set(name, value)
+				}
+			}
+		}
 	}
 	// 真实 Codex 的 WS 握手同样携带会话级 x-codex-beta-features
 	// （client.rs build_websocket_headers 复用 build_responses_headers），
@@ -142,7 +157,9 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 		headers.Set(openAIWSTurnStateHeader, state)
 	}
 	if metadata := strings.TrimSpace(turnMetadata); metadata != "" {
-		headers.Set(openAIWSTurnMetadataHeader, metadata)
+		// 官方握手头里的 metadata 是去掉 tool_namespaces_info 的投影，完整 blob
+		// 只留在帧内 client_metadata；把大对象塞进 Upgrade 头不符合官方线序。
+		headers.Set(openAIWSTurnMetadataHeader, stripCodexTurnMetadataHeaderKeys(metadata))
 	}
 	applyCodexAccountIdentityHeaders(headers, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c))
 	applyStagedCodexFingerprintHeaders(c, account, headers)
@@ -155,7 +172,9 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 	}
 
 	betaValue := openAIWSBetaV2Value
-	if decision.Transport == OpenAIUpstreamTransportResponsesWebsocket {
+	// 官方 Codex 当前对 ChatGPT OAuth/SetupToken 账号使用 WSv2 Beta；API Key
+	// 兼容路径仍按协商协议保留旧值。不要把 Codex 通道降级到 v1。
+	if (account == nil || !account.UsesOpenAICodexProtocol()) && decision.Transport == OpenAIUpstreamTransportResponsesWebsocket {
 		betaValue = openAIWSBetaV1Value
 	}
 	headers.Set("OpenAI-Beta", betaValue)
@@ -184,6 +203,18 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 	// 覆盖所有 WS 模式（ctx_pool/dedicated/passthrough）的握手头。
 	account.ApplyHeaderOverrides(headers)
 	setOpenAICodexRoutingHint(headers, account, routingModel, routingServiceTier)
+	// 打票：客户端本回合未回带 turn-state 时注入已捕获票据（未启用时为空操作）。
+	if account != nil && account.UsesOpenAICodexProtocol() {
+		if ticketErr := s.applyCodexTicketIfConfigured(ctx, account, routingModel, headers); ticketErr != nil {
+			return nil, sessionResolution, ticketErr
+		}
+	}
+	// 终态线序收口：删除官方 WS 握手从不发送的头（下划线会话头、installation-id
+	// 头、accept-language），并补齐连字符 session-id/thread-id 对。必须放在所有
+	// 其它改写之后。
+	if account != nil && account.UsesOpenAICodexProtocol() {
+		projectCodexOutboundHeaders(headers, true)
+	}
 	logOpenAIRoutingDiagnostics(
 		ctx,
 		account,

@@ -375,6 +375,10 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		if buildErr != nil {
 			return nil, buildErr
 		}
+		// 打票：客户端未回带 turn-state 时注入已捕获票据（未启用时为空操作）。
+		if ticketErr := s.applyCodexTicketIfConfigured(ctx, account, actualModel, upstreamReq.Header); ticketErr != nil {
+			return nil, ticketErr
+		}
 
 		upstreamStart := time.Now()
 		resp, err = s.doOpenAIUpstream(upstreamReq, proxyURL, account)
@@ -384,6 +388,8 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 			// a failover so the handler switches to a healthy account.
 			return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, true)
 		}
+		// 打票：捕获上游响应头里的 turn-state 与基础设施 Cookie（未启用时为空操作）。
+		s.observeCodexTicketIfConfigured(ctx, account, actualModel, resp.Header)
 		if resp.StatusCode >= 400 {
 			// Peek only to identify an invalid task. Restore the body so the existing
 			// passthrough error handling sees the same response after recovery fails.
@@ -746,6 +752,18 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 
 	if err := applyMappedGPT55LiteCompatibility(req, account, body); err != nil {
 		return nil, err
+	}
+	// 终态线序收口（最后一道）：删除官方 HTTP 业务路径从不发送的头
+	// （OpenAI-Beta、下划线会话头、installation-id 头、accept-language），
+	// 并补齐连字符 session-id/thread-id 对。必须放在所有其它头改写之后。
+	//
+	// 豁免：legacy /responses/compact 与 messages 兼容桥仍以 session_id 归并
+	// 上游会话，收口会破坏其契约，故跳过。
+	passthroughMessagesBridge := isOpenAICompatMessagesBridgeContext(c) || isOpenAICompatMessagesBridgeBody(body)
+	if account.UsesOpenAICodexProtocol() && !passthroughMessagesBridge && !isOpenAIResponsesCompactPath(c) {
+		passthroughSessionSeed := strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String())
+		ensureCodexOfficialSessionHeaders(req.Header, account, getAPIKeyIDFromContext(c), passthroughSessionSeed)
+		projectCodexOutboundHeaders(req.Header, false)
 	}
 	return req, nil
 }

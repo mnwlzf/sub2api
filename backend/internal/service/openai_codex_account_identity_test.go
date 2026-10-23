@@ -114,7 +114,8 @@ func TestCodexAccountIdentitySourceResolvesShadowAndOverwritesFailoverContext(t 
 		"token", true, "client-session", true,
 	)
 	require.NoError(t, err)
-	require.Equal(t, isolateOpenAIUpstreamSessionID(0, parent, "client-session"), req.Header.Get("session_id"))
+	require.Empty(t, req.Header.Get("session_id"), "official Codex HTTP never sends the underscored session id")
+	require.Empty(t, req.Header.Get("x-codex-installation-id"), "installation id is client_metadata only")
 
 	next := &Account{ID: 19, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Credentials: map[string]any{
 		"chatgpt_account_id": "other-account",
@@ -153,11 +154,13 @@ func TestBuildOpenAIWSHeadersNamespacesCodexIdentityByOAuthAccount(t *testing.T)
 	first := build(account11)
 	firstAgain := build(account11)
 	second := build(account19)
-	for _, header := range []string{"session_id", "x-codex-installation-id", "thread-id", "x-codex-window-id", "x-client-request-id"} {
+	for _, header := range []string{"thread-id", "x-codex-window-id", "x-client-request-id"} {
 		require.NotEmpty(t, first.Get(header), header)
 		require.Equal(t, first.Get(header), firstAgain.Get(header), header)
 		require.NotEqual(t, first.Get(header), second.Get(header), header)
 	}
+	require.Empty(t, first.Get("x-codex-installation-id"), "installation id header is not official")
+	require.Empty(t, first.Get("session_id"), "underscored session id is not official")
 
 	httpRequest, err := service.buildUpstreamRequest(
 		context.Background(), c, account11,
@@ -165,7 +168,8 @@ func TestBuildOpenAIWSHeadersNamespacesCodexIdentityByOAuthAccount(t *testing.T)
 		"token", true, "client-session", true,
 	)
 	require.NoError(t, err)
-	require.Equal(t, httpRequest.Header.Get("session_id"), first.Get("session_id"), "HTTP and WS must derive the same identity from the raw client key")
+	require.Empty(t, httpRequest.Header.Get("session_id"), "HTTP must not send the underscored session id")
+	require.Empty(t, httpRequest.Header.Get("x-codex-installation-id"), "HTTP must not send the installation id header")
 }
 
 func TestBuildUpstreamRequestNamespacesCodexIdentityByOAuthAccount(t *testing.T) {
@@ -206,12 +210,11 @@ func TestBuildUpstreamRequestNamespacesCodexIdentityByOAuthAccount(t *testing.T)
 	firstAgain := build(11, "chatgpt-account-11")
 	second := build(19, "chatgpt-account-19")
 
+	// 官方 HTTP 业务路径不发送下划线会话头与 installation-id 头（由出站线序收口删除），
+	// 因此这里只统计官方确实会发送、且随账号命名空间轮换的身份载体。
 	identityHeaders := []string{
-		"x-codex-installation-id",
 		"x-codex-window-id",
 		"session-id",
-		"session_id",
-		"conversation_id",
 		"thread-id",
 		"x-client-request-id",
 		"x-codex-turn-metadata",
@@ -226,5 +229,5 @@ func TestBuildUpstreamRequestNamespacesCodexIdentityByOAuthAccount(t *testing.T)
 		require.Equal(t, first.Get(header), firstAgain.Get(header), "same account must retain stable identity: %s", header)
 		require.NotEqual(t, first.Get(header), second.Get(header), "account failover must rotate upstream identity: %s", header)
 	}
-	require.GreaterOrEqual(t, checked, 5, "test must exercise the real outbound identity surface")
+	require.GreaterOrEqual(t, checked, 2, "test must exercise the surviving official identity carriers (underscored session/installation headers are stripped by the outbound line-shape guard)")
 }
