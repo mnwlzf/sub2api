@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -342,6 +343,22 @@ func (s *CodexDegradationService) RunDue(ctx context.Context) error {
 	}
 	if !settings.Enabled {
 		return nil
+	}
+	// 多实例部署：自动检测只在 leader 实例上跑，避免同一批账号被重复探测。
+	// 锁按 TTL 自动过期，TTL 覆盖三个扫描周期；未注入锁时为单实例语义。
+	if s.leaderLock != nil {
+		owner := s.instanceID
+		if owner == "" {
+			owner = fmt.Sprintf("%d", os.Getpid())
+		}
+		acquired, lockErr := s.leaderLock.TryAcquireLeaderLock(ctx, "codex:degradation:auto", owner, 3*codexDegradationCycleInterval)
+		if lockErr != nil {
+			s.logWarn("leader_lock_failed", "err", lockErr)
+			return nil
+		}
+		if !acquired {
+			return nil
+		}
 	}
 	now := s.currentTime()
 	accounts, err := s.listDueAccounts(ctx, now)

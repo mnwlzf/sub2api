@@ -205,7 +205,8 @@ func (h *AccountHandler) ExportData(c *gin.Context) {
 			Platform:           acc.Platform,
 			Type:               acc.Type,
 			Credentials:        acc.Credentials,
-			Extra:              acc.Extra,
+			// 备份导出保留账号结构，但打票票据属于可再生成的运行态凭证，导出前脱敏。
+			Extra:              service.RedactCodexTicketExtra(acc.Extra),
 			ProxyKey:           proxyKey,
 			Concurrency:        acc.Concurrency,
 			Priority:           acc.Priority,

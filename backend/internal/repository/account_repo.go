@@ -63,6 +63,7 @@ var schedulerNeutralExtraKeyPrefixes = []string{
 	"upstream_billing_rate_sync",
 	"ollama_cloud_usage",
 	"pool_upstream_",
+	"codex_turn_ticket:",
 }
 
 var schedulerNeutralExtraKeys = map[string]struct{}{

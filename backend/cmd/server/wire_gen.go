@@ -297,7 +297,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	studentVerificationRepository := repository.NewStudentVerificationRepository(client)
 	studentVerificationService := service.ProvideStudentVerificationService(studentVerificationRepository, userRepository, groupRepository, affiliateRepository, settingService, emailService, client, apiKeyAuthCacheInvalidator)
 	studentVerificationHandler := admin.NewStudentVerificationHandler(studentVerificationService)
-	codexDegradationService := service.ProvideCodexDegradationService(accountRepository, settingService, openAITokenProvider, rateLimitService, configConfig)
+	codexDegradationService := service.ProvideCodexDegradationService(accountRepository, settingService, openAITokenProvider, rateLimitService, leaderLockCache, configConfig)
 	codexDiagnosticHandler := admin.NewCodexDiagnosticHandler(codexDegradationService)
 	codexTicketService := provideCodexTicketService(accountRepository, settingService, proxyRepository, configConfig, httpUpstream, openAIGatewayService, db)
 	codexTicketHandler := handler.ProvideCodexTicketHandler(codexTicketService, settingService, accountRepository)

@@ -63,6 +63,11 @@ type CodexDegradationDeps struct {
 	// ProbeTimeout 可选；单发自动探测超时，默认 120s。
 	// 对应 config 的 gateway.openai_codex_degradation.probe_timeout_seconds。
 	ProbeTimeout time.Duration
+	// LeaderLock 可选；多实例部署时用于让自动检测只在 leader 上运行，
+	// 避免每个实例重复探测同一批账号。nil 表示不做选举（单实例/测试）。
+	LeaderLock LeaderLockCache
+	// InstanceID 是 leader 锁的持有者标识；为空时由运行期用 pid 兜底。
+	InstanceID string
 }
 
 // CodexDegradationService 提供 Codex 降智检测（ModelTrace 指纹）的全部能力：
@@ -79,6 +84,8 @@ type CodexDegradationService struct {
 	defaults       *CodexDegradationSettings
 	probeTimeout   time.Duration
 	probe          codexDegradationProbe
+	leaderLock     LeaderLockCache
+	instanceID     string
 
 	parentCtx    context.Context
 	parentCancel context.CancelFunc
@@ -102,6 +109,8 @@ func NewCodexDegradationService(deps CodexDegradationDeps) *CodexDegradationServ
 		now:            deps.Now,
 		defaults:       deps.Defaults,
 		probeTimeout:   deps.ProbeTimeout,
+		leaderLock:     deps.LeaderLock,
+		instanceID:     deps.InstanceID,
 	}
 	if svc.endpoint == "" {
 		svc.endpoint = chatgptCodexURL

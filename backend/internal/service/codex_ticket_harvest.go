@@ -31,9 +31,12 @@ import (
 // 业务转发仍走账号原代理，二者互不影响（只共享代理记录）。
 
 const (
-	// codexTicketVerificationShape 是当前实现的验真方式：只校验票据形状
-	// （gAAAAA 前缀 + 账号规则长度）。P4 的指纹库落地后可扩展为 modeltrace 验真。
+	// codexTicketVerificationShape 是兜底验真方式：只校验票据形状
+	// （gAAAAA 前缀 + 账号规则长度）。
 	codexTicketVerificationShape = "ticket_shape_v1"
+	// codexTicketVerificationFingerprint 表示票据同时通过了 ModelTrace 指纹验真
+	// （探测输出判定为请求模型本身或其同系列参考类）。
+	codexTicketVerificationFingerprint = "ticket_fingerprint_v1"
 
 	codexTicketTriggerAutomatic = "automatic"
 	codexTicketTriggerManual    = "manual"
@@ -427,6 +430,22 @@ func (s *CodexTicketService) runAttempt(ctx context.Context, account *Account, m
 		}
 		return result, nil
 	}
+	// 5.5) 指纹验真：用同一挑战的输出判定实际服务模型。命中其它模型（degraded）
+	// 说明上游把请求降级到了别的模型，票据不可信，不落库；无法解析（failed）或
+	// 指纹库缺类（uncertain）不拦截，保留形状验真结论，避免误杀健康账号。
+	verificationMethod := codexTicketVerificationShape
+	fingerprint := EvaluateCodexDiagnostic(model, output, ModelTraceChallenge{
+		Prompt:        challenge.Prompt,
+		ExpectedCount: challenge.ExpectedCount,
+	})
+	switch fingerprint.Status {
+	case CodexDegradationStatusDegraded:
+		attempt.Outcome, attempt.ReasonCode = codexTicketOutcomeMiss, "fingerprint_degraded"
+		return result, nil
+	case CodexDegradationStatusNormal, CodexDegradationStatusUncertain:
+		verificationMethod = codexTicketVerificationFingerprint
+	}
+	attempt.VerificationMethod = verificationMethod
 	// 6) 落库
 	capturedAt := time.Now()
 	generation := uuid.NewString()
@@ -434,7 +453,7 @@ func (s *CodexTicketService) runAttempt(ctx context.Context, account *Account, m
 		AccountID:          current.ID,
 		Model:              model,
 		GenerationID:       generation,
-		VerificationMethod: codexTicketVerificationShape,
+		VerificationMethod: verificationMethod,
 		State:              state,
 		Cookie:             cookie,
 		Length:             len(state),

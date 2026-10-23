@@ -2,6 +2,9 @@ package service
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -21,6 +24,7 @@ func ProvideCodexDegradationService(
 	settingService *SettingService,
 	openAITokenProvider *OpenAITokenProvider,
 	rateLimitService *RateLimitService,
+	leaderLockCache LeaderLockCache,
 	cfg *config.Config,
 ) *CodexDegradationService {
 	// cfg 仅用于建立 wire 依赖顺序（确保 config.Load 已执行、viper 已就绪）。
@@ -39,8 +43,20 @@ func ProvideCodexDegradationService(
 		RateLimiter:  rateLimitService,
 		Defaults:     &serviceDefaults,
 		ProbeTimeout: time.Duration(defaults.ProbeTimeoutSeconds) * time.Second,
+		LeaderLock:   leaderLockCache,
+		InstanceID:   codexDegradationInstanceID(),
 	})
 	svc.Start(context.Background())
 	SetDefaultCodexDegradationRuntime(svc)
 	return svc
+}
+
+// codexDegradationInstanceID 返回 leader 锁持有者标识（hostname-pid）。
+// 失败时退化为 pid，保证锁仍能区分实例。
+func codexDegradationInstanceID() string {
+	hostname, err := os.Hostname()
+	if err != nil || strings.TrimSpace(hostname) == "" {
+		return fmt.Sprintf("pid-%d", os.Getpid())
+	}
+	return fmt.Sprintf("%s-%d", hostname, os.Getpid())
 }
