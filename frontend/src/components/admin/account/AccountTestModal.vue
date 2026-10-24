@@ -413,7 +413,7 @@ const generatedImages = ref<PreviewMedia[]>([])
 const generatedAudios = ref<PreviewMedia[]>([])
 const generatedVideos = ref<PreviewMedia[]>([])
 const previewImageUrl = ref('')
-const testMode = ref<'default' | 'compact' | 'embeddings'>('default')
+const testMode = ref<'default' | 'compact' | 'embeddings' | 'rerank'>('default')
 const grokTestMode = ref<'text' | 'image' | 'video' | 'search' | 'tts' | 'stt' | 'realtime'>('text')
 const uploadImageDataURL = ref('')
 const uploadImagePreview = ref('')
@@ -427,7 +427,8 @@ const isGrokAccount = computed(() => props.account?.platform === 'grok')
 const openAITestModeOptions = computed(() => [
   { value: 'default', label: t('admin.accounts.openai.testModeDefault') },
   { value: 'compact', label: t('admin.accounts.openai.testModeCompact') },
-  { value: 'embeddings', label: t('admin.accounts.openai.testModeEmbeddings') }
+  { value: 'embeddings', label: t('admin.accounts.openai.testModeEmbeddings') },
+  { value: 'rerank', label: t('admin.accounts.openai.testModeRerank') }
 ])
 const grokTestModeOptions = computed(() => [
   { value: 'text', label: t('admin.accounts.grok.testModeText') },
@@ -490,10 +491,20 @@ const embeddingModelOptions = computed(() =>
   })
 )
 
+const rerankModelOptions = computed(() =>
+  availableModels.value.filter((model) => {
+    const id = model.id.toLowerCase()
+    return ["rerank", "ranker"].some((needle) => id.includes(needle))
+  })
+)
+
 const modelOptionsForMode = computed(() => {
   if (!isGrokAccount.value) {
     if (testMode.value === "embeddings" && embeddingModelOptions.value.length > 0) {
       return embeddingModelOptions.value
+    }
+    if (testMode.value === "rerank" && rerankModelOptions.value.length > 0) {
+      return rerankModelOptions.value
     }
     return availableModels.value
   }
@@ -683,6 +694,7 @@ const testModeSummary = computed(() => {
     }
   }
   if (testMode.value === 'embeddings') return t('admin.accounts.openai.testModeEmbeddings')
+  if (testMode.value === 'rerank') return t('admin.accounts.openai.testModeRerank')
   if (supportsImageTest.value) return t('admin.accounts.imageTestMode')
   return t('admin.accounts.testPrompt')
 })
@@ -700,6 +712,8 @@ const canStartTest = computed(() => {
     }
     return Boolean(selectedModelId.value)
   }
+  // embeddings / rerank 允许留空模型：后端会按账号 model_mapping 或默认模型回退。
+  if (testMode.value === 'embeddings' || testMode.value === 'rerank') return true
   return Boolean(selectedModelId.value)
 })
 
@@ -778,6 +792,11 @@ watch(testMode, () => {
   if (!isOpenAIAccount.value) return
   if (testMode.value === "embeddings") {
     const preferred = embeddingModelOptions.value[0]
+    selectedModelId.value = preferred ? preferred.id : ""
+    return
+  }
+  if (testMode.value === "rerank") {
+    const preferred = rerankModelOptions.value[0]
     selectedModelId.value = preferred ? preferred.id : ""
     return
   }

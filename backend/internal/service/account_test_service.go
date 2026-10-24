@@ -392,6 +392,10 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 			// embeddings 是协议无关的 OpenAI 格式端点：显式选择时优先探测它。
 			return s.testOpenAIEmbeddingsConnection(c, account, modelID)
 		}
+		if testMode == AccountTestModeRerank {
+			// rerank 同为协议无关的 OpenAI 格式端点：显式选择时优先探测它。
+			return s.testOpenAIRerankConnection(c, account, modelID)
+		}
 		switch account.GetAPIProtocol() {
 		case APIProtocolAdaptive:
 			return s.testCNProviderAdaptiveConnection(c, account, modelID, prompt)
@@ -810,6 +814,10 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	// 模式优先分流，避免把 chat 默认模型发给 /v1/embeddings。
 	if mode == AccountTestModeEmbeddings {
 		return s.testOpenAIEmbeddingsConnection(c, account, modelID)
+	}
+	// Rerank 也是独立端点：模型缺省值与响应校验都与 Responses 不同。
+	if mode == AccountTestModeRerank {
+		return s.testOpenAIRerankConnection(c, account, modelID)
 	}
 
 	// Default to openai.DefaultTestModel for OpenAI testing

@@ -860,6 +860,7 @@ export default {
         testModeDefault: 'Default request',
         testModeCompact: 'Compact probe',
         testModeEmbeddings: 'Embedding test',
+        testModeRerank: 'Rerank test',
         modelRestrictionDisabledByPassthrough: 'Automatic passthrough is enabled: model whitelist/mapping will not take effect.',
       },
       grok: {

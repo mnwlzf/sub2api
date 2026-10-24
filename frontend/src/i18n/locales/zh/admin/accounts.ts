@@ -969,6 +969,7 @@ export default {
         testModeDefault: '常规请求',
         testModeCompact: 'Compact 探测',
         testModeEmbeddings: 'Embedding 测试',
+        testModeRerank: 'Rerank 测试',
         modelRestrictionDisabledByPassthrough: '已开启自动透传：模型白名单/映射不会生效。',
       },
       grok: {

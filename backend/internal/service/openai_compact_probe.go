@@ -21,6 +21,8 @@ func normalizeAccountTestMode(mode string) string {
 		return AccountTestModeCompact
 	case AccountTestModeEmbeddings:
 		return AccountTestModeEmbeddings
+	case AccountTestModeRerank:
+		return AccountTestModeRerank
 	default:
 		return AccountTestModeDefault
 	}
