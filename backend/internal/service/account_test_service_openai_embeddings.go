@@ -28,8 +28,10 @@ const openAIEmbeddingsTestInput = "hello"
 
 // resolveOpenAIEmbeddingsTestModel picks the model sent to /v1/embeddings:
 //   - explicit admin selection wins (and is mapped like every other test path);
-//   - otherwise the account's first model_mapping key (sorted for determinism,
-//     since Go map iteration order is random);
+//   - otherwise the account's first model_mapping key that looks like an
+//     embedding model (sorted for determinism, since Go map iteration order is
+//     random) — mapping 里常混有聊天模型，直接取首键会把 embedding 探测打到
+//     聊天模型上；
 //   - otherwise the OpenAI default embedding model.
 func resolveOpenAIEmbeddingsTestModel(account *Account, modelID string) string {
 	if model := strings.TrimSpace(modelID); model != "" {
@@ -42,9 +44,11 @@ func resolveOpenAIEmbeddingsTestModel(account *Account, modelID string) string {
 				keys = append(keys, key)
 			}
 		}
-		if len(keys) > 0 {
-			sort.Strings(keys)
-			return account.GetMappedModel(keys[0])
+		sort.Strings(keys)
+		for _, key := range keys {
+			if openAIBPSLooksLikeEmbeddingModel(key) {
+				return account.GetMappedModel(key)
+			}
 		}
 	}
 	return account.GetMappedModel(defaultOpenAIEmbeddingsTestModel)
@@ -166,4 +170,17 @@ func (s *AccountTestService) testOpenAIEmbeddingsConnection(c *gin.Context, acco
 	})
 	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
 	return nil
+}
+
+// openAIBPSLooksLikeEmbeddingModel 判断模型名是否像 embedding 模型。
+// 账号 model_mapping 常混有聊天模型，测试默认模型优先挑 embedding 类：
+// 覆盖 OpenAI text-embedding-*、BGE/m3e/GTE/Jina 等常见命名。
+func openAIBPSLooksLikeEmbeddingModel(model string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(model))
+	for _, needle := range []string{"embed", "bge", "m3e", "gte-", "jina-"} {
+		if strings.Contains(normalized, needle) {
+			return true
+		}
+	}
+	return false
 }
