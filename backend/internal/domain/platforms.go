@@ -15,6 +15,10 @@ const (
 	PlatformGatewayAnthropic PlatformGateway = "anthropic"
 	// PlatformGatewayOpenAI 由 OpenAIGatewayService 处理（OpenAI、Grok 与多协议 API Key 供应商）。
 	PlatformGatewayOpenAI PlatformGateway = "openai"
+	// PlatformGatewayOpenAIBPS 由 BPS 专用网关处理（固定上游 + Access Token 鉴权 +
+	// 仅 Responses HTTP）。与 PlatformGatewayOpenAI 分开，确保 OpenAI 平台的
+	// 账号过滤、调度与目录不会把 BPS 账号算进 OpenAI 兼容集合。
+	PlatformGatewayOpenAIBPS PlatformGateway = "openai_bps"
 	// PlatformGatewayGemini 由 Gemini 兼容网关处理。
 	PlatformGatewayGemini PlatformGateway = "gemini"
 	// PlatformGatewayAntigravity 由 Antigravity 网关处理。
@@ -37,6 +41,8 @@ type PlatformSpec struct {
 var platformList = []PlatformSpec{
 	{ID: PlatformAnthropic, DisplayName: "Anthropic", Gateway: PlatformGatewayAnthropic, LiteLLMProvider: "anthropic"},
 	{ID: PlatformOpenAI, DisplayName: "OpenAI", Gateway: PlatformGatewayOpenAI, LiteLLMProvider: "openai"},
+	// BPS 上游成本由管理员在分组配置，不从官方价目表同步，故 LiteLLMProvider 留空。
+	{ID: PlatformOpenAIBPS, DisplayName: "OpenAI BPS", Gateway: PlatformGatewayOpenAIBPS},
 	{ID: PlatformGemini, DisplayName: "Gemini", Gateway: PlatformGatewayGemini, LiteLLMProvider: "gemini"},
 	{ID: PlatformAntigravity, DisplayName: "Antigravity", Gateway: PlatformGatewayAntigravity, LiteLLMProvider: "anthropic"},
 	{ID: PlatformGrok, DisplayName: "Grok", Gateway: PlatformGatewayOpenAI, LiteLLMProvider: "xai"},
@@ -128,6 +134,12 @@ func CompositePrecedencePlatformIDs() []string {
 func UsesOpenAIGateway(id string) bool {
 	spec, ok := LookupPlatform(id)
 	return ok && spec.Gateway == PlatformGatewayOpenAI
+}
+
+// UsesOpenAIBPSGateway 报告平台是否由 BPS 专用网关处理。
+func UsesOpenAIBPSGateway(id string) bool {
+	spec, ok := LookupPlatform(id)
+	return ok && spec.Gateway == PlatformGatewayOpenAIBPS
 }
 
 // IsCNProviderPlatform 报告平台是否为国产单一厂商。

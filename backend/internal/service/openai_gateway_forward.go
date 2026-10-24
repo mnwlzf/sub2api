@@ -29,6 +29,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		return nil, filterErr
 	}
 	body = filteredBody
+	// 请求时区/位置 persona 改写：只动已标记的 environment_context 与 web_search
+	// user_location，普通对话文本不变（见 openai_request_locale.go）。
+	body = NormalizeOpenAIRequestLocale(ctx, account, body, "http")
 	clearGrokResponsesClientToolMapping(c)
 	clearOpenAIResponsesClientToolMapping(c)
 	clearOpenAIResponsesNamespaceNames(c)
@@ -65,7 +68,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	if normalized {
 		body = normalizedBody
 	}
-	legacyIngressBody, legacyIngressChanged, legacyIngressErr := normalizeOpenAIResponsesLegacyIngress(body)
+	legacyIngressBody, legacyIngressChanged, legacyIngressErr := normalizeOpenAIResponsesLegacyIngressWithConfig(s.cfg, body)
 	if legacyIngressErr != nil {
 		return nil, legacyIngressErr
 	}
@@ -1095,6 +1098,14 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			}
 			return nil, err
 		}
+		// 打票：官方 turn-state 由本回合首个响应铸造、回合内原样回带；客户端没有
+		// 回带时才注入已捕获票据（未启用打票时为空操作）。
+		if ticketErr := s.applyCodexTicketIfConfigured(ctx, account, upstreamModel, upstreamReq.Header); ticketErr != nil {
+			if headerGuard != nil {
+				headerGuard.close()
+			}
+			return nil, ticketErr
+		}
 
 		// Get proxy URL
 		proxyURL := ""
@@ -1132,6 +1143,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		if headerGuard != nil {
 			resp.Body = &openAIRequestContextReadCloser{ReadCloser: resp.Body, cleanup: headerGuard.close}
 		}
+		// 打票：捕获上游响应头里的 x-codex-turn-state（含 429 响应）与基础设施
+		// Cookie，供后续无票请求注入（未启用打票时为空操作）。
+		s.observeCodexTicketIfConfigured(ctx, account, upstreamModel, resp.Header)
 
 		// Handle error response
 		if resp.StatusCode >= 400 {
@@ -1616,6 +1630,17 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 
 	if err := applyMappedGPT55LiteCompatibility(req, account, body); err != nil {
 		return nil, err
+	}
+	// 终态线序收口（最后一道）：删除官方 HTTP 业务路径从不发送的头
+	// （OpenAI-Beta、下划线会话头、installation-id 头、accept-language），
+	// 并补齐连字符 session-id/thread-id 对。必须放在所有其它头改写之后。
+	//
+	// 豁免：legacy /responses/compact 与 messages 兼容桥仍以 session_id 归并
+	// 上游会话（官方 compact 客户端也回带该头），收口会破坏其契约，故跳过。
+	compatMessagesBridge := isOpenAICompatMessagesBridgeContext(c) || isOpenAICompatMessagesBridgeBody(body)
+	if account.UsesOpenAICodexProtocol() && !compatMessagesBridge && !isOpenAIResponsesCompactPath(c) {
+		ensureCodexOfficialSessionHeaders(req.Header, account, getAPIKeyIDFromContext(c), promptCacheKey)
+		projectCodexOutboundHeaders(req.Header, false)
 	}
 	return req, nil
 }

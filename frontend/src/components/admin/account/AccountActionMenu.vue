@@ -11,13 +11,39 @@
       >
         <div class="py-1">
           <template v-if="account">
-            <button @click="$emit('test', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-dark-700">
+            <button v-if="!isOpenAIBPS" @click="$emit('test', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-dark-700">
               <Icon name="play" size="sm" class="text-green-500" :stroke-width="2" />
+              {{ t('admin.accounts.testConnection') }}
+            </button>
+            <!-- OpenAI BPS 使用独立的连接测试端点（固定上游 + Access Token 鉴权）。 -->
+            <button
+              v-if="isOpenAIBPS"
+              data-testid="account-action-bps-test"
+              @click="$emit('bps-test', account); $emit('close')"
+              class="flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-dark-700"
+            >
+              <Icon name="play" size="sm" class="text-cyan-500" :stroke-width="2" />
               {{ t('admin.accounts.testConnection') }}
             </button>
             <button @click="$emit('stats', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-dark-700">
               <Icon name="chart" size="sm" class="text-indigo-500" />
               {{ t('admin.accounts.viewStats') }}
+            </button>
+            <button
+              v-if="canOpenCodexTickets"
+              @click="$emit('codex-tickets', account); $emit('close')"
+              class="flex w-full items-center gap-2 px-4 py-2 text-sm text-teal-600 hover:bg-gray-100 dark:hover:bg-dark-700"
+            >
+              <Icon name="key" size="sm" />
+              {{ t('admin.accounts.codexTicketCenter') }}
+            </button>
+            <button
+              v-if="canOpenDegradation"
+              @click="$emit('codex-degradation', account); $emit('close')"
+              class="flex w-full items-center gap-2 px-4 py-2 text-sm text-fuchsia-600 hover:bg-gray-100 dark:hover:bg-dark-700"
+            >
+              <Icon name="beaker" size="sm" />
+              {{ t('admin.accounts.codexDegradationCheck') }}
             </button>
             <button @click="$emit('schedule', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-dark-700">
               <Icon name="clock" size="sm" class="text-orange-500" />
@@ -68,9 +94,10 @@ import { useResizeObserver, useWindowSize } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { Icon } from '@/components/icons'
 import type { Account } from '@/types'
+import { supportsAccountQuota } from '@/utils/accountQuota'
 
 const props = defineProps<{ show: boolean; account: Account | null; anchorRect: DOMRect | null }>()
-const emit = defineEmits(['close', 'test', 'stats', 'schedule', 'duplicate', 'reauth', 'refresh-token', 'recover-state', 'reset-quota', 'set-privacy', 'create-spark-shadow'])
+const emit = defineEmits(['close', 'test', 'bps-test', 'stats', 'schedule', 'duplicate', 'reauth', 'refresh-token', 'recover-state', 'reset-quota', 'set-privacy', 'create-spark-shadow', 'codex-tickets', 'codex-degradation'])
 const { t } = useI18n()
 const menuRef = ref<HTMLElement | null>(null)
 const { width: viewportWidth, height: viewportHeight } = useWindowSize()
@@ -109,6 +136,18 @@ const canDuplicate = computed(() => {
   if (!props.account || props.account.parent_account_id != null) return false
   return ['apikey', 'upstream', 'bedrock', 'service_account'].includes(props.account.type)
 })
+// Codex 票据中心仅对 OpenAI OAuth / SetupToken 非影子账号开放（与后端一致）。
+const canOpenCodexTickets = computed(() => {
+  const account = props.account
+  if (!account) return false
+  return (
+    account.platform === 'openai' &&
+    (account.type === 'oauth' || account.type === 'setup-token') &&
+    account.parent_account_id == null
+  )
+})
+// 降智检测对全部 OpenAI 账号开放（服务端用账号自身凭据探测）。
+const canOpenDegradation = computed(() => props.account?.platform === 'openai')
 const isRateLimited = computed(() => {
   if (props.account?.rate_limit_reset_at && new Date(props.account.rate_limit_reset_at) > new Date()) {
     return true
@@ -129,13 +168,15 @@ const hasRecoverableState = computed(() => {
 })
 const isAntigravityOAuth = computed(() => props.account?.platform === 'antigravity' && props.account?.type === 'oauth')
 const isOpenAIOAuth = computed(() => props.account?.platform === 'openai' && props.account?.type === 'oauth')
+// OpenAI BPS：固定上游 + Access Token，测试连接走专用端点，不适用通用测试。
+const isOpenAIBPS = computed(() => props.account?.platform === 'openai_bps')
 // 影子账号(链接型,持 parent_account_id)不持凭据、type 不可变,凭据/隐私类操作对其无效。
 const isShadow = computed(() => props.account?.parent_account_id != null)
 // A "parent" OpenAI OAuth account is one that is NOT itself a shadow (parent_account_id == null)
 const isOpenAIOAuthParent = computed(() => isOpenAIOAuth.value && !isShadow.value)
 const supportsPrivacy = computed(() => (isAntigravityOAuth.value || isOpenAIOAuth.value) && !isShadow.value)
 const hasQuotaLimit = computed(() => {
-  return (props.account?.type === 'apikey' || props.account?.type === 'bedrock') && (
+  return supportsAccountQuota(props.account?.type) && (
     (props.account?.quota_limit ?? 0) > 0 ||
     (props.account?.quota_daily_limit ?? 0) > 0 ||
     (props.account?.quota_weekly_limit ?? 0) > 0

@@ -32,7 +32,8 @@ import type {
   GrokMediaEligibilityMode,
   GrokMediaEligibilityState,
   OpenCodeGoUsageSettings,
-  OpenCodeGoUsageState
+  OpenCodeGoUsageState,
+  OpenAIBPSTestConnectionResult
 } from '@/types'
 
 /**
@@ -307,6 +308,30 @@ export async function testAccount(id: number): Promise<{
     message: string
     latency_ms?: number
   }>(`/admin/accounts/${id}/test`)
+  return data
+}
+
+/**
+ * Test an OpenAI BPS account connection.
+ *
+ * The backend always answers HTTP 200 for an executed test; failures are carried by
+ * `http_status` / `error_code` in the result. Only invalid requests (bad id, non-BPS
+ * account) reject.
+ *
+ * @param id - Account ID
+ * @param options - Optional model override and compact (compressed) probe flag
+ */
+export async function testOpenAIBPSConnection(
+  id: number,
+  options?: { model?: string; compact?: boolean }
+): Promise<OpenAIBPSTestConnectionResult> {
+  const { data } = await apiClient.post<OpenAIBPSTestConnectionResult>(
+    `/admin/accounts/${id}/openai-bps/test-connection`,
+    {
+      model: options?.model?.trim() || undefined,
+      compact: options?.compact === true
+    }
+  )
   return data
 }
 
@@ -1110,6 +1135,22 @@ export async function getOpenCodeGoUsageSettings(): Promise<OpenCodeGoUsageSetti
   return data
 }
 
+/**
+ * OpenAI 账号可选请求时区（GET /admin/accounts/openai-request-timezones）。
+ * 列表不含中国大陆与港澳台时区，`default` 为未显式配置时的默认时区。
+ */
+export interface OpenAIRequestTimezoneOptions {
+  default: string
+  timezones: string[] | null
+}
+
+export async function getOpenAIRequestTimezones(): Promise<OpenAIRequestTimezoneOptions> {
+  const { data } = await apiClient.get<OpenAIRequestTimezoneOptions>(
+    '/admin/accounts/openai-request-timezones'
+  )
+  return data
+}
+
 export async function updateOpenCodeGoUsageSettings(
   settings: OpenCodeGoUsageSettings
 ): Promise<OpenCodeGoUsageSettings> {
@@ -1151,6 +1192,7 @@ export const accountsAPI = {
   delete: deleteAccount,
   toggleStatus,
   testAccount,
+  testOpenAIBPSConnection,
   refreshCredentials,
   applyOAuthCredentials,
   getStats,
@@ -1206,7 +1248,8 @@ export const accountsAPI = {
   updateOpenCodeGoUsageSettings,
   getOpenCodeGoUsage,
   setOpenCodeGoUsageAutoRefresh,
-  refreshOpenCodeGoUsage
+  refreshOpenCodeGoUsage,
+  getOpenAIRequestTimezones
 }
 
 export default accountsAPI

@@ -264,6 +264,55 @@
             {{ spec.display_name }}
           </button>
         </div>
+
+        <!-- OpenAI BPS：固定上游 + Access Token，仅 oauth 类型 -->
+        <div class="mt-2 flex flex-wrap rounded-lg bg-gray-100 p-1 dark:bg-dark-700" data-testid="platform-row-bps">
+          <button
+            type="button"
+            data-testid="platform-button-openai_bps"
+            @click="selectOpenAIBPSPlatform()"
+            :class="[
+              'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2.5 text-sm font-medium transition-all',
+              isOpenAIBPS
+                ? 'bg-white text-cyan-700 shadow-sm dark:bg-dark-600 dark:text-cyan-300'
+                : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
+            ]"
+          >
+            <PlatformIcon platform="openai_bps" size="sm" />
+            {{ t('admin.accounts.bps.platformName') }}
+          </button>
+        </div>
+      </div>
+
+      <!-- OpenAI BPS 凭证（固定上游，无 Base URL / API Key） -->
+      <div v-if="isOpenAIBPS" class="space-y-4" data-testid="create-bps-fields">
+        <div class="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-xs text-cyan-800 dark:border-cyan-800/40 dark:bg-cyan-900/20 dark:text-cyan-200">
+          <p class="font-medium">{{ t('admin.accounts.bps.upstreamHint') }}</p>
+          <p class="mt-1">{{ t('admin.accounts.bps.banRiskHint') }}</p>
+        </div>
+        <div>
+          <label class="input-label">{{ t('admin.accounts.bps.accessToken') }}</label>
+          <input
+            v-model="bpsAccessToken"
+            type="password"
+            autocomplete="new-password"
+            class="input font-mono"
+            :placeholder="t('admin.accounts.bps.accessTokenPlaceholder')"
+            data-testid="create-bps-access-token"
+          />
+          <p class="input-hint">{{ t('admin.accounts.bps.accessTokenHint') }}</p>
+        </div>
+        <div>
+          <label class="input-label">{{ t('admin.accounts.bps.accountId') }}</label>
+          <input
+            v-model="bpsAccountId"
+            type="text"
+            class="input font-mono"
+            :placeholder="t('admin.accounts.bps.accountIdPlaceholder')"
+            data-testid="create-bps-account-id"
+          />
+          <p class="input-hint">{{ t('admin.accounts.bps.accountIdHint') }}</p>
+        </div>
       </div>
 
       <!-- Account Type Selection (Anthropic) -->
@@ -2359,9 +2408,9 @@
         />
       </div>
 
-      <!-- 配额控制 (非 Anthropic apikey/bedrock) -->
+      <!-- 配额控制 (非 Anthropic apikey/bedrock，以及 Vertex service_account) -->
       <div
-        v-else-if="form.type === 'apikey' || form.type === 'bedrock'"
+        v-else-if="supportsAccountQuota(form.type)"
         class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4"
       >
         <div class="mb-3">
@@ -3327,6 +3376,12 @@
         </div>
       </div>
 
+      <!-- OpenAI 请求时区（账号 extra.openai_request_timezone，缺省跟随默认） -->
+      <OpenAIRequestTimezoneSelect
+        v-if="form.platform === 'openai'"
+        v-model="openaiRequestTimezone"
+      />
+
       <!-- OpenAI Codex namespace 工具摊平（兼容开关，仅 OAuth） -->
       <div
         v-if="form.platform === 'openai' && form.type === 'oauth'"
@@ -4183,6 +4238,18 @@
     @confirm="handleMixedChannelConfirm"
     @cancel="handleMixedChannelCancel"
   />
+
+  <!-- OpenAI BPS 封禁风险二次确认（取消保留输入，不提交） -->
+  <ConfirmDialog
+    :show="showBPSRiskConfirm"
+    :title="t('admin.accounts.bps.riskConfirmTitle')"
+    :message="t('admin.accounts.bps.riskConfirmMessage')"
+    :confirm-text="t('admin.accounts.bps.riskConfirmConfirm')"
+    :cancel-text="t('common.cancel')"
+    :danger="true"
+    @confirm="handleBPSRiskConfirm"
+    @cancel="handleBPSRiskCancel"
+  />
 </template>
 
 <script setup lang="ts">
@@ -4228,6 +4295,9 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Select from '@/components/common/Select.vue'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import UpstreamRequestIdHeaderField from '@/components/account/UpstreamRequestIdHeaderField.vue'
+import OpenAIRequestTimezoneSelect from '@/components/account/OpenAIRequestTimezoneSelect.vue'
+import { applyOpenAIRequestTimezoneExtra } from '@/components/account/openaiRequestTimezone'
+import { buildOpenAIBPSCredentials, isOpenAIBPSPlatform, validateOpenAIBPSForm } from '@/utils/openaiBPS'
 import PlatformIcon from '@/components/common/PlatformIcon.vue'
 import Icon from '@/components/icons/Icon.vue'
 import ProxySelector from '@/components/common/ProxySelector.vue'
@@ -4282,6 +4352,7 @@ import {
   parseDateTimeLocalInput
 } from '@/utils/format'
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
+import { supportsAccountQuota } from '@/utils/accountQuota'
 import { getAccountExpiryTimestamp } from '@/components/account/accountExpiry'
 import { VERTEX_LOCATION_OPTIONS } from '@/constants/account'
 import {
@@ -4608,6 +4679,14 @@ function selectTypeSafePlatform() {
   apiKeyBaseUrl.value = 'https://api.typesafe.ai'
   allowedModels.value = ['jev-latest']
 }
+// OpenAI BPS：仅 oauth 类型，凭证只有 Access Token / chatgpt_account_id。
+function selectOpenAIBPSPlatform() {
+  form.platform = 'openai_bps'
+  form.type = 'oauth'
+  accountCategory.value = 'oauth-based'
+  allowedModels.value = []
+  modelMappings.value = []
+}
 function selectGenericMultiProtocolPlatform(platform: string) {
   form.platform = platform
   form.type = 'apikey'
@@ -4783,6 +4862,8 @@ const applyGrokOAuthUpstreamConfig = (credentials: Record<string, unknown>) => {
 const interceptWarmupRequests = ref(false)
 const autoPauseOnExpired = ref(true)
 const openaiPassthroughEnabled = ref(false)
+// OpenAI 请求时区（账号 extra.openai_request_timezone，'' = 跟随后端默认）
+const openaiRequestTimezone = ref('')
 // OpenAI Codex namespace 工具摊平兼容开关（仅 OAuth），缺省关闭即原样保留
 const openaiFlattenNamespacesEnabled = ref(false)
 // 严格校验 Codex 签名的兼容中转（仅 API Key）补齐 include / prompt_cache_key，缺省关闭
@@ -4795,7 +4876,7 @@ const openAICompactMode = ref<OpenAICompactMode>('auto')
 const openAIResponsesMode = ref<OpenAIResponsesMode>('auto')
 // Images 非流式响应缺 b64_json 时由网关下载 url 回填（仅 OpenAI API Key）。
 const openAIImagesUrlToB64JsonEnabled = ref(false)
-const openAIEndpointCapabilities = ref<OpenAIEndpointCapability[]>(['chat_completions', 'embeddings'])
+const openAIEndpointCapabilities = ref<OpenAIEndpointCapability[]>(['chat_completions', 'embeddings', 'rerank'])
 const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const codexCLIOnlyEnabled = ref(false)
@@ -4898,6 +4979,7 @@ const openAITextEndpointCapabilityLabel = computed(() => {
 const openAIEndpointCapabilityOptions = computed<{ value: OpenAIEndpointCapability; label: string }[]>(() => [
   { value: 'chat_completions', label: openAITextEndpointCapabilityLabel.value },
   { value: 'embeddings', label: t('admin.accounts.openai.capabilityEmbeddings') },
+  { value: 'rerank', label: t('admin.accounts.openai.capabilityRerank') },
   { value: 'seedance', label: 'Seedance (Ark)' }
 ])
 const openAITextGenerationCapabilityEnabled = computed(() =>
@@ -4905,9 +4987,9 @@ const openAITextGenerationCapabilityEnabled = computed(() =>
 )
 
 const normalizeOpenAIEndpointCapabilities = (values: OpenAIEndpointCapability[]) => {
-  const allowed: OpenAIEndpointCapability[] = ['chat_completions', 'embeddings', 'seedance']
+  const allowed: OpenAIEndpointCapability[] = ['chat_completions', 'embeddings', 'seedance', 'rerank']
   const selected = allowed.filter((value) => values.includes(value))
-  return selected.length > 0 ? selected : ['chat_completions', 'embeddings'] as OpenAIEndpointCapability[]
+  return selected.length > 0 ? selected : ['chat_completions', 'embeddings', 'rerank'] as OpenAIEndpointCapability[]
 }
 
 const toggleOpenAIEndpointCapability = (capability: OpenAIEndpointCapability, event?: Event) => {
@@ -5120,8 +5202,20 @@ const form = reactive({
   expires_at: null as number | null
 })
 
+// OpenAI BPS：固定上游 + Access Token，无 OAuth 流程。
+const isOpenAIBPS = computed(() => isOpenAIBPSPlatform(form.platform))
+const bpsAccessToken = ref('')
+const bpsAccountId = ref('')
+// 封禁风险二次确认：确认前暂存已校验的凭证，取消时保留输入、不提交。
+const showBPSRiskConfirm = ref(false)
+const bpsPendingCredentials = ref<Record<string, unknown> | null>(null)
+
 // Helper to check if current type needs OAuth flow
 const isOAuthFlow = computed(() => {
+  // OpenAI BPS 只用 Access Token，没有 OAuth 授权流程
+  if (isOpenAIBPS.value) {
+    return false
+  }
   // Antigravity upstream 类型不需要 OAuth 流程
   if (form.platform === 'antigravity' && antigravityAccountType.value === 'upstream') {
     return false
@@ -5299,7 +5393,7 @@ watch(
       openaiFlattenNamespacesEnabled.value = false
       openaiEnsureCodexSignatureEnabled.value = false
       openaiStripForeignReplayStateEnabled.value = false
-      openAIEndpointCapabilities.value = ['chat_completions', 'embeddings']
+      openAIEndpointCapabilities.value = ['chat_completions', 'embeddings', 'rerank']
       openaiOAuthResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
       openaiAPIKeyResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
       codexCLIOnlyEnabled.value = false
@@ -5720,6 +5814,10 @@ const resetForm = () => {
   adaptiveBaseUrls.value = { chat_completions: '', anthropic: '', responses: '' }
   apiKeyBaseUrl.value = 'https://api.anthropic.com'
   apiKeyValue.value = ''
+  bpsAccessToken.value = ''
+  bpsAccountId.value = ''
+  showBPSRiskConfirm.value = false
+  bpsPendingCredentials.value = null
   upstreamRequestIdHeader.value = ''
   upstreamBillingAutoProbeEnabled.value = true
   editQuotaLimit.value = null
@@ -5766,7 +5864,7 @@ const resetForm = () => {
   openAILongContextBillingTouched.value = false
   openAICompactMode.value = 'auto'
   openAIResponsesMode.value = 'auto'
-  openAIEndpointCapabilities.value = ['chat_completions', 'embeddings']
+  openAIEndpointCapabilities.value = ['chat_completions', 'embeddings', 'rerank']
   openaiOAuthResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
   openaiAPIKeyResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
   codexCLIOnlyEnabled.value = false
@@ -5824,6 +5922,7 @@ const resetForm = () => {
 
 const handleClose = () => {
   antigravityMixedChannelConfirmed.value = false
+  openaiRequestTimezone.value = ''
   clearMixedChannelDialog()
   emit('close')
 }
@@ -5911,6 +6010,9 @@ const buildOpenAIExtra = (base?: Record<string, unknown>): Record<string, unknow
   } else {
     delete extra.images_url_to_b64_json
   }
+
+  // 请求时区：空值 = 跟随后端默认，不落键；非 OpenAI 平台在 helper 内自动清理。
+  applyOpenAIRequestTimezoneExtra(extra, form.platform, openaiRequestTimezone.value)
 
   return Object.keys(extra).length > 0 ? extra : undefined
 }
@@ -6059,6 +6161,19 @@ const handleVertexServiceAccountDrop = async (event: DragEvent) => {
   applyVertexServiceAccountJson(await file.text())
 }
 
+// OpenAI BPS 封禁风险确认：确认后提交暂存凭证，取消则保留输入不提交。
+const handleBPSRiskConfirm = async () => {
+  const credentials = bpsPendingCredentials.value
+  showBPSRiskConfirm.value = false
+  bpsPendingCredentials.value = null
+  if (!credentials) return
+  await createAccountAndFinish('openai_bps' as AccountPlatform, 'oauth', credentials)
+}
+const handleBPSRiskCancel = () => {
+  showBPSRiskConfirm.value = false
+  bpsPendingCredentials.value = null
+}
+
 const handleSubmit = async () => {
   // For OAuth-based type, handle OAuth flow (goes to step 2)
   if (isOAuthFlow.value) {
@@ -6073,6 +6188,28 @@ const handleSubmit = async () => {
       return
     }
     step.value = 2
+    return
+  }
+
+  // OpenAI BPS：Access Token 直接建号；保存前二次确认封禁风险。
+  if (isOpenAIBPS.value) {
+    if (!form.name.trim()) {
+      appStore.showError(t('admin.accounts.pleaseEnterAccountName'))
+      return
+    }
+    const validation = validateOpenAIBPSForm(
+      { accessToken: bpsAccessToken.value, chatgptAccountId: bpsAccountId.value },
+      'create'
+    )
+    if (validation) {
+      appStore.showError(t(`admin.accounts.bps.${validation}`))
+      return
+    }
+    bpsPendingCredentials.value = buildOpenAIBPSCredentials({
+      accessToken: bpsAccessToken.value,
+      chatgptAccountId: bpsAccountId.value
+    })
+    showBPSRiskConfirm.value = true
     return
   }
 
@@ -6409,9 +6546,9 @@ const createAccountAndFinish = async (
   if (!applyTempUnschedConfig(credentials)) {
     return
   }
-  // Inject quota limits for apikey/bedrock accounts
+  // Inject quota limits for apikey/bedrock/service_account accounts
   let finalExtra = withUpstreamRequestIdHeader(extra)
-  if (type === 'apikey' || type === 'bedrock') {
+  if (supportsAccountQuota(type)) {
     const quotaExtra: Record<string, unknown> = { ...(finalExtra || {}) }
     if (editQuotaLimit.value != null && editQuotaLimit.value > 0) {
       quotaExtra.quota_limit = editQuotaLimit.value

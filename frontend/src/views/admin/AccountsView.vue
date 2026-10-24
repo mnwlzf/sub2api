@@ -4,7 +4,6 @@
       <template #filters>
         <div class="flex flex-wrap-reverse items-start justify-between gap-3">
           <AccountTableFilters
-            class="lg:w-auto lg:flex-1"
             v-model:searchQuery="params.search"
             :filters="params"
             :groups="groups"
@@ -270,6 +269,11 @@
                 >
                   {{ getAntigravityTierLabel(row) }}
                 </span>
+                <!-- OpenAI BPS 凭证状态（仅 BPS 账号返回 bps_credential_state）。 -->
+                <OpenAIBPSCredentialStatusBadge
+                  :platform="row.platform"
+                  :state="row.bps_credential_state"
+                />
               </div>
               <div
                 v-if="getOpenAICompactMeta(row)"
@@ -286,6 +290,13 @@
           </template>
           <template #cell-capacity="{ row }">
             <AccountCapacityCell :account="row" />
+          </template>
+          <template #cell-ticket="{ row }">
+            <CodexTicketStatusCell
+              :account="row"
+              :refresh-token="ticketStatusRefreshToken"
+              @open="handleOpenTicketCenter"
+            />
           </template>
           <template #cell-status="{ row }">
             <div class="flex items-center gap-1.5">
@@ -467,9 +478,21 @@
     <EditAccountModal :show="showEdit" :account="edAcc" :proxies="proxies" :groups="groups" @close="showEdit = false" @updated="handleAccountUpdated" />
     <ReAuthAccountModal :show="showReAuth" :account="reAuthAcc" @close="closeReAuthModal" @reauthorized="handleAccountUpdated" />
     <AccountTestModal :show="showTest" :account="testingAcc" @close="closeTestModal" />
+    <OpenAIBPSConnectionTestModal :show="showBPSTest" :account="bpsTestingAcc" @close="closeBPSTestModal" />
     <AccountStatsModal :show="showStats" :account="statsAcc" @close="closeStatsModal" />
+    <CodexTicketCenterModal
+      :show="showTicketCenter"
+      :account="ticketCenterAcc"
+      @close="closeTicketCenter"
+      @changed="handleTicketChanged"
+    />
+    <CodexDegradationModal
+      :show="showDegradation"
+      :account="degradationAcc"
+      @close="closeDegradation"
+    />
     <ScheduledTestsPanel :show="showSchedulePanel" :account-id="scheduleAcc?.id ?? null" :model-options="scheduleModelOptions" @close="closeSchedulePanel" />
-    <AccountActionMenu :show="menu.show" :account="menu.acc" :anchor-rect="menu.anchorRect" @close="menu.show = false" @test="handleTest" @stats="handleViewStats" @schedule="handleSchedule" @duplicate="handleDuplicateAccount" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @reset-quota="handleResetQuota" @set-privacy="handleSetPrivacy" @create-spark-shadow="handleCreateSparkShadow" />
+    <AccountActionMenu :show="menu.show" :account="menu.acc" :anchor-rect="menu.anchorRect" @close="menu.show = false" @test="handleTest" @bps-test="handleBPSTest" @stats="handleViewStats" @schedule="handleSchedule" @duplicate="handleDuplicateAccount" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @reset-quota="handleResetQuota" @set-privacy="handleSetPrivacy" @create-spark-shadow="handleCreateSparkShadow" @codex-tickets="handleOpenTicketCenter" @codex-degradation="handleOpenDegradation" />
     <SyncFromCrsModal :show="showSync" @close="showSync = false" @synced="reload" />
     <ImportDataModal :show="showImportData" @close="showImportData = false" @imported="handleDataImported" />
     <BulkEditAccountModal
@@ -505,6 +528,7 @@ import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { adminAPI } from '@/api/admin'
+import { CONCRETE_PLATFORM_OPTIONS } from '@/constants/platforms'
 import { useTableLoader } from '@/composables/useTableLoader'
 import { useSwipeSelect, type SwipeSelectVirtualContext } from '@/composables/useSwipeSelect'
 import { useTableSelection } from '@/composables/useTableSelection'
@@ -524,6 +548,8 @@ import AccountActionMenu from '@/components/admin/account/AccountActionMenu.vue'
 import ImportDataModal from '@/components/admin/account/ImportDataModal.vue'
 import ReAuthAccountModal from '@/components/admin/account/ReAuthAccountModal.vue'
 import AccountTestModal from '@/components/admin/account/AccountTestModal.vue'
+import OpenAIBPSConnectionTestModal from '@/components/account/OpenAIBPSConnectionTestModal.vue'
+import OpenAIBPSCredentialStatusBadge from '@/components/account/OpenAIBPSCredentialStatusBadge.vue'
 import AccountStatsModal from '@/components/admin/account/AccountStatsModal.vue'
 import ScheduledTestsPanel from '@/components/admin/account/ScheduledTestsPanel.vue'
 import type { SelectOption } from '@/components/common/Select.vue'
@@ -539,6 +565,11 @@ import PlatformTypeBadge from '@/components/common/PlatformTypeBadge.vue'
 import Icon from '@/components/icons/Icon.vue'
 import ErrorPassthroughRulesModal from '@/components/admin/ErrorPassthroughRulesModal.vue'
 import TLSFingerprintProfilesModal from '@/components/admin/TLSFingerprintProfilesModal.vue'
+import CodexTicketStatusCell from '@/components/admin/codex/CodexTicketStatusCell.vue'
+import CodexTicketCenterModal from '@/components/admin/codex/CodexTicketCenterModal.vue'
+import CodexDegradationModal from '@/components/admin/codex/CodexDegradationModal.vue'
+import { invalidateTicketStatuses } from '@/features/codexTickets/useCodexTicketStatuses'
+import { isCodexTicketEligibleAccount } from '@/features/codexTickets/ticketStatus'
 import { fetchAllAccountIds } from '@/utils/accountSelection'
 import { buildGrokUsageRefreshKey, buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
 import { formatDateTime, formatRelativeTime } from '@/utils/format'
@@ -615,6 +646,7 @@ const showDeleteDialog = ref(false)
 const showCreateShadowDialog = ref(false)
 const showReAuth = ref(false)
 const showTest = ref(false)
+const showBPSTest = ref(false)
 const showStats = ref(false)
 const showErrorPassthrough = ref(false)
 const showTLSFingerprintProfiles = ref(false)
@@ -624,7 +656,15 @@ const deletingAcc = ref<Account | null>(null)
 const creatingShadowAcc = ref<Account | null>(null)
 const reAuthAcc = ref<Account | null>(null)
 const testingAcc = ref<Account | null>(null)
+const bpsTestingAcc = ref<Account | null>(null)
 const statsAcc = ref<Account | null>(null)
+// Codex 票据中心 / 降智检测弹窗
+const showTicketCenter = ref(false)
+const ticketCenterAcc = ref<Account | null>(null)
+const showDegradation = ref(false)
+const degradationAcc = ref<Account | null>(null)
+// 票据中心操作后自增，触发「打票」列单元格重新拉取
+const ticketStatusRefreshToken = ref(0)
 const showSchedulePanel = ref(false)
 const scheduleAcc = ref<Account | null>(null)
 const scheduleModelOptions = ref<SelectOption[]>([])
@@ -663,6 +703,31 @@ const HIDDEN_COLUMNS_KEY = 'account-hidden-columns'
 // One-time migration: hide scheduler score for existing admins too, because showing it opt-ins to heavy backend scoring.
 const HIDDEN_COLUMNS_VERSION_KEY = 'account-hidden-columns-version'
 const HIDDEN_COLUMNS_CURRENT_VERSION = 'scheduler-score-hidden-by-default'
+
+// Account filter settings
+const ACCOUNT_FILTER_STORAGE_KEY = 'account-filter-values'
+type AccountFilterValues = {
+  platform: string
+  status: string
+}
+const loadInitialAccountFilterValues = (): AccountFilterValues => {
+  const fallback: AccountFilterValues = { platform: '', status: '' }
+  try {
+    const raw = localStorage.getItem(ACCOUNT_FILTER_STORAGE_KEY)
+    if (!raw) return fallback
+    const parsed: unknown = JSON.parse(raw)
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return fallback
+    const values = parsed as Record<string, unknown>
+    return {
+      platform: typeof values.platform === 'string' && CONCRETE_PLATFORM_OPTIONS.some(option => option.value === values.platform)
+        ? values.platform : '',
+      status: typeof values.status === 'string' && ['active', 'inactive', 'error', 'rate_limited', 'temp_unschedulable', 'unschedulable'].includes(values.status)
+        ? values.status : ''
+    }
+  } catch {
+    return fallback
+  }
+}
 
 // Sorting settings
 const ACCOUNT_SORT_STORAGE_KEY = 'account-table-sort'
@@ -1095,9 +1160,8 @@ const {
 } = useTableLoader<AccountListItem, any>({
   fetchFn: adminAPI.accounts.list,
   initialParams: {
-    platform: '',
+    ...loadInitialAccountFilterValues(),
     type: '',
-    status: '',
     privacy_mode: '',
     group: '',
     search: '',
@@ -1311,7 +1375,19 @@ const refreshUpstreamBillingSortedList = async (force = false) => {
 
 useIntervalFn(() => { void refreshUpstreamBillingRates() }, 5 * 60_000, { immediate: false })
 
+const saveAccountFilterValues = () => {
+  try {
+    localStorage.setItem(ACCOUNT_FILTER_STORAGE_KEY, JSON.stringify({
+      platform: params.platform,
+      status: params.status
+    }))
+  } catch {
+    // Filtering must remain available when browser storage is unavailable.
+  }
+}
+
 const debouncedReload = () => {
+  saveAccountFilterValues()
   clearSelection()
   syncAccountListDerivedParams()
   hasPendingListSync.value = false
@@ -1390,6 +1466,7 @@ const isAnyModalOpen = computed(() => {
     showDeleteDialog.value ||
     showReAuth.value ||
     showTest.value ||
+    showBPSTest.value ||
     showStats.value ||
     showSchedulePanel.value ||
     showErrorPassthrough.value ||
@@ -1809,6 +1886,7 @@ const allColumns = computed(() => {
     { key: 'name', label: t('admin.accounts.columns.name'), sortable: true },
     { key: 'id', label: t('admin.accounts.columns.id'), sortable: true },
     { key: 'platform_type', label: t('admin.accounts.columns.platformType'), sortable: false },
+    { key: 'ticket', label: t('admin.accounts.columns.ticket'), sortable: false },
     { key: 'capacity', label: t('admin.accounts.columns.capacity'), sortable: false },
     { key: 'status', label: t('admin.accounts.columns.status'), sortable: true },
     { key: 'schedulable', label: t('admin.accounts.columns.schedulable'), sortable: true },
@@ -2366,11 +2444,43 @@ const handleTest = async (a: AccountListItem) => {
   testingAcc.value = account
   showTest.value = true
 }
+// OpenAI BPS 测试连接：走专用端点，读取完整账号（含脱敏凭证状态）。
+const handleBPSTest = async (a: AccountListItem) => {
+  const account = await loadAccountDetails(a)
+  if (!account) return
+  bpsTestingAcc.value = account
+  showBPSTest.value = true
+}
+const closeBPSTestModal = () => { showBPSTest.value = false; bpsTestingAcc.value = null }
 const handleViewStats = async (a: AccountListItem) => {
   const account = await loadAccountDetails(a)
   if (!account) return
   statsAcc.value = account
   showStats.value = true
+}
+// Codex 票据中心：仅 OpenAI OAuth / SetupToken 非影子账号可打开（与后端一致）
+const handleOpenTicketCenter = (a: AccountListItem) => {
+  if (!isCodexTicketEligibleAccount(a)) return
+  ticketCenterAcc.value = a
+  showTicketCenter.value = true
+}
+const closeTicketCenter = () => {
+  showTicketCenter.value = false
+  ticketCenterAcc.value = null
+}
+const handleTicketChanged = (accountId: number) => {
+  invalidateTicketStatuses(accountId)
+  ticketStatusRefreshToken.value += 1
+}
+// 降智检测：所有 OpenAI 账号都可运行（服务端用账号自身凭据探测）
+const handleOpenDegradation = (a: AccountListItem) => {
+  if (a.platform !== 'openai') return
+  degradationAcc.value = a
+  showDegradation.value = true
+}
+const closeDegradation = () => {
+  showDegradation.value = false
+  degradationAcc.value = null
 }
 const handleSchedule = async (a: Account) => {
   scheduleAcc.value = a

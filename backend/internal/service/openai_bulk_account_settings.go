@@ -91,10 +91,10 @@ func normalizeBulkOpenAIEndpointCapabilities(raw any) (any, bool, error) {
 		return nil, false, invalidBulkOpenAIEndpointCapabilities()
 	}
 
-	selected := make(map[string]bool, 2)
+	selected := make(map[string]bool, 3)
 	for _, value := range values {
 		switch OpenAIEndpointCapability(value) {
-		case OpenAIEndpointCapabilityChatCompletions, OpenAIEndpointCapabilityEmbeddings:
+		case OpenAIEndpointCapabilityChatCompletions, OpenAIEndpointCapabilityEmbeddings, OpenAIEndpointCapabilityRerank:
 			selected[value] = true
 		default:
 			return nil, false, invalidBulkOpenAIEndpointCapabilities()
@@ -105,19 +105,32 @@ func normalizeBulkOpenAIEndpointCapabilities(raw any) (any, bool, error) {
 	}
 
 	includeChat := selected[string(OpenAIEndpointCapabilityChatCompletions)]
+	// 历史语义保留：同时勾选 chat_completions + embeddings 视为「全部文本
+	// 端点」，清空该凭据（不限制）。rerank 加入后这一兼容仍然成立——旧客户端
+	// 只发 chat+embeddings 时，账号不会被锁死在缺少 rerank 的集合里；新客户端
+	// 三选全发同样落到这里。
 	if includeChat && selected[string(OpenAIEndpointCapabilityEmbeddings)] {
 		return nil, true, nil
 	}
-	if includeChat {
-		return []string{string(OpenAIEndpointCapabilityChatCompletions)}, true, nil
+	// 其余组合落成显式限制集：只放行管理员勾选的端点（例如 chat+rerank
+	// 不再包含 embeddings）。
+	capabilities := make([]string, 0, len(selected))
+	for _, capability := range []OpenAIEndpointCapability{
+		OpenAIEndpointCapabilityChatCompletions,
+		OpenAIEndpointCapabilityEmbeddings,
+		OpenAIEndpointCapabilityRerank,
+	} {
+		if selected[string(capability)] {
+			capabilities = append(capabilities, string(capability))
+		}
 	}
-	return []string{string(OpenAIEndpointCapabilityEmbeddings)}, false, nil
+	return capabilities, includeChat, nil
 }
 
 func invalidBulkOpenAIEndpointCapabilities() error {
 	return infraerrors.BadRequest(
 		"OPENAI_ENDPOINT_CAPABILITIES_INVALID",
-		"openai_capabilities must contain chat_completions, embeddings, or both",
+		"openai_capabilities must contain chat_completions, embeddings, or rerank",
 	)
 }
 

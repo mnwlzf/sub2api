@@ -413,7 +413,7 @@ const generatedImages = ref<PreviewMedia[]>([])
 const generatedAudios = ref<PreviewMedia[]>([])
 const generatedVideos = ref<PreviewMedia[]>([])
 const previewImageUrl = ref('')
-const testMode = ref<'default' | 'compact'>('default')
+const testMode = ref<'default' | 'compact' | 'embeddings'>('default')
 const grokTestMode = ref<'text' | 'image' | 'video' | 'search' | 'tts' | 'stt' | 'realtime'>('text')
 const uploadImageDataURL = ref('')
 const uploadImagePreview = ref('')
@@ -426,7 +426,8 @@ const isOpenAIAccount = computed(() => props.account?.platform === 'openai')
 const isGrokAccount = computed(() => props.account?.platform === 'grok')
 const openAITestModeOptions = computed(() => [
   { value: 'default', label: t('admin.accounts.openai.testModeDefault') },
-  { value: 'compact', label: t('admin.accounts.openai.testModeCompact') }
+  { value: 'compact', label: t('admin.accounts.openai.testModeCompact') },
+  { value: 'embeddings', label: t('admin.accounts.openai.testModeEmbeddings') }
 ])
 const grokTestModeOptions = computed(() => [
   { value: 'text', label: t('admin.accounts.grok.testModeText') },
@@ -442,7 +443,7 @@ const supportsGeminiImageTest = computed(() => {
   const modelID = selectedModelId.value.toLowerCase()
   if (!modelID.startsWith('gemini-') || !modelID.includes('-image')) return false
 
-  return props.account?.platform === 'gemini' || (props.account?.platform === 'antigravity' && props.account?.type === 'apikey')
+  return props.account?.platform === 'gemini' || props.account?.platform === 'antigravity'
 })
 
 const supportsOpenAIImageTest = computed(() => {
@@ -482,8 +483,20 @@ const showModelSelect = computed(() => {
   return grokTestMode.value === 'text' || grokTestMode.value === 'image' || grokTestMode.value === 'video'
 })
 
+const embeddingModelOptions = computed(() =>
+  availableModels.value.filter((model) => {
+    const id = model.id.toLowerCase()
+    return ["embed", "bge", "m3e", "gte-", "jina-"].some((needle) => id.includes(needle))
+  })
+)
+
 const modelOptionsForMode = computed(() => {
-  if (!isGrokAccount.value) return availableModels.value
+  if (!isGrokAccount.value) {
+    if (testMode.value === "embeddings" && embeddingModelOptions.value.length > 0) {
+      return embeddingModelOptions.value
+    }
+    return availableModels.value
+  }
   if (grokTestMode.value === 'image') {
     return availableModels.value.filter((m) => isGrokImageModel(m.id))
   }
@@ -669,6 +682,7 @@ const testModeSummary = computed(() => {
         return t('admin.accounts.grok.textTestMode')
     }
   }
+  if (testMode.value === 'embeddings') return t('admin.accounts.openai.testModeEmbeddings')
   if (supportsImageTest.value) return t('admin.accounts.imageTestMode')
   return t('admin.accounts.testPrompt')
 })
@@ -758,6 +772,18 @@ watch(grokTestMode, () => {
   clearMediaUploads()
   pickDefaultModelForMode()
   applyDefaultPromptForMode()
+})
+
+watch(testMode, () => {
+  if (!isOpenAIAccount.value) return
+  if (testMode.value === "embeddings") {
+    const preferred = embeddingModelOptions.value[0]
+    selectedModelId.value = preferred ? preferred.id : ""
+    return
+  }
+  if (selectedModelId.value === "") {
+    pickDefaultModelForMode()
+  }
 })
 
 const loadAvailableModels = async () => {

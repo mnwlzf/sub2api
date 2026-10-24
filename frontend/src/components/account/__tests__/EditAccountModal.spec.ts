@@ -1461,9 +1461,13 @@ describe('EditAccountModal', () => {
     const embeddingsCheckbox = wrapper.get<HTMLInputElement>(
       '[data-testid="openai-endpoint-capability-embeddings"]'
     )
+    const rerankCheckbox = wrapper.get<HTMLInputElement>(
+      '[data-testid="openai-endpoint-capability-rerank"]'
+    )
 
     expect(chatCheckbox.element.checked).toBe(true)
     expect(embeddingsCheckbox.element.checked).toBe(true)
+    expect(rerankCheckbox.element.checked).toBe(true)
 
     await embeddingsCheckbox.setValue(false)
 
@@ -1472,14 +1476,19 @@ describe('EditAccountModal', () => {
 
     await chatCheckbox.setValue(false)
 
-    expect(chatCheckbox.element.checked).toBe(true)
-    expect(embeddingsCheckbox.element.checked).toBe(false)
+    expect(chatCheckbox.element.checked).toBe(false)
+    expect(rerankCheckbox.element.checked).toBe(true)
+
+    // 最后一项能力不允许被取消，保证至少有一项被选中。
+    await rerankCheckbox.setValue(false)
+
+    expect(rerankCheckbox.element.checked).toBe(true)
 
     await wrapper.get('form#edit-account-form').trigger('submit.prevent')
 
     expect(updateAccountMock).toHaveBeenCalledTimes(1)
     expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.openai_capabilities).toEqual([
-      'chat_completions'
+      'rerank'
     ])
   })
 
@@ -1713,6 +1722,26 @@ describe('EditAccountModal', () => {
     await wrapper.get('form#edit-account-form').trigger('submit.prevent')
 
     expect(updateAccountMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows quota limit card for Vertex SA account and keeps quota limits on save', async () => {
+    const account = buildVertexAccount()
+    account.extra = { quota_limit: 200, quota_daily_limit: 20, quota_used: 35.5 }
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    expect(wrapper.findComponent({ name: 'QuotaLimitCard' }).exists()).toBe(true)
+
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    const extra = updateAccountMock.mock.calls[0]?.[1]?.extra
+    expect(extra?.quota_limit).toBe(200)
+    expect(extra?.quota_daily_limit).toBe(20)
+    expect(extra?.quota_weekly_limit).toBeUndefined()
   })
 
   it('blocks Vertex SA save when neither credentials_status nor legacy json indicates existence', async () => {

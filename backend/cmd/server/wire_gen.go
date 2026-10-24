@@ -8,6 +8,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
@@ -49,10 +50,11 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	redeemCodeRepository := repository.NewRedeemCodeRepository(client)
 	redisClient := repository.ProvideRedis(configConfig)
 	refreshTokenCache := repository.NewRefreshTokenCache(redisClient)
+	scopedAdminKeyRepository := repository.NewScopedAdminKeyRepository(db)
 	settingRepository := repository.NewSettingRepository(client)
 	groupRepository := repository.NewGroupRepository(client, db)
 	proxyRepository := repository.NewProxyRepository(client, db)
-	settingService := service.ProvideSettingService(settingRepository, groupRepository, proxyRepository, configConfig)
+	settingService := service.ProvideSettingService(scopedAdminKeyRepository, settingRepository, groupRepository, proxyRepository, configConfig)
 	emailCache := repository.NewEmailCache(redisClient)
 	emailService := service.NewEmailService(settingRepository, emailCache)
 	turnstileVerifier := repository.NewTurnstileVerifier()
@@ -296,11 +298,15 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	studentVerificationRepository := repository.NewStudentVerificationRepository(client)
 	studentVerificationService := service.ProvideStudentVerificationService(studentVerificationRepository, userRepository, groupRepository, affiliateRepository, settingService, emailService, client, apiKeyAuthCacheInvalidator)
 	studentVerificationHandler := admin.NewStudentVerificationHandler(studentVerificationService)
+	codexDegradationService := service.ProvideCodexDegradationService(accountRepository, settingService, openAITokenProvider, rateLimitService, leaderLockCache, configConfig)
+	codexDiagnosticHandler := admin.NewCodexDiagnosticHandler(codexDegradationService)
+	codexTicketService := provideCodexTicketService(accountRepository, settingService, proxyRepository, configConfig, httpUpstream, openAIGatewayService, db)
+	codexTicketHandler := handler.ProvideCodexTicketHandler(codexTicketService, settingService, accountRepository)
 	upstreamBillingProbeService := service.ProvideUpstreamBillingProbeService(accountRepository, accountTestService, settingService, leaderLockCache, db)
 	openCodeGoUsageService := service.ProvideOpenCodeGoUsageService(accountRepository, httpUpstream, settingService, leaderLockCache, db)
 	idempotencyCoordinator := service.ProvideIdempotencyCoordinator(idempotencyRepository, configConfig)
 	claudeResetCreditService := service.ProvideClaudeResetCreditService(accountRepository, claudeTokenProvider, proxyRepository, settingService, idempotencyCoordinator, leaderLockCache)
-	adminHandlers := handler.ProvideAdminHandlers(dashboardHandler, adminUserHandler, groupHandler, accountHandler, adminAnnouncementHandler, dataManagementHandler, backupHandler, oAuthHandler, openAIOAuthHandler, geminiOAuthHandler, antigravityOAuthHandler, grokOAuthHandler, cnProviderHandler, proxyHandler, adminRedeemHandler, promoHandler, settingHandler, opsHandler, systemHandler, adminSubscriptionHandler, adminUsageHandler, userAttributeHandler, errorPassthroughHandler, tlsFingerprintProfileHandler, pluginHandler, adminAPIKeyHandler, scheduledTestHandler, pelicanProbeHandler, channelHandler, channelMonitorHandler, channelMonitorRequestTemplateHandler, contentModerationHandler, promptAdminHandler, promptTemplateHandler, paymentHandler, affiliateHandler, complianceHandler, auditLogHandler, studentVerificationHandler, upstreamBillingProbeService, ollamaCloudUsageService, openCodeGoUsageService, claudeResetCreditService)
+	adminHandlers := handler.ProvideAdminHandlers(dashboardHandler, adminUserHandler, groupHandler, accountHandler, adminAnnouncementHandler, dataManagementHandler, backupHandler, oAuthHandler, openAIOAuthHandler, geminiOAuthHandler, antigravityOAuthHandler, grokOAuthHandler, cnProviderHandler, proxyHandler, adminRedeemHandler, promoHandler, settingHandler, opsHandler, systemHandler, adminSubscriptionHandler, adminUsageHandler, userAttributeHandler, errorPassthroughHandler, tlsFingerprintProfileHandler, pluginHandler, adminAPIKeyHandler, scheduledTestHandler, pelicanProbeHandler, channelHandler, channelMonitorHandler, channelMonitorRequestTemplateHandler, contentModerationHandler, promptAdminHandler, promptTemplateHandler, paymentHandler, affiliateHandler, complianceHandler, auditLogHandler, studentVerificationHandler, codexDiagnosticHandler, codexTicketHandler, upstreamBillingProbeService, ollamaCloudUsageService, openCodeGoUsageService, claudeResetCreditService)
 	usageRecordWorkerPool := service.NewUsageRecordWorkerPool(configConfig)
 	userMsgQueueCache := repository.NewUserMsgQueueCache(redisClient)
 	userMessageQueueService := service.ProvideUserMessageQueueService(userMsgQueueCache, rpmCache, configConfig)
@@ -313,6 +319,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	promptRequestEventRecorder := repository.NewPromptRequestEventRecorder(client)
 	warpExitRotator := provideOpenCodeWarpRotator(configConfig)
 	openAIGatewayHandler := handler.ProvideOpenAIGatewayHandler(openAIGatewayService, pluginManager, concurrencyService, billingCacheService, apiKeyService, usageRecordWorkerPool, errorPassthroughService, contentModerationService, opsService, grokQuotaService, configConfig, coordinator, compositeRouteResolver, promptPolicyResolver, promptRequestEventRecorder, warpExitRotator)
+	openAIBPSHandler := provideOpenAIBPSGateway(accountRepository, redisClient, openAIGatewayService, billingCacheService, apiKeyService)
 	handlerSettingHandler := handler.ProvideSettingHandler(settingService, buildInfo, notificationEmailService)
 	totpHandler := handler.NewTotpHandler(totpService)
 	passkeyRepository := repository.NewPasskeyRepository(db)
@@ -341,7 +348,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	handlerStudentVerificationHandler := handler.NewStudentVerificationHandler(studentVerificationService)
 	idempotencyCleanupService := service.ProvideIdempotencyCleanupService(idempotencyRepository, configConfig)
 	openAIQuotaAutoResetService := service.ProvideOpenAIQuotaAutoResetService(accountRepository, openAIQuotaService, rateLimitService, idempotencyCoordinator, auditLogService, settingService, leaderLockCache)
-	handlers := handler.ProvideHandlers(authHandler, userHandler, apiKeyHandler, usageHandler, redeemHandler, subscriptionHandler, announcementHandler, channelMonitorUserHandler, channelMonitorV2Handler, adminHandlers, gatewayHandler, openAIGatewayHandler, handlerSettingHandler, totpHandler, passkeyHandler, handlerPaymentHandler, paymentWebhookHandler, availableChannelHandler, modelPlazaHandler, asyncImageHandler, batchImageHandler, handlerStudentVerificationHandler, idempotencyCoordinator, idempotencyCleanupService, openAIQuotaAutoResetService)
+	handlers := handler.ProvideHandlers(authHandler, userHandler, apiKeyHandler, usageHandler, redeemHandler, subscriptionHandler, announcementHandler, channelMonitorUserHandler, channelMonitorV2Handler, adminHandlers, gatewayHandler, openAIGatewayHandler, openAIBPSHandler, handlerSettingHandler, totpHandler, passkeyHandler, handlerPaymentHandler, paymentWebhookHandler, availableChannelHandler, modelPlazaHandler, asyncImageHandler, batchImageHandler, handlerStudentVerificationHandler, idempotencyCoordinator, idempotencyCleanupService, openAIQuotaAutoResetService)
 	jwtAuthMiddleware := middleware.NewJWTAuthMiddleware(authService, userService, settingService, auditLogService)
 	optionalJWTAuthMiddleware := middleware.NewOptionalJWTAuthMiddleware(authService, userService, settingService, auditLogService)
 	adminAuthMiddleware := middleware.NewAdminAuthMiddleware(authService, userService, settingService, auditLogService)
@@ -792,4 +799,64 @@ func provideCleanup(
 			log.Printf("[Cleanup] All cleanup steps completed")
 		}
 	}
+}
+
+// provideCodexTicketService 构造 Codex 打票服务并注册为进程级运行时。
+//
+// 依赖说明：accountRepo/settingService/proxyRepo/httpUpstream 均来自既有 wire
+// provider；TokenProvider 用网关服务（其 GetAccessToken 恰好实现窄接口）；
+// attempts 仓储同时实现 Attempt/Event/Recent 三个接口，lifecycle 单独构造。
+// 构造后登记后台收割 worker（默认 enabled=false，循环内空转不发请求）。
+func provideCodexTicketService(
+	accountRepo service.AccountRepository,
+	settingService *service.SettingService,
+	proxyRepo service.ProxyRepository,
+	cfg *config.Config,
+	upstream service.HTTPUpstream,
+	openAIGateway *service.OpenAIGatewayService,
+	db *sql.DB,
+) *service.CodexTicketService {
+	attempts := repository.NewCodexTicketAttemptRepository(db)
+	lifecycle := repository.NewCodexTicketInvalidationRepository(db)
+	tickets := service.NewCodexTicketService(service.CodexTicketDeps{
+		AccountRepo:   accountRepo,
+		SettingSvc:    settingService,
+		ProxyRepo:     proxyRepo,
+		Cfg:           cfg,
+		Upstream:      upstream,
+		TokenProvider: openAIGateway,
+		Attempts:      attempts,
+		Events:        attempts,
+		Recent:        attempts,
+		Lifecycle:     lifecycle,
+	})
+	service.SetDefaultCodexTicketRuntime(tickets)
+	service.RegisterCodexBackgroundWorker(tickets.Start)
+	return tickets
+}
+
+// provideOpenAIBPSGateway 构造 OpenAI BPS 平台的 Responses 文本网关。
+//
+// 依赖说明：Redis 是 BPS 的强依赖（会话绑定，后续工具/压缩状态同库），未注入或
+// 不可用时 handler 返回 bps_state_unavailable，不做进程内降级；平台级开关默认
+// 关闭，关闭时入口返回 bps_platform_disabled(503)。上游 HTTP 客户端超时留足流式
+// 响应时间；账号级代理在后续阶段接入。
+func provideOpenAIBPSGateway(
+	accountRepo service.AccountRepository,
+	redisClient *redis.Client,
+	openAIGateway *service.OpenAIGatewayService,
+	billingCache *service.BillingCacheService,
+	apiKeyService *service.APIKeyService,
+) *service.OpenAIBPSHandler {
+	selector := service.NewOpenAIBPSAccountSelector(accountRepo)
+	sessions := service.NewOpenAIBPSSessionStore(redisClient)
+	return service.NewOpenAIBPSHandler(service.OpenAIBPSHandlerDeps{
+		Resolver:      selector,
+		Sessions:      sessions,
+		HTTPClient:    &http.Client{Timeout: 15 * time.Minute},
+		Usage:         openAIGateway,
+		AccountState:  service.OpenAIBPSAccountStateStoreFromRepository(accountRepo),
+		Billing:       &service.OpenAIBPSBillingCacheGate{Billing: billingCache},
+		APIKeyService: apiKeyService,
+	})
 }

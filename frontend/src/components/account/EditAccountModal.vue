@@ -26,6 +26,43 @@
         <p class="input-hint">{{ t('admin.accounts.notesHint') }}</p>
       </div>
 
+      <!-- OpenAI BPS 凭证：Access Token 留空保留原值；chatgpt_account_id 可选 -->
+      <div
+        v-if="isOpenAIBPS"
+        class="space-y-4 rounded-xl border border-cyan-200 bg-cyan-50/40 p-4 dark:border-cyan-800/40 dark:bg-cyan-900/10"
+        data-testid="edit-bps-fields"
+      >
+        <div>
+          <p class="text-sm font-semibold text-cyan-800 dark:text-cyan-200">{{ t('admin.accounts.bps.platformName') }}</p>
+          <p class="mt-1 text-xs text-cyan-700/80 dark:text-cyan-300/80">{{ t('admin.accounts.bps.banRiskHint') }}</p>
+        </div>
+        <div>
+          <label class="input-label">{{ t('admin.accounts.bps.accessToken') }}</label>
+          <input
+            v-model="editBPSAccessToken"
+            type="password"
+            autocomplete="new-password"
+            class="input font-mono"
+            :placeholder="hasStoredBPSAccessToken
+              ? t('admin.accounts.bps.accessTokenEditPlaceholder')
+              : t('admin.accounts.bps.accessTokenPlaceholder')"
+            data-testid="edit-bps-access-token"
+          />
+          <p class="input-hint">{{ t('admin.accounts.bps.accessTokenEditHint') }}</p>
+        </div>
+        <div>
+          <label class="input-label">{{ t('admin.accounts.bps.accountId') }}</label>
+          <input
+            v-model="editBPSAccountId"
+            type="text"
+            class="input font-mono"
+            :placeholder="t('admin.accounts.bps.accountIdPlaceholder')"
+            data-testid="edit-bps-account-id"
+          />
+          <p class="input-hint">{{ t('admin.accounts.bps.accountIdHint') }}</p>
+        </div>
+      </div>
+
       <!-- API Key fields (only for apikey type) -->
       <div v-if="account.type === 'apikey'" class="space-y-4">
         <div v-if="!isCNApiKeyAccount || editApiProtocol !== 'adaptive'">
@@ -1904,6 +1941,12 @@
         </div>
       </div>
 
+      <!-- OpenAI 请求时区（账号 extra.openai_request_timezone，缺省跟随默认） -->
+      <OpenAIRequestTimezoneSelect
+        v-if="account?.platform === 'openai'"
+        v-model="openaiRequestTimezone"
+      />
+
       <!-- OpenAI Codex namespace 工具摊平（兼容开关，仅 OAuth） -->
       <div
         v-if="account?.platform === 'openai' && account?.type === 'oauth'"
@@ -2322,9 +2365,9 @@
         </div>
       </div>
 
-      <!-- Anthropic API Key: Web Search Emulation (hidden when global disabled) -->
+      <!-- Anthropic / OpenAI API Key: Web Search Emulation (hidden when global disabled) -->
       <div
-        v-if="account?.platform === 'anthropic' && account?.type === 'apikey' && webSearchGlobalEnabled"
+        v-if="(account?.platform === 'anthropic' || account?.platform === 'openai') && account?.type === 'apikey' && webSearchGlobalEnabled"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
       >
         <div class="flex items-center justify-between">
@@ -2393,9 +2436,9 @@
           @update:quotaNotifyTotalThresholdType="quotaNotifyState.total.thresholdType = $event"
         />
       </div>
-      <!-- 配额控制 (非 Anthropic apikey/bedrock) -->
+      <!-- 配额控制 (非 Anthropic apikey/bedrock，以及 Vertex service_account) -->
       <div
-        v-else-if="account?.type === 'apikey' || account?.type === 'bedrock'"
+        v-else-if="supportsAccountQuota(account?.type)"
         class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4"
       >
         <div class="mb-3">
@@ -3298,6 +3341,18 @@
     @confirm="handleMixedChannelConfirm"
     @cancel="handleMixedChannelCancel"
   />
+
+  <!-- OpenAI BPS 封禁风险二次确认（取消保留输入，不提交） -->
+  <ConfirmDialog
+    :show="showBPSRiskConfirm"
+    :title="t('admin.accounts.bps.riskConfirmTitle')"
+    :message="t('admin.accounts.bps.riskConfirmMessage')"
+    :confirm-text="t('admin.accounts.bps.riskConfirmConfirm')"
+    :cancel-text="t('common.cancel')"
+    :danger="true"
+    @confirm="handleBPSRiskConfirm"
+    @cancel="handleBPSRiskCancel"
+  />
 </template>
 
 <script setup lang="ts">
@@ -3328,6 +3383,9 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Select from '@/components/common/Select.vue'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import UpstreamRequestIdHeaderField from '@/components/account/UpstreamRequestIdHeaderField.vue'
+import OpenAIRequestTimezoneSelect from '@/components/account/OpenAIRequestTimezoneSelect.vue'
+import { applyOpenAIRequestTimezoneExtra, normalizeOpenAIRequestTimezone } from '@/components/account/openaiRequestTimezone'
+import { buildOpenAIBPSCredentials, isOpenAIBPSPlatform, validateOpenAIBPSForm } from '@/utils/openaiBPS'
 import Toggle from '@/components/common/Toggle.vue'
 import Icon from '@/components/icons/Icon.vue'
 import ProxySelector from '@/components/common/ProxySelector.vue'
@@ -3396,6 +3454,7 @@ import {
 } from '@/utils/format'
 import { extractApiErrorMessage, extractI18nErrorMessage } from '@/utils/apiError'
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
+import { supportsAccountQuota } from '@/utils/accountQuota'
 import { getAccountExpiryTimestamp } from '@/components/account/accountExpiry'
 import { allSelectedGroupsEnableLongContextPricing } from '@/components/account/longContextBilling'
 import { VERTEX_LOCATION_OPTIONS } from '@/constants/account'
@@ -3927,6 +3986,8 @@ const customBaseUrl = ref('')
 
 // OpenAI 自动透传开关（OAuth/API Key）
 const openaiPassthroughEnabled = ref(false)
+// OpenAI 请求时区（账号 extra.openai_request_timezone，'' = 跟随后端默认）
+const openaiRequestTimezone = ref('')
 // OpenAI Codex namespace 工具摊平兼容开关（仅 OAuth），缺省关闭即原样保留
 const openaiFlattenNamespacesEnabled = ref(false)
 // 严格校验 Codex 签名的兼容中转（仅 API Key）补齐 include / prompt_cache_key，缺省关闭
@@ -3941,7 +4002,7 @@ const openAICompactMode = ref<OpenAICompactMode>('auto')
 const openAIResponsesMode = ref<OpenAIResponsesMode>('auto')
 // Images 非流式响应缺 b64_json 时由网关下载 url 回填（仅 OpenAI API Key）。
 const openAIImagesUrlToB64JsonEnabled = ref(false)
-const openAIEndpointCapabilities = ref<OpenAIEndpointCapability[]>(['chat_completions', 'embeddings'])
+const openAIEndpointCapabilities = ref<OpenAIEndpointCapability[]>(['chat_completions', 'embeddings', 'rerank'])
 const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const codexCLIOnlyEnabled = ref(false)
@@ -4103,6 +4164,7 @@ const openAITextEndpointCapabilityLabel = computed(() => {
 const openAIEndpointCapabilityOptions = computed<{ value: OpenAIEndpointCapability; label: string }[]>(() => [
   { value: 'chat_completions', label: openAITextEndpointCapabilityLabel.value },
   { value: 'embeddings', label: t('admin.accounts.openai.capabilityEmbeddings') },
+  { value: 'rerank', label: t('admin.accounts.openai.capabilityRerank') },
   { value: 'seedance', label: 'Seedance (Ark)' }
 ])
 const openAITextGenerationCapabilityEnabled = computed(() =>
@@ -4110,9 +4172,9 @@ const openAITextGenerationCapabilityEnabled = computed(() =>
 )
 
 const normalizeOpenAIEndpointCapabilities = (values: OpenAIEndpointCapability[]) => {
-  const allowed: OpenAIEndpointCapability[] = ['chat_completions', 'embeddings', 'seedance']
+  const allowed: OpenAIEndpointCapability[] = ['chat_completions', 'embeddings', 'seedance', 'rerank']
   const selected = allowed.filter((value) => values.includes(value))
-  return selected.length > 0 ? selected : ['chat_completions', 'embeddings'] as OpenAIEndpointCapability[]
+  return selected.length > 0 ? selected : ['chat_completions', 'embeddings', 'rerank'] as OpenAIEndpointCapability[]
 }
 
 const readOpenAIEndpointCapabilities = (credentials?: Record<string, unknown>): OpenAIEndpointCapability[] => {
@@ -4132,7 +4194,7 @@ const readOpenAIEndpointCapabilities = (credentials?: Record<string, unknown>): 
         .filter((value) => capabilityMap[value] === true)
     )
   }
-  return ['chat_completions', 'embeddings']
+  return ['chat_completions', 'embeddings', 'rerank']
 }
 
 const toggleOpenAIEndpointCapability = (capability: OpenAIEndpointCapability, event?: Event) => {
@@ -4285,6 +4347,14 @@ const form = reactive({
   expires_at: null as number | null
 })
 
+// OpenAI BPS：凭证编辑（Access Token 留空保留）+ 保存前封禁风险二次确认。
+const isOpenAIBPS = computed(() => isOpenAIBPSPlatform(props.account?.platform))
+const hasStoredBPSAccessToken = computed(() => Boolean(props.account?.credentials_status?.has_access_token))
+const editBPSAccessToken = ref('')
+const editBPSAccountId = ref('')
+const showBPSRiskConfirm = ref(false)
+const bpsPendingUpdate = ref<{ accountID: number; payload: Record<string, unknown> } | null>(null)
+
 const handleUpstreamBillingRateSyncChange = (enabled: boolean) => {
   upstreamBillingRateSyncEnabled.value = enabled
   if (enabled) {
@@ -4397,6 +4467,12 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   // Load intercept warmup requests setting (applies to all account types)
   const credentials = newAccount.credentials as Record<string, unknown> | undefined
   interceptWarmupRequests.value = credentials?.intercept_warmup_requests === true
+  // OpenAI BPS：token 已脱敏，编辑框始终从空开始（留空=保留）；账号 ID 非敏感可回填。
+  editBPSAccessToken.value = ''
+  editBPSAccountId.value =
+    typeof credentials?.chatgpt_account_id === 'string' ? credentials.chatgpt_account_id.trim() : ''
+  showBPSRiskConfirm.value = false
+  bpsPendingUpdate.value = null
   autoPauseOnExpired.value = newAccount.auto_pause_on_expired === true
   editVertexProjectId.value = ''
   editVertexClientEmail.value = ''
@@ -4439,7 +4515,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   editPlanType.value = ''
   openAICompactMode.value = 'auto'
   openAIResponsesMode.value = 'auto'
-  openAIEndpointCapabilities.value = ['chat_completions', 'embeddings']
+  openAIEndpointCapabilities.value = ['chat_completions', 'embeddings', 'rerank']
   openAICompactModelMappings.value = []
   openaiOAuthResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
   openaiAPIKeyResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
@@ -4452,6 +4528,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   webSearchEmulationMode.value = 'default'
   if (newAccount.platform === 'openai' && (newAccount.type === 'oauth' || newAccount.type === 'setup-token' || newAccount.type === 'apikey')) {
     openaiPassthroughEnabled.value = extra?.openai_passthrough === true || extra?.openai_oauth_passthrough === true
+    // 请求时区：历史值归一化（空串/非字符串 → 跟随默认）
+    openaiRequestTimezone.value = normalizeOpenAIRequestTimezone(extra?.openai_request_timezone, null)
     openaiFlattenNamespacesEnabled.value =
       newAccount.type === 'oauth' && extra?.openai_responses_flatten_namespaces === true
     openaiEnsureCodexSignatureEnabled.value =
@@ -4519,6 +4597,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     anthropicAPIKeyAuthScheme.value = extra?.anthropic_apikey_auth_scheme === 'authorization_bearer'
       ? 'authorization_bearer'
       : 'x_api_key'
+  }
+  if ((newAccount.platform === 'anthropic' || newAccount.platform === 'openai') && newAccount.type === 'apikey') {
     // 三态：string "default"/"enabled"/"disabled"，向后兼容旧 bool
     const wsVal = extra?.web_search_emulation
     if (wsVal === 'enabled' || wsVal === 'disabled') {
@@ -4530,8 +4610,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     }
   }
 
-  // Load quota limit for apikey/bedrock accounts (bedrock quota is also loaded in its own branch above)
-  if (newAccount.type === 'apikey' || newAccount.type === 'bedrock') {
+  // Load quota limit for apikey/bedrock/service_account accounts (bedrock quota is also loaded in its own branch above)
+  if (supportsAccountQuota(newAccount.type)) {
     const quotaVal = extra?.quota_limit as number | undefined
     editQuotaLimit.value = (quotaVal && quotaVal > 0) ? quotaVal : null
     const dailyVal = extra?.quota_daily_limit as number | undefined
@@ -5763,6 +5843,37 @@ const handleSubmit = async () => {
       }
 
       updatePayload.credentials = newCredentials
+    } else if (props.account.platform === 'openai_bps') {
+      // OpenAI BPS：access_token 留空=保留（后端敏感键合并），chatgpt_account_id 空=清除。
+      const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
+      const newCredentials: Record<string, unknown> = { ...currentCredentials }
+      const validation = validateOpenAIBPSForm(
+        { accessToken: editBPSAccessToken.value, chatgptAccountId: editBPSAccountId.value },
+        'edit'
+      )
+      if (validation) {
+        appStore.showError(t(`admin.accounts.bps.${validation}`))
+        return
+      }
+      const bpsCredentials = buildOpenAIBPSCredentials({
+        accessToken: editBPSAccessToken.value,
+        chatgptAccountId: editBPSAccountId.value
+      })
+      if (bpsCredentials.access_token) {
+        newCredentials.access_token = bpsCredentials.access_token
+      }
+      delete newCredentials.chatgpt_account_id
+      if (bpsCredentials.chatgpt_account_id) {
+        newCredentials.chatgpt_account_id = bpsCredentials.chatgpt_account_id
+      }
+
+      applyInterceptWarmup(newCredentials, interceptWarmupRequests.value, 'edit')
+      applyAccountSchedulingThresholdOverridePatch(newCredentials, currentCredentials)
+      if (!applyTempUnschedConfig(newCredentials)) {
+        return
+      }
+
+      updatePayload.credentials = newCredentials
     } else {
       // For oauth/setup-token types, only update intercept_warmup_requests if changed
       const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
@@ -6064,6 +6175,11 @@ const handleSubmit = async () => {
         } else {
           delete newExtra.images_url_to_b64_json
         }
+        if (webSearchEmulationMode.value === 'default') {
+          delete newExtra.web_search_emulation
+        } else {
+          newExtra.web_search_emulation = webSearchEmulationMode.value
+        }
 		}
 		if (autoPause5hThreshold.value != null && autoPause5hThreshold.value > 0) {
 			newExtra.auto_pause_5h_threshold = autoPause5hThreshold.value / 100
@@ -6140,8 +6256,19 @@ const handleSubmit = async () => {
       updatePayload.extra = newExtra
     }
 
-    // For apikey/bedrock accounts, handle quota_limit in extra
-    if (props.account.type === 'apikey' || props.account.type === 'bedrock') {
+    // OpenAI 请求时区：所有 OpenAI 账号类型都允许配置；空值 = 删除键（跟随默认）。
+    if (props.account.platform === 'openai') {
+      const currentExtra =
+        (updatePayload.extra as Record<string, unknown>) ||
+        (props.account.extra as Record<string, unknown>) ||
+        {}
+      const newExtra: Record<string, unknown> = { ...currentExtra }
+      applyOpenAIRequestTimezoneExtra(newExtra, props.account.platform, openaiRequestTimezone.value)
+      updatePayload.extra = newExtra
+    }
+
+    // For apikey/bedrock/service_account accounts, handle quota_limit in extra
+    if (supportsAccountQuota(props.account.type)) {
       const currentExtra = (updatePayload.extra as Record<string, unknown>) ||
         (props.account.extra as Record<string, unknown>) || {}
       const newExtra: Record<string, unknown> = { ...currentExtra }
@@ -6218,6 +6345,13 @@ const handleSubmit = async () => {
       updatePayload.extra = newExtra
     }
 
+    // OpenAI BPS：保存前二次确认封禁风险（取消保留输入，不提交）。
+    if (isOpenAIBPS.value) {
+      bpsPendingUpdate.value = { accountID, payload: updatePayload }
+      showBPSRiskConfirm.value = true
+      return
+    }
+
     const canContinue = await ensureAntigravityMixedChannelConfirmed(async () => {
       await submitUpdateAccount(accountID, updatePayload)
     })
@@ -6229,6 +6363,25 @@ const handleSubmit = async () => {
   } catch (error: any) {
     appStore.showError(error.message || t('admin.accounts.failedToUpdate'))
   }
+}
+
+// OpenAI BPS 封禁风险确认：确认后提交暂存更新，取消则保留输入不提交。
+const handleBPSRiskConfirm = async () => {
+  const pending = bpsPendingUpdate.value
+  showBPSRiskConfirm.value = false
+  bpsPendingUpdate.value = null
+  if (!pending) return
+  const canContinue = await ensureAntigravityMixedChannelConfirmed(async () => {
+    await submitUpdateAccount(pending.accountID, pending.payload)
+  })
+  if (!canContinue) {
+    return
+  }
+  await submitUpdateAccount(pending.accountID, pending.payload)
+}
+const handleBPSRiskCancel = () => {
+  showBPSRiskConfirm.value = false
+  bpsPendingUpdate.value = null
 }
 
 // Handle mixed channel warning confirmation

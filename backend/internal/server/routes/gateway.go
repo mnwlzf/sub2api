@@ -212,6 +212,10 @@ func RegisterGatewayRoutes(
 		gateway.GET("/live/:call_id", h.OpenAIGateway.LiveSideband)
 		// OpenAI Responses API: auto-route based on group platform
 		gateway.POST("/responses", func(c *gin.Context) {
+			if getGroupPlatform(c) == service.PlatformOpenAIBPS {
+				h.BPSGateway.Responses(c)
+				return
+			}
 			if isOpenAIResponsesCompatibleGatewayPlatform(c) {
 				h.OpenAIGateway.Responses(c)
 				return
@@ -219,6 +223,17 @@ func RegisterGatewayRoutes(
 			h.Gateway.Responses(c)
 		})
 		gateway.POST("/responses/*subpath", guardResponsesSubpath(func(c *gin.Context) {
+			if getGroupPlatform(c) == service.PlatformOpenAIBPS {
+				if strings.Trim(c.Param("subpath"), "/") == "compact" {
+					h.BPSGateway.Compact(c)
+					return
+				}
+				c.JSON(http.StatusNotFound, gin.H{"error": gin.H{
+					"type": "not_found_error", "code": "bps_unsupported_subpath",
+					"message": "OpenAI BPS only supports /responses/compact",
+				}})
+				return
+			}
 			if isOpenAIResponsesCompatibleGatewayPlatform(c) {
 				h.OpenAIGateway.Responses(c)
 				return
@@ -250,6 +265,7 @@ func RegisterGatewayRoutes(
 			}
 			h.OpenAIGateway.Embeddings(c)
 		})
+		handler.RegisterRerankRoutes(gateway, h.OpenAIGateway, textBodyLimit)
 		gateway.POST("/images/generations", imagesHandler)
 		gateway.POST("/images/edits", imagesHandler)
 		gateway.POST("/images/generations/async", h.AsyncImage.Submit)
@@ -418,6 +434,7 @@ func RegisterGatewayRoutes(
 		}
 		h.OpenAIGateway.Embeddings(c)
 	})
+	rootRoute(http.MethodPost, "/rerank", textBodyLimit, h.OpenAIGateway.Rerank)
 	rootRoute(http.MethodPost, "/images/generations", bodyLimit, imagesHandler)
 	rootRoute(http.MethodPost, "/images/edits", bodyLimit, imagesHandler)
 	rootRoute(http.MethodPost, "/images/generations/async", bodyLimit, h.AsyncImage.Submit)
@@ -586,6 +603,14 @@ func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver)
 				c.Abort()
 				return
 			}
+			// 含 OAuth 账号的跨平台歧义是分组配置错误：拒绝而不是放行。否则未解析的
+			// 请求落到默认 Anthropic handler，handler 再按模型名前缀另猜平台，
+			// OAuth 凭据被送进不匹配的协议管线（如 ChatGPT token 发往 Anthropic）。
+			if decision.OAuthAmbiguous() {
+				service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalModelConfiguration)
+				c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": gin.H{"type": "invalid_request_error", "message": decision.AmbiguousMessage()}})
+				return
+			}
 			if decision.Matched {
 				c.Request = c.Request.WithContext(service.WithCompositeRouteDecision(c.Request.Context(), decision))
 				if upstreamModel := strings.TrimSpace(decision.UpstreamModel); upstreamModel != "" && upstreamModel != model && gjson.ValidBytes(body) {
@@ -677,6 +702,8 @@ func compositeRouteEndpointForPath(path string) string {
 		return service.CompositeRouteEndpointChatCompletions
 	case strings.Contains(path, "/embeddings"):
 		return service.CompositeRouteEndpointEmbeddings
+	case strings.Contains(path, "/rerank"):
+		return service.CompositeRouteEndpointRerank
 	case strings.Contains(path, "/images/"):
 		return service.CompositeRouteEndpointImages
 	case strings.Contains(path, "/v1beta/"):

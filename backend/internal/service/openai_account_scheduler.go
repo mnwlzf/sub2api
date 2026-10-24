@@ -1461,6 +1461,12 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 			filterStats.exclude("runtime_blocked")
 			continue
 		}
+		// 打票无票策略（默认关闭、fail-open）：仅在全局/账号/模型参与且缺票被
+		// 判定为不可调度时才拦截，不改变未启用时的选号行为。
+		if runtime := s.service.resolveCodexTicketRuntime(); runtime != nil && runtime.BlocksAccount(account, req.RequestedModel) {
+			filterStats.exclude("codex_ticket_missing")
+			continue
+		}
 		// require_privacy_set is a group-scoped eligibility gate. Do not mutate the
 		// shared account: another group may intentionally allow accounts whose
 		// upstream privacy setting has not been confirmed.
@@ -1812,7 +1818,7 @@ func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatibleReason(ctx con
 	}) {
 		return false, "shadow_parent_unhealthy"
 	}
-	if req.RequestedModel != "" && !account.IsModelSupported(req.RequestedModel) {
+	if req.RequestedModel != "" && !supportsOpenAIRequestModel(account, req.RequestedModel, req.RequireCompact) {
 		return false, "model_not_supported"
 	}
 	if req.GroupID != nil && s != nil && s.service != nil &&

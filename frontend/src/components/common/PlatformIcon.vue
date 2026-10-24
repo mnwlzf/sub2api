@@ -71,6 +71,20 @@
     <rect x="65.5996" y="44.8008" width="9.6" height="28.8" rx="4.8" />
     <rect x="36.8008" y="44.8008" width="9.6" height="28.8" rx="4.8" />
   </svg>
+  <!-- OpenAI BPS mark: percent-in-hexagon (basis points) -->
+  <svg
+    v-else-if="platform === 'openai_bps'"
+    :class="sizeClass"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+  >
+    <path stroke-linecap="round" stroke-linejoin="round" d="M12 2.5 20.5 7v10L12 21.5 3.5 17V7L12 2.5z" />
+    <path stroke-linecap="round" d="M9.2 14.8l5.6-5.6" />
+    <circle cx="9.4" cy="9.4" r="1.1" fill="currentColor" stroke="none" />
+    <circle cx="14.6" cy="14.6" r="1.1" fill="currentColor" stroke="none" />
+  </svg>
   <!-- Composite group icon -->
   <svg v-else-if="platform === 'composite'" :class="sizeClass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
     <circle cx="6" cy="12" r="3" />
