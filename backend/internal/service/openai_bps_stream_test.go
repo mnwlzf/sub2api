@@ -189,9 +189,11 @@ func TestForwardOpenAIBPSProtocolJSONClientTool(t *testing.T) {
 	require.NotContains(t, recorder.Body.String(), "event: ")
 	var response map[string]any
 	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
-	output := response["output"].([]any)
+	output, ok := response["output"].([]any)
+	require.True(t, ok)
 	require.Len(t, output, 1)
-	client := output[0].(map[string]any)
+	client, ok := output[0].(map[string]any)
+	require.True(t, ok)
 	require.Equal(t, "function_call", client["type"])
 	require.Equal(t, "exec", client["name"])
 	require.Equal(t, "fc_call_js", client["id"])
@@ -217,10 +219,11 @@ func TestForwardOpenAIBPSProtocolSSEUpstreamToJSONClient(t *testing.T) {
 	require.NotContains(t, recorder.Body.String(), "event: ")
 	var response map[string]any
 	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
-	output := response["output"].([]any)
+	output, ok := response["output"].([]any)
+	require.True(t, ok)
 	require.Len(t, output, 2)
-	require.Equal(t, "message", output[0].(map[string]any)["type"])
-	require.Equal(t, "function_call", output[1].(map[string]any)["type"])
+	require.Equal(t, "message", bpsTestOutputItem(t, response, 0)["type"])
+	require.Equal(t, "function_call", bpsTestOutputItem(t, response, 1)["type"])
 }
 
 // 上游明确 failed/incomplete：JSON 客户端得到 502，不伪造成功。

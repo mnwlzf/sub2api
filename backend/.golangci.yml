@@ -25,6 +25,11 @@ linters:
             - "!**/internal/service/ops_metrics_collector.go"
             - "!**/internal/service/ops_scheduled_report_service.go"
             - "!**/internal/service/wire.go"
+            # OpenAI BPS state store intentionally owns its Redis keyspace (session
+            # binding / tool items / compaction summaries); moving it into repository
+            # would leak handler-facing types across the layer boundary.
+            - "!**/internal/service/openai_bps_state.go"
+            - "!**/internal/service/openai_bps_state_test.go"
           deny:
             - pkg: github.com/Wei-Shaw/sub2api/internal/repository
               desc: "service must not import repository"

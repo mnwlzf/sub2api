@@ -318,7 +318,7 @@ func parseCodexProbeResponseOutput(raw []byte) string {
 		eventType := gjson.Get(payload, "type").String()
 		switch eventType {
 		case "response.output_text.delta":
-			deltas.WriteString(gjson.Get(payload, "delta").String())
+			_, _ = deltas.WriteString(gjson.Get(payload, "delta").String())
 		case "response.completed", "response.done":
 			completed += codexProbeCompletedOutputText(gjson.Get(payload, "response.output"))
 		}
@@ -349,7 +349,7 @@ func codexProbeCompletedOutputText(output gjson.Result) string {
 	output.ForEach(func(_, item gjson.Result) bool {
 		item.Get("content").ForEach(func(_, part gjson.Result) bool {
 			if part.Get("type").String() == "output_text" {
-				text.WriteString(part.Get("text").String())
+				_, _ = text.WriteString(part.Get("text").String())
 			}
 			return true
 		})

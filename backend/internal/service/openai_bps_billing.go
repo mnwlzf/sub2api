@@ -329,9 +329,9 @@ func openAIBPSSubscription(c *gin.Context) *UserSubscription {
 // openAIBPSBillingError 把计费闸门错误收敛成对外错误。
 // 结构化失败优先（可携带 Retry-After）；ApplicationError 原样透传；其它错误按
 // 503 bps_billing_unavailable 处理，绝不吞成 200。
-func openAIBPSBillingError(err error) (error, int) {
+func openAIBPSBillingError(err error) (int, error) {
 	if err == nil {
-		return nil, 0
+		return 0, nil
 	}
 	var failure *OpenAIBPSBillingFailure
 	if errors.As(err, &failure) && failure != nil {
@@ -347,17 +347,17 @@ func openAIBPSBillingError(err error) (error, int) {
 		if message == "" {
 			message = http.StatusText(status)
 		}
-		return infraerrors.Newf(status, code, "%s", message), failure.RetryAfterSeconds
+		return failure.RetryAfterSeconds, infraerrors.Newf(status, code, "%s", message)
 	}
 	var appErr *infraerrors.ApplicationError
 	if errors.As(err, &appErr) {
-		return err, 0
+		return 0, err
 	}
 	message := strings.TrimSpace(infraerrors.Message(err))
 	if message == "" {
 		message = "BPS billing check failed"
 	}
-	return infraerrors.Newf(http.StatusServiceUnavailable, "bps_billing_unavailable", "%s", message), 0
+	return 0, infraerrors.Newf(http.StatusServiceUnavailable, "bps_billing_unavailable", "%s", message)
 }
 
 // checkOpenAIBPSBillingEligibility 在选号前执行计费资格检查。
@@ -372,7 +372,7 @@ func (h *OpenAIBPSHandler) checkOpenAIBPSBillingEligibility(c *gin.Context, apiK
 	if err := h.deps.Billing.CheckOpenAIBPSBillingEligibility(c.Request.Context(), apiKey, openAIBPSSubscription(c)); err != nil {
 		logger.FromContext(openAIBPSContext(c)).Info("openai bps: billing eligibility check failed",
 			zap.Int64("api_key_id", apiKey.ID), zap.Error(err))
-		mapped, retryAfter := openAIBPSBillingError(err)
+		retryAfter, mapped := openAIBPSBillingError(err)
 		if retryAfter > 0 {
 			c.Header("Retry-After", strconv.Itoa(retryAfter))
 		}

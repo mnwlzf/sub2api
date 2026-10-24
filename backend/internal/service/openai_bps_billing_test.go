@@ -178,8 +178,8 @@ func TestBuildOpenAIBPSRecordUsageInput(t *testing.T) {
 	require.Equal(t, OpenAIBPSUpstreamEndpointPath, input.UpstreamEndpoint)
 	require.Equal(t, pricingAt, input.PricingAt)
 	require.Equal(t, PlatformOpenAIBPS, input.QuotaPlatform)
-	require.Equal(t, "gpt-6-astra", input.ChannelUsageFields.OriginalModel)
-	require.Equal(t, "gpt-6-astra-upstream", input.ChannelUsageFields.ChannelMappedModel)
+	require.Equal(t, "gpt-6-astra", input.OriginalModel)
+	require.Equal(t, "gpt-6-astra-upstream", input.ChannelMappedModel)
 }
 
 func TestBuildOpenAIBPSRecordUsageInputNoMapping(t *testing.T) {
@@ -192,7 +192,7 @@ func TestBuildOpenAIBPSRecordUsageInputNoMapping(t *testing.T) {
 	})
 	require.Empty(t, input.Result.UpstreamModel, "未映射时不重复写上游模型")
 	require.Equal(t, "req_1", input.Result.RequestID)
-	require.Equal(t, "gpt-6-astra", input.ChannelUsageFields.ChannelMappedModel)
+	require.Equal(t, "gpt-6-astra", input.ChannelMappedModel)
 }
 
 // 成功 JSON：上游 usage 必须被记录，字段与上游一致。

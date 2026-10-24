@@ -515,7 +515,7 @@ func openAIBPSTranslateInput(ctx context.Context, store *OpenAIBPSSessionStore, 
 // openAIBPSReasoningEffort 解析客户端的 reasoning effort（顶层或 reasoning 对象）。
 func openAIBPSReasoningEffort(source map[string]any) (string, error) {
 	effort := "medium"
-	var raw any = source["reasoning_effort"]
+	raw := source["reasoning_effort"]
 	if reasoning, exists := source["reasoning"]; exists && reasoning != nil {
 		object, ok := reasoning.(map[string]any)
 		if !ok {
@@ -671,14 +671,14 @@ func openAIBPSConvertToolCall(native map[string]any, prepared *openAIBPSPrepared
 	}
 	tool, ok := prepared.Tools[name]
 	if !ok && openAIBPSIsNativePlan(nativeName) {
-		for key, candidate := range prepared.Tools {
+		for _, candidate := range prepared.Tools {
 			if candidate.Name != "update_plan" {
 				continue
 			}
 			if ok {
 				return invalid("Ambiguous update_plan namespace")
 			}
-			name, tool, ok = key, candidate, true
+			tool, ok = candidate, true
 		}
 	}
 	if !ok {

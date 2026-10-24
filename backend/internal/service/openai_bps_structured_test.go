@@ -166,7 +166,13 @@ func TestOpenAIBPSStructuredValidationBoundaries(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, large.validate(bpsStructuredResponse(`{"id":9007199254740993}`)))
 	require.Error(t, large.validate(bpsStructuredResponse(`{"id":9007199254740992}`)))
-	require.IsType(t, json.Number(""), format["schema"].(map[string]any)["properties"].(map[string]any)["id"].(map[string]any)["const"])
+	schema, ok := format["schema"].(map[string]any)
+	require.True(t, ok)
+	properties, ok := schema["properties"].(map[string]any)
+	require.True(t, ok)
+	idProperty, ok := properties["id"].(map[string]any)
+	require.True(t, ok)
+	require.IsType(t, json.Number(""), idProperty["const"])
 
 	// 只允许文档内引用。
 	require.NoError(t, openAIBPSDecode([]byte(`{"type":"json_schema","name":"local","schema":{"type":"object","$defs":{"flag":{"type":"boolean"}},"properties":{"ok":{"$ref":"#/$defs/flag"}},"required":["ok"]}}`), &format))
@@ -271,7 +277,7 @@ func TestOpenAIBPSStructuredToolsAndRefusals(t *testing.T) {
 	// 回传工具结果后继续：最终 JSON 通过校验。
 	var first map[string]any
 	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &first))
-	clientCall := first["output"].([]any)[0].(map[string]any)
+	clientCall := bpsTestOutputItem(t, first, 0)
 	secondInput := []any{
 		openAIBPSMessage("user", "inspect then return JSON"),
 		clientCall,
@@ -374,7 +380,8 @@ func TestOpenAIBPSStructuredCompactionStaysText(t *testing.T) {
 	require.Equal(t, "compaction", item["type"])
 	require.False(t, gjson.GetBytes(captured, "text").Exists())
 	require.Contains(t, string(captured), "Summarize the conversation")
-	ref := item["encrypted_content"].(string)
+	ref, ok := item["encrypted_content"].(string)
+	require.True(t, ok)
 	state, err := store.LoadCompactState(context.Background(), 42, mustBPSSessionKey(t, 42, body), ref)
 	require.NoError(t, err)
 	require.Equal(t, "plain summary text", state.Summary)

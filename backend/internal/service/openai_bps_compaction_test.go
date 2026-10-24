@@ -42,6 +42,13 @@ func bpsCompactSummaryResponse(summary string) *http.Response {
 		openAIBPSJSON(bpsTestCompletedResponse(message)))
 }
 
+func bpsCompactRef(t *testing.T, recorderBody []byte) string {
+	t.Helper()
+	ref, ok := bpsCompactOutput(t, recorderBody)["encrypted_content"].(string)
+	require.True(t, ok, "compaction output must carry an encrypted_content reference")
+	return ref
+}
+
 func bpsCompactOutput(t *testing.T, recorderBody []byte) map[string]any {
 	t.Helper()
 	var payload map[string]any
@@ -128,7 +135,7 @@ func TestOpenAIBPSCompactResumeAcrossInstances(t *testing.T) {
 	c, recorder := newBPSHandlerTestContext(t, body, nil)
 	h.Compact(c)
 	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
-	ref := bpsCompactOutput(t, recorder.Body.Bytes())["encrypted_content"].(string)
+	ref := bpsCompactRef(t, recorder.Body.Bytes())
 	firstTurn := gjson.GetBytes(compactBodies[0], "metadata.turn_id").String()
 
 	// 新实例（同一 Redis）继续：客户端只回传压缩 item（没有新的用户消息）。
@@ -156,7 +163,9 @@ func TestOpenAIBPSCompactResumeAcrossInstances(t *testing.T) {
 	require.Equal(t, firstTurn, gjson.GetBytes(resumedBodies[0], "metadata.turn_id").String())
 	require.Equal(t, "1", gjson.GetBytes(resumedBodies[0], "metadata.agent_iteration").String())
 	// 会话恢复后仍然走绑定账号（按 ID 精确取号）。
-	_, lookupCalls, _ := fresh.deps.Resolver.(*bpsTestResolver).counts()
+	resolver, ok := fresh.deps.Resolver.(*bpsTestResolver)
+	require.True(t, ok)
+	_, lookupCalls, _ := resolver.counts()
 	require.Equal(t, 1, lookupCalls)
 	require.Equal(t, "continued", gjson.Get(nextRecorder.Body.String(), "output.0.content.0.text").String())
 }
@@ -176,7 +185,7 @@ func TestOpenAIBPSCompactTurnAndIteration(t *testing.T) {
 	c, recorder := newBPSHandlerTestContext(t, body, nil)
 	h.Compact(c)
 	require.Equal(t, http.StatusOK, recorder.Code)
-	ref := bpsCompactOutput(t, recorder.Body.Bytes())["encrypted_content"].(string)
+	ref := bpsCompactRef(t, recorder.Body.Bytes())
 	firstTurn := gjson.GetBytes(bodies[0], "metadata.turn_id").String()
 	sessionKey, _ := OpenAIBPSSessionKey(42, []byte(body))
 
@@ -235,7 +244,7 @@ func TestOpenAIBPSCompactionKeepsOriginalTurnAnchor(t *testing.T) {
 	c, recorder := newBPSHandlerTestContext(t, firstBody, nil)
 	h.Compact(c)
 	require.Equal(t, http.StatusOK, recorder.Code)
-	firstRef := bpsCompactOutput(t, recorder.Body.Bytes())["encrypted_content"].(string)
+	firstRef := bpsCompactRef(t, recorder.Body.Bytes())
 	firstTurn := gjson.GetBytes(bodies[0], "metadata.turn_id").String()
 	firstState, err := store.LoadCompactState(context.Background(), 42, mustBPSSessionKey(t, 42, firstBody), firstRef)
 	require.NoError(t, err)
@@ -246,7 +255,7 @@ func TestOpenAIBPSCompactionKeepsOriginalTurnAnchor(t *testing.T) {
 	c2, recorder2 := newBPSHandlerTestContext(t, secondBody, nil)
 	h.Compact(c2)
 	require.Equal(t, http.StatusOK, recorder2.Code, recorder2.Body.String())
-	secondRef := bpsCompactOutput(t, recorder2.Body.Bytes())["encrypted_content"].(string)
+	secondRef := bpsCompactRef(t, recorder2.Body.Bytes())
 	require.NotEqual(t, firstRef, secondRef)
 	require.Equal(t, firstTurn, gjson.GetBytes(bodies[1], "metadata.turn_id").String())
 	require.Contains(t, string(bodies[1]), "first summary")
@@ -295,8 +304,8 @@ func TestOpenAIBPSCompactLegacyRecordsReadable(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			ref := openAIBPSCompactPrefix + "legacy_" + strings.ReplaceAll(name, " ", "_")
-			server.Set(OpenAIBPSCompactRedisKey(42, sessionKey, ref), record)
-			server.Set(OpenAIBPSCompactReferenceRedisKey(42, ref), `{"session_key":"`+sessionKey+`"}`)
+			_ = server.Set(OpenAIBPSCompactRedisKey(42, sessionKey, ref), record)
+			_ = server.Set(OpenAIBPSCompactReferenceRedisKey(42, ref), `{"session_key":"`+sessionKey+`"}`)
 			request := `{"model":"gpt-6-astra","session_id":"conv-legacy","input":[{"type":"compaction","encrypted_content":"` + ref + `"}]}`
 			c, recorder := newBPSHandlerTestContext(t, request, nil)
 			h.Responses(c)
@@ -402,7 +411,9 @@ func TestOpenAIBPSCompactionTriggerOnResponses(t *testing.T) {
 	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
 	item := bpsCompactOutput(t, recorder.Body.Bytes())
 	require.Equal(t, "compaction", item["type"])
-	require.True(t, strings.HasPrefix(item["encrypted_content"].(string), openAIBPSCompactPrefix))
+	refText, ok := item["encrypted_content"].(string)
+	require.True(t, ok)
+	require.True(t, strings.HasPrefix(refText, openAIBPSCompactPrefix))
 	// 普通入口保持 object=response。
 	require.Equal(t, "response", gjson.Get(recorder.Body.String(), "object").String())
 	require.Contains(t, string(bodies[0]), "Summarize the conversation")
@@ -423,7 +434,7 @@ func TestOpenAIBPSCompactReferenceTenantIsolation(t *testing.T) {
 	c, recorder := newBPSHandlerTestContext(t, body, nil)
 	h.Compact(c)
 	require.Equal(t, http.StatusOK, recorder.Code)
-	ref := bpsCompactOutput(t, recorder.Body.Bytes())["encrypted_content"].(string)
+	ref := bpsCompactRef(t, recorder.Body.Bytes())
 	upstreamCalls = 0
 
 	// 另一个 API Key 使用同一引用：查不到索引，409。

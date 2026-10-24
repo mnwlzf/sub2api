@@ -35,10 +35,7 @@ func newCodexTicketProbeChallengeWithRand(random io.Reader) (codexTicketProbeCha
 	if err != nil {
 		return codexTicketProbeChallenge{}, fmt.Errorf("generate codex ticket challenge: %w", err)
 	}
-	return codexTicketProbeChallenge{
-		Prompt:        challenge.Prompt,
-		ExpectedCount: challenge.ExpectedCount,
-	}, nil
+	return codexTicketProbeChallenge(challenge), nil
 }
 
 // codexTicketCountChallengeNumbers 统计模型输出里 1..355 的整数个数。

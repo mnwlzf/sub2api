@@ -272,7 +272,7 @@ func (s *openAIBPSStructuredOutput) validate(response map[string]any) error {
 				if !ok || len(value) > openAIBPSMaxStructuredTextBytes-answer.Len() {
 					return openAIBPSInvalidStructured("BPS structured answer is invalid or exceeds 16 MiB")
 				}
-				answer.WriteString(value)
+				_, _ = answer.WriteString(value)
 			case "refusal":
 				if _, ok := part["refusal"].(string); !ok {
 					return openAIBPSInvalidStructured("BPS refusal must contain text")

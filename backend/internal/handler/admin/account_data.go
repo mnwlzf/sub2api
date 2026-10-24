@@ -200,11 +200,11 @@ func (h *AccountHandler) ExportData(c *gin.Context) {
 			expiresAt = &v
 		}
 		dataAccounts = append(dataAccounts, DataAccount{
-			Name:               acc.Name,
-			Notes:              acc.Notes,
-			Platform:           acc.Platform,
-			Type:               acc.Type,
-			Credentials:        acc.Credentials,
+			Name:        acc.Name,
+			Notes:       acc.Notes,
+			Platform:    acc.Platform,
+			Type:        acc.Type,
+			Credentials: acc.Credentials,
 			// 备份导出保留账号结构，但打票票据属于可再生成的运行态凭证，导出前脱敏。
 			Extra:              service.RedactCodexTicketExtra(acc.Extra),
 			ProxyKey:           proxyKey,

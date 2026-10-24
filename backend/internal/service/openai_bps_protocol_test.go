@@ -298,7 +298,9 @@ func TestOpenAIBPSConvertToolCallFunction(t *testing.T) {
 	require.Equal(t, "call_1", client["call_id"])
 	require.Equal(t, "exec", client["name"])
 	require.Equal(t, "completed", client["status"])
-	require.JSONEq(t, `{"command":"pwd"}`, client["arguments"].(string))
+	clientArguments, ok := client["arguments"].(string)
+	require.True(t, ok)
+	require.JSONEq(t, `{"command":"pwd"}`, clientArguments)
 
 	// 双层 JSON 编码的信封仍然可以解出。
 	native := bpsTestNativeCall("call_2", "exec", map[string]any{"command": "ls"})
@@ -443,7 +445,9 @@ func TestOpenAIBPSConvertToolCallCustomAndPlan(t *testing.T) {
 	planClient, planTool, err := openAIBPSConvertToolCall(planNative, prepared)
 	require.NoError(t, err)
 	require.Equal(t, "update_plan", planTool.Name)
-	require.JSONEq(t, `{"plan":[{"step":"fix it","status":"completed"}],"explanation":"next"}`, planClient["arguments"].(string))
+	planArguments, ok := planClient["arguments"].(string)
+	require.True(t, ok)
+	require.JSONEq(t, `{"plan":[{"step":"fix it","status":"completed"}],"explanation":"next"}`, planArguments)
 
 	// 冲突别名 / 未知状态 / 缺少 plan 数组都要拒绝。
 	for _, args := range []string{
@@ -478,10 +482,14 @@ func TestOpenAIBPSTransformResponseSingleToolAndState(t *testing.T) {
 	reasoning := map[string]any{"type": "reasoning", "id": "rs_1", "encrypted_content": "ciphertext", "summary": []any{}}
 	response, err := openAIBPSTransformResponse(context.Background(), store, prepared, bpsTestCompletedResponse(reasoning, native))
 	require.NoError(t, err)
-	output := response["output"].([]any)
+	output, ok := response["output"].([]any)
+	require.True(t, ok)
 	require.Len(t, output, 2)
-	require.Equal(t, "reasoning", output[0].(map[string]any)["type"])
-	client := output[1].(map[string]any)
+	firstOutput, ok := output[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "reasoning", firstOutput["type"])
+	client, ok := output[1].(map[string]any)
+	require.True(t, ok)
 	require.Equal(t, "function_call", client["type"])
 	require.Equal(t, "exec", client["name"])
 	require.Equal(t, "gpt-6-astra", response["model"])
@@ -534,7 +542,7 @@ func TestOpenAIBPSReplayRestoresNativeItems(t *testing.T) {
 	original := openAIBPSJSON(native)
 	transformed, err := openAIBPSTransformResponse(context.Background(), store, prepared, bpsTestCompletedResponse(native))
 	require.NoError(t, err)
-	client := transformed["output"].([]any)[0].(map[string]any)
+	client := bpsTestOutputItem(t, transformed, 0)
 
 	// 第二轮：客户端回传工具调用 + 结果，网关恢复上游原始 item 并生成
 	// 稳定 fc_ ID 的 function_call_output。
@@ -635,7 +643,7 @@ func TestOpenAIBPSReplayUpdatePlanReceipt(t *testing.T) {
 	}
 	transformed, err := openAIBPSTransformResponse(context.Background(), store, prepared, bpsTestCompletedResponse(native))
 	require.NoError(t, err)
-	client := transformed["output"].([]any)[0].(map[string]any)
+	client := bpsTestOutputItem(t, transformed, 0)
 	require.Equal(t, "update_plan", client["name"])
 
 	// 成功回执 "Plan updated" 在回放时被归一化为稳定 JSON，上游只需成功信号。
@@ -715,4 +723,15 @@ func TestOpenAIBPSToolItemSnapshotShape(t *testing.T) {
 	for _, field := range []string{`"call_id":"call_snap"`, `"id":"fc_call_snap"`, `"native":`, `"catalog":`, `"arguments":`} {
 		require.Contains(t, string(encoded), field)
 	}
+}
+
+// bpsTestOutputItem 取 Responses 终态 output 的第 index 个 item，并断言形状。
+func bpsTestOutputItem(t *testing.T, response map[string]any, index int) map[string]any {
+	t.Helper()
+	output, ok := response["output"].([]any)
+	require.True(t, ok)
+	require.Greater(t, len(output), index)
+	item, ok := output[index].(map[string]any)
+	require.True(t, ok)
+	return item
 }

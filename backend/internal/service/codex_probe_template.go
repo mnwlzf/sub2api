@@ -34,7 +34,7 @@ var (
 	// ErrCodexProbeTemplateInvalid 表示探测模板不可解析/不符合初始上下文格式。
 	ErrCodexProbeTemplateInvalid = errors.New("invalid Codex probe template")
 	// ErrCodexProbeIdentity 表示无法为目标账号构造 Codex 身份标识。
-	ErrCodexProbeIdentity = errors.New("Codex probe identity unavailable")
+	ErrCodexProbeIdentity = errors.New("codex probe identity unavailable")
 )
 
 // CodexProbeTemplate 是不可变、已校验的 Codex 初始会话模板。

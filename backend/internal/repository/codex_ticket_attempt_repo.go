@@ -267,9 +267,10 @@ func (r *CodexTicketAttemptRepository) listFilteredEvents(ctx context.Context, a
 		args = append(args, model)
 		condition += " AND model=$4"
 	}
-	if filter == "success" {
+	switch filter {
+	case "success":
 		condition += " AND outcome='success'"
-	} else if filter == "failure" {
+	case "failure":
 		condition += " AND outcome IN ('miss','error')"
 	}
 	var total int64

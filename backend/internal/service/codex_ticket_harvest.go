@@ -270,7 +270,12 @@ func (s *CodexTicketService) chooseProxy(ctx context.Context, accountID int64, m
 	_, _ = h.Write([]byte(key))
 	seed := uint64(h.Sum32())
 	value, _ := s.proxyTurns.LoadOrStore(key, &atomic.Uint64{})
-	turn := value.(*atomic.Uint64).Add(1) - 1
+	counter, ok := value.(*atomic.Uint64)
+	if !ok || counter == nil {
+		counter = &atomic.Uint64{}
+		s.proxyTurns.Store(key, counter)
+	}
+	turn := counter.Add(1) - 1
 	selected := proxies[(seed+turn)%uint64(len(proxies))]
 	return selected.URL(), &selected, nil
 }
@@ -434,10 +439,7 @@ func (s *CodexTicketService) runAttempt(ctx context.Context, account *Account, m
 	// 说明上游把请求降级到了别的模型，票据不可信，不落库；无法解析（failed）或
 	// 指纹库缺类（uncertain）不拦截，保留形状验真结论，避免误杀健康账号。
 	verificationMethod := codexTicketVerificationShape
-	fingerprint := EvaluateCodexDiagnostic(model, output, ModelTraceChallenge{
-		Prompt:        challenge.Prompt,
-		ExpectedCount: challenge.ExpectedCount,
-	})
+	fingerprint := EvaluateCodexDiagnostic(model, output, ModelTraceChallenge(challenge))
 	switch fingerprint.Status {
 	case CodexDegradationStatusDegraded:
 		attempt.Outcome, attempt.ReasonCode = codexTicketOutcomeMiss, "fingerprint_degraded"
@@ -669,12 +671,12 @@ func readCodexTicketProbeStream(ctx context.Context, body io.Reader) (string, er
 		}
 		switch gjson.Get(payload, "type").String() {
 		case "response.output_text.delta":
-			deltas.WriteString(gjson.Get(payload, "delta").String())
+			_, _ = deltas.WriteString(gjson.Get(payload, "delta").String())
 		case "response.completed":
 			gjson.Get(payload, "response.output").ForEach(func(_, message gjson.Result) bool {
 				message.Get("content").ForEach(func(_, part gjson.Result) bool {
 					if part.Get("type").String() == "output_text" {
-						completed.WriteString(part.Get("text").String())
+						_, _ = completed.WriteString(part.Get("text").String())
 					}
 					return true
 				})

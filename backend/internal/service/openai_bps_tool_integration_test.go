@@ -50,9 +50,11 @@ func TestOpenAIBPSToolHandlerMultiTurnReplay(t *testing.T) {
 	require.Equal(t, http.StatusOK, recorder.Code)
 	var first map[string]any
 	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &first))
-	output := first["output"].([]any)
+	output, ok := first["output"].([]any)
+	require.True(t, ok)
 	require.Len(t, output, 1)
-	client := output[0].(map[string]any)
+	client, ok := output[0].(map[string]any)
+	require.True(t, ok)
 	require.Equal(t, "function_call", client["type"])
 	require.Equal(t, "exec", client["name"])
 	require.Equal(t, "call_1", client["call_id"])
@@ -79,7 +81,13 @@ func TestOpenAIBPSToolHandlerMultiTurnReplay(t *testing.T) {
 	var second map[string]any
 	require.NoError(t, json.Unmarshal(recorder2.Body.Bytes(), &second))
 	require.Equal(t, "gpt-6-astra", second["model"])
-	require.Equal(t, "done", second["output"].([]any)[0].(map[string]any)["content"].([]any)[0].(map[string]any)["text"])
+	secondItem := bpsTestOutputItem(t, second, 0)
+	content, ok := secondItem["content"].([]any)
+	require.True(t, ok)
+	require.NotEmpty(t, content)
+	firstContent, ok := content[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "done", firstContent["text"])
 
 	// 第二轮上游 body：恢复原始 run_officejs item + 稳定 fc_ 结果。
 	require.Len(t, requests, 2)
