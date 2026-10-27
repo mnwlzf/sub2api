@@ -2226,6 +2226,23 @@
         />
       </div>
 
+      <div
+        v-if="account?.type === 'apikey' && account?.platform === 'openai'"
+        class="flex items-center justify-between gap-4 border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <div>
+          <label class="input-label mb-0">{{ t('admin.accounts.upstreamBilling.responseTierNonAuthoritative') }}</label>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            {{ t('admin.accounts.upstreamBilling.responseTierNonAuthoritativeHint') }}
+          </p>
+        </div>
+        <Toggle
+          v-model="responseTierNonAuthoritative"
+          data-testid="response-tier-non-authoritative"
+          :aria-label="t('admin.accounts.upstreamBilling.responseTierNonAuthoritative')"
+        />
+      </div>
+
       <OllamaCloudUsageSettings
         v-if="account?.ollama_cloud_usage?.eligible"
         :account="account"
@@ -3924,6 +3941,8 @@ const autoResetCredit5hThreshold = ref(100)
 const autoResetCredit7dThreshold = ref(100)
 const upstreamBillingAutoProbeEnabled = ref(false)
 const upstreamBillingRateSyncEnabled = ref(false)
+// 上游响应档位不可信：中转常无条件回 service_tier=default，开启后按其请求档位计费。
+const responseTierNonAuthoritative = ref(false)
 const mixedScheduling = ref(false) // For antigravity accounts: enable mixed scheduling
 // 上游ID：直接上游声明请求标识的响应头名，留空不记录。
 const upstreamRequestIdHeader = ref('')
@@ -4720,6 +4739,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   // Initialize API Key fields for apikey type
   if (newAccount.type === 'apikey' && newAccount.credentials) {
     const credentials = newAccount.credentials as Record<string, unknown>
+    responseTierNonAuthoritative.value = credentials.response_tier_non_authoritative === true
     // 国产供应商：读取 account_mode 与 api_protocol 作为可编辑初始值
     // （编辑弹窗允许修正两者，用于修复早期存错默认值的账号）。
     if (isMultiProtocolApiKeyPlatform(newAccount.platform)) {
@@ -5565,6 +5585,15 @@ const handleSubmit = async () => {
       const newCredentials: Record<string, unknown> = {
         ...currentCredentials,
         base_url: newBaseUrl
+      }
+
+      // 上游响应档位不可信：中转常无条件回 service_tier=default，不能据此降档计费。
+      if (props.account.platform === 'openai') {
+        if (responseTierNonAuthoritative.value) {
+          newCredentials.response_tier_non_authoritative = true
+        } else {
+          delete newCredentials.response_tier_non_authoritative
+        }
       }
 
       // 国产供应商：模式与协议写入凭据（决定额度/余额探测与转发端点/格式）。

@@ -187,6 +187,8 @@ export default {
         trustWarning: '此倍率由上游站点针对当前 API Key 自行声明。Sub2API 无法验证该值是否与实际扣费一致；上游站点或中间代理可能返回伪造、过期或被篡改的数据。请结合账单、余额变化和实际用量自行核验。',
         autoProbe: '自动探测上游声明倍率',
         autoProbeHint: '启用后按全局周期刷新上游声明倍率；此开关本身不会修改账号倍率。',
+        responseTierNonAuthoritative: '上游响应档位不可信',
+        responseTierNonAuthoritativeHint: '第三方中转常无条件返回 service_tier=default。开启后不再据上游声明的档位降档计费，改为按请求实际发送的档位（如 fast/priority）结算。',
         syncRate: '同步上游声明倍率',
         syncRateHint: '成功探测后自动更新账号倍率，同步的是不含高峰的基准倍率；探测失败或声明超出允许范围时保持不变。开启本项会同时打开“自动探测上游声明倍率”。',
         syncRateManagedHint: '当前倍率由上游声明的基准倍率（不含高峰）自动维护。',

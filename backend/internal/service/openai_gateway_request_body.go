@@ -2010,13 +2010,30 @@ func openAIGroupForcesFast(ctx context.Context, account *Account) bool {
 	return IsGroupContextValid(group) && groupSupportsOpenAIFast(group.Platform) && group.ForceOpenAIFast
 }
 
+// openAIGroupForcedServiceTier reports the tier a ForceOpenAIFast group must put
+// on the wire, given the tier the caller already asked for. Forcing means "at
+// least fast": a caller that already asked for a more expensive tier keeps it.
+// Rewriting ultrafast down to priority would silently downgrade the service the
+// caller paid for, and the downgrade is invisible downstream because billing
+// then records priority.
+func openAIGroupForcedServiceTier(ctx context.Context, account *Account, current string) (string, bool) {
+	if !openAIGroupForcesFast(ctx, account) {
+		return "", false
+	}
+	if normalizedOpenAIServiceTierValue(current) == OpenAIFastTierUltrafast {
+		return "", false
+	}
+	return OpenAIFastTierPriority, true
+}
+
 // applyOpenAIFastPolicyToBody applies the OpenAI fast policy to a raw request
 // body. When action=filter it removes the service_tier field; when
 // action=block it returns (body, *OpenAIFastBlockedError). On pass it
 // normalizes the service_tier value (e.g. client alias "fast" → "priority").
 // action=force_priority rewrites any matched known tier to "priority". Before
 // the global policy is evaluated, a trusted request Group with
-// ForceOpenAIFast enabled unconditionally sets service_tier to "priority".
+// ForceOpenAIFast enabled raises the outbound tier to "priority" unless the
+// caller already asked for something more expensive (ultrafast).
 // The global policy remains authoritative and may still pass, filter, or block
 // that final value.
 //
@@ -2029,8 +2046,8 @@ func (s *OpenAIGatewayService) applyOpenAIFastPolicyToBody(ctx context.Context, 
 	if len(body) == 0 {
 		return body, nil
 	}
-	if openAIGroupForcesFast(ctx, account) {
-		updated, err := sjson.SetBytes(body, "service_tier", OpenAIFastTierPriority)
+	if forcedTier, ok := openAIGroupForcedServiceTier(ctx, account, gjson.GetBytes(body, "service_tier").String()); ok {
+		updated, err := sjson.SetBytes(body, "service_tier", forcedTier)
 		if err != nil {
 			return body, fmt.Errorf("force group service_tier priority on body: %w", err)
 		}
@@ -2155,8 +2172,8 @@ func (s *OpenAIGatewayService) applyOpenAIFastPolicyToWSResponseCreate(
 	if frameType != "response.create" {
 		return frame, nil, nil
 	}
-	if openAIGroupForcesFast(ctx, account) {
-		updated, err := sjson.SetBytes(frame, "service_tier", OpenAIFastTierPriority)
+	if forcedTier, ok := openAIGroupForcedServiceTier(ctx, account, gjson.GetBytes(frame, "service_tier").String()); ok {
+		updated, err := sjson.SetBytes(frame, "service_tier", forcedTier)
 		if err != nil {
 			return frame, nil, fmt.Errorf("force group service_tier priority in ws frame: %w", err)
 		}
