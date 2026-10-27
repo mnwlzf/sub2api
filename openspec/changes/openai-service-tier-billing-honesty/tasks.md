@@ -21,6 +21,7 @@
 - [x] 3.2 载入时读 `credentials.response_tier_non_authoritative === true`
 - [x] 3.3 保存时写入 `true`，关闭时 `delete` 该字段（不残留 false）
 - [x] 3.4 中英 i18n 文案 `admin.accounts.upstreamBilling.responseTierNonAuthoritative{,Hint}`
+- [ ] 3.5 后续：`CreateAccountModal.vue` 的 6 条 apikey 建号链路同样暴露该开关（本次先在创建后通过编辑弹窗开启，避免一次性改动 6 处建号分支）
 
 ## 4. 测试
 
@@ -34,5 +35,7 @@
 - [x] 5.2 `go test ./internal/service/ -run 'TestOpenAIGroupForcedServiceTier|TestApplyServiceTierBillingResolutionOnlyRewritesDowngrades'` 通过
 - [x] 5.3 `pnpm run typecheck` 通过
 - [x] 5.4 `check:i18n` 通过
-- [ ] 5.5 部署后：对 group 66 真实请求，`usage_logs.service_tier` 由 `default` 变为 `priority`，且 `billing.service_tier_downgraded` 不再出现
-- [ ] 5.6 部署后：客户端显式 `service_tier=ultrafast` 经 group 65 请求，路由决策 `final_service_tier` 为 `ultrafast`
+- [x] 5.5 部署后：对 group 66 真实请求，`usage_logs.service_tier` 由 `default` 变为 `priority`（21:07 实测 4 条），`billing.service_tier_downgraded` 不再出现
+- [x] 5.6 部署后：客户端显式 `service_tier=ultrafast` 经 group 65 请求，`final_service_tier` 与 `usage_logs.service_tier` 均为 `ultrafast`
+- [x] 5.7 单笔成本核对：同一请求 group 66 由 `default` 的 0.000716 变为 `priority` 的 0.001431，正是 2.0× 倍率
+- [x] 5.8 注意：账号凭据改动需等进程内账号缓存刷新（实测约 6 分钟）才对新请求生效，改完即刻验证会看到旧行为
