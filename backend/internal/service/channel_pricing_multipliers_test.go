@@ -20,7 +20,13 @@ func TestConfiguredServiceTierMultiplier(t *testing.T) {
 		{name: "flex configured", serviceTier: "flex", pricing: &ModelPricing{FlexMultiplier: pricingMultiplier(0.4)}, want: 0.4},
 		{name: "legacy fast default", serviceTier: "fast", pricing: &ModelPricing{}, want: 2},
 		{name: "ultrafast default", serviceTier: "ultrafast", pricing: &ModelPricing{}, want: 2},
-		{name: "ultrafast ignores fast multiplier", serviceTier: "ultrafast", pricing: &ModelPricing{FastMultiplier: pricingMultiplier(2.5)}, want: 2},
+		// ultrafast 是 fast 的更高档，不允许比 fast 便宜：未配专属倍率时继承 fast。
+		{name: "ultrafast inherits fast multiplier", serviceTier: "ultrafast", pricing: &ModelPricing{FastMultiplier: pricingMultiplier(2.5)}, want: 2.5},
+		{name: "ultrafast inherits a large fast multiplier", serviceTier: "ultrafast", pricing: &ModelPricing{FastMultiplier: pricingMultiplier(8)}, want: 8},
+		// 专属倍率高于 fast 时取专属值（astra 的 6x 在 fast=3x 时仍然生效）。
+		{name: "ultrafast keeps a higher dedicated multiplier", serviceTier: "ultrafast", pricing: &ModelPricing{UltrafastMultiplier: 6, FastMultiplier: pricingMultiplier(3)}, want: 6},
+		// fast 高于专属倍率时取 fast，避免切档反而降价。
+		{name: "ultrafast never drops below fast", serviceTier: "ultrafast", pricing: &ModelPricing{UltrafastMultiplier: 6, FastMultiplier: pricingMultiplier(8)}, want: 8},
 		{name: "legacy flex default", serviceTier: "flex", pricing: &ModelPricing{}, want: 0.5},
 	}
 
