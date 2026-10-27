@@ -172,6 +172,8 @@ type AdminGroup struct {
 	Group
 	// ForceOpenAIFast 是管理端请求策略，用户侧分组 DTO 无需暴露。
 	ForceOpenAIFast bool `json:"force_openai_fast"`
+	// ForcedServiceTier 分组强制档位：空=不强制，priority=Fast，ultrafast=UltraFast。
+	ForcedServiceTier string `json:"forced_service_tier,omitempty"`
 	// FreeOpenAIFast 是管理端计费策略，用户侧分组 DTO 无需暴露。
 	FreeOpenAIFast bool `json:"free_openai_fast"`
 

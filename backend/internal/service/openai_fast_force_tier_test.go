@@ -22,6 +22,21 @@ func forceFastContext(force bool) context.Context {
 	return context.WithValue(context.Background(), ctxkey.Group, group)
 }
 
+// forcedTierContext returns a context whose group declares an explicit forced
+// service tier (the newer, more specific setting).
+func forcedTierContext(tier string, force bool) context.Context {
+	group := &Group{
+		ID:                66,
+		Name:              "normal-fast",
+		Platform:          PlatformOpenAI,
+		Status:            "active",
+		Hydrated:          true,
+		ForceOpenAIFast:   force,
+		ForcedServiceTier: tier,
+	}
+	return context.WithValue(context.Background(), ctxkey.Group, group)
+}
+
 func TestOpenAIGroupForcedServiceTier(t *testing.T) {
 	openAIAccount := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 
@@ -53,6 +68,33 @@ func TestOpenAIGroupForcedServiceTier(t *testing.T) {
 
 	t.Run("non-openai accounts are never forced", func(t *testing.T) {
 		tier, ok := openAIGroupForcedServiceTier(forceFastContext(true), &Account{Platform: PlatformAnthropic}, "default")
+		require.False(t, ok)
+		require.Empty(t, tier)
+	})
+
+	// 显式「强制 UltraFast」：分组声明后，无论客户端传什么都要发 ultrafast。
+	t.Run("explicit ultrafast target wins over the caller tier", func(t *testing.T) {
+		for _, current := range []string{"", "default", "flex", "fast", "priority", "ultrafast"} {
+			tier, ok := openAIGroupForcedServiceTier(forcedTierContext(OpenAIFastTierUltrafast, true), openAIAccount, current)
+			require.True(t, ok, "current=%q", current)
+			require.Equal(t, OpenAIFastTierUltrafast, tier, "current=%q", current)
+		}
+	})
+
+	// 显式 priority 与旧开关等价，且不降级客户端已要求的 ultrafast。
+	t.Run("explicit priority target matches the legacy switch", func(t *testing.T) {
+		tier, ok := openAIGroupForcedServiceTier(forcedTierContext(OpenAIFastTierPriority, false), openAIAccount, "default")
+		require.True(t, ok)
+		require.Equal(t, OpenAIFastTierPriority, tier)
+
+		tier, ok = openAIGroupForcedServiceTier(forcedTierContext(OpenAIFastTierPriority, false), openAIAccount, "ultrafast")
+		require.False(t, ok)
+		require.Empty(t, tier)
+	})
+
+	// 非法值回落为空：不强制，且不因旧开关而误触发。
+	t.Run("unknown forced tier falls back to no-op", func(t *testing.T) {
+		tier, ok := openAIGroupForcedServiceTier(forcedTierContext("turbo", false), openAIAccount, "default")
 		require.False(t, ok)
 		require.Empty(t, tier)
 	})

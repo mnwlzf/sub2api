@@ -365,11 +365,25 @@ func groupSupportsOpenAIFast(platform string) bool {
 	return platform == PlatformOpenAI || platform == PlatformComposite
 }
 
+// normalizeForcedServiceTier 归一化分组强制档位：只接受 priority/ultrafast
+// （fast 视为 priority），其余值一律回落为空＝不强制。
+func normalizeForcedServiceTier(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case OpenAIFastTierPriority, "fast":
+		return OpenAIFastTierPriority
+	case OpenAIFastTierUltrafast:
+		return OpenAIFastTierUltrafast
+	default:
+		return ""
+	}
+}
+
 func sanitizeGroupOpenAIFast(group *Group) {
 	if group == nil || !groupSupportsOpenAIFast(group.Platform) {
 		if group != nil {
 			group.ForceOpenAIFast = false
 			group.FreeOpenAIFast = false
+			group.ForcedServiceTier = ""
 		}
 	}
 }
@@ -623,6 +637,7 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		AllowMessagesDispatch:           input.AllowMessagesDispatch,
 		AllowLive:                       input.AllowLive,
 		ForceOpenAIFast:                 input.ForceOpenAIFast,
+		ForcedServiceTier:               normalizeForcedServiceTier(input.ForcedServiceTier),
 		FreeOpenAIFast:                  input.FreeOpenAIFast,
 		RequireOAuthOnly:                input.RequireOAuthOnly,
 		RequirePrivacySet:               input.RequirePrivacySet,
@@ -1009,6 +1024,9 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	}
 	if input.ForceOpenAIFast != nil {
 		group.ForceOpenAIFast = *input.ForceOpenAIFast
+	}
+	if input.ForcedServiceTier != nil {
+		group.ForcedServiceTier = normalizeForcedServiceTier(*input.ForcedServiceTier)
 	}
 	if input.FreeOpenAIFast != nil {
 		group.FreeOpenAIFast = *input.FreeOpenAIFast
