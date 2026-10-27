@@ -23092,6 +23092,7 @@ type GroupMutation struct {
 	allow_live                              *bool
 	force_openai_fast                       *bool
 	free_openai_fast                        *bool
+	forced_service_tier                     *string
 	require_oauth_only                      *bool
 	require_privacy_set                     *bool
 	default_mapped_model                    *string
@@ -25988,6 +25989,42 @@ func (m *GroupMutation) ResetFreeOpenaiFast() {
 	m.free_openai_fast = nil
 }
 
+// SetForcedServiceTier sets the "forced_service_tier" field.
+func (m *GroupMutation) SetForcedServiceTier(s string) {
+	m.forced_service_tier = &s
+}
+
+// ForcedServiceTier returns the value of the "forced_service_tier" field in the mutation.
+func (m *GroupMutation) ForcedServiceTier() (r string, exists bool) {
+	v := m.forced_service_tier
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldForcedServiceTier returns the old "forced_service_tier" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldForcedServiceTier(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldForcedServiceTier is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldForcedServiceTier requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldForcedServiceTier: %w", err)
+	}
+	return oldValue.ForcedServiceTier, nil
+}
+
+// ResetForcedServiceTier resets all changes to the "forced_service_tier" field.
+func (m *GroupMutation) ResetForcedServiceTier() {
+	m.forced_service_tier = nil
+}
+
 // SetRequireOauthOnly sets the "require_oauth_only" field.
 func (m *GroupMutation) SetRequireOauthOnly(b bool) {
 	m.require_oauth_only = &b
@@ -26889,7 +26926,7 @@ func (m *GroupMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *GroupMutation) Fields() []string {
-	fields := make([]string, 0, 67)
+	fields := make([]string, 0, 68)
 	if m.created_at != nil {
 		fields = append(fields, group.FieldCreatedAt)
 	}
@@ -27052,6 +27089,9 @@ func (m *GroupMutation) Fields() []string {
 	if m.free_openai_fast != nil {
 		fields = append(fields, group.FieldFreeOpenaiFast)
 	}
+	if m.forced_service_tier != nil {
+		fields = append(fields, group.FieldForcedServiceTier)
+	}
 	if m.require_oauth_only != nil {
 		fields = append(fields, group.FieldRequireOauthOnly)
 	}
@@ -27207,6 +27247,8 @@ func (m *GroupMutation) Field(name string) (ent.Value, bool) {
 		return m.ForceOpenaiFast()
 	case group.FieldFreeOpenaiFast:
 		return m.FreeOpenaiFast()
+	case group.FieldForcedServiceTier:
+		return m.ForcedServiceTier()
 	case group.FieldRequireOauthOnly:
 		return m.RequireOauthOnly()
 	case group.FieldRequirePrivacySet:
@@ -27350,6 +27392,8 @@ func (m *GroupMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldForceOpenaiFast(ctx)
 	case group.FieldFreeOpenaiFast:
 		return m.OldFreeOpenaiFast(ctx)
+	case group.FieldForcedServiceTier:
+		return m.OldForcedServiceTier(ctx)
 	case group.FieldRequireOauthOnly:
 		return m.OldRequireOauthOnly(ctx)
 	case group.FieldRequirePrivacySet:
@@ -27762,6 +27806,13 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetFreeOpenaiFast(v)
+		return nil
+	case group.FieldForcedServiceTier:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetForcedServiceTier(v)
 		return nil
 	case group.FieldRequireOauthOnly:
 		v, ok := value.(bool)
@@ -28526,6 +28577,9 @@ func (m *GroupMutation) ResetField(name string) error {
 		return nil
 	case group.FieldFreeOpenaiFast:
 		m.ResetFreeOpenaiFast()
+		return nil
+	case group.FieldForcedServiceTier:
+		m.ResetForcedServiceTier()
 		return nil
 	case group.FieldRequireOauthOnly:
 		m.ResetRequireOauthOnly()

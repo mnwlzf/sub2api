@@ -1333,7 +1333,12 @@ export default {
         force: 'Force Fast (priority)',
         hint: 'Forces service_tier=priority on OpenAI requests in this group. The global Fast/Flex policy can still filter or block it. New requests update immediately after saving; existing WebSocket sessions must reconnect.',
         free: 'Free Fast',
-        freeHint: 'Fast requests in this group still use the priority tier, but customers are charged the equivalent Standard price.'
+        freeHint: 'Fast requests in this group still use the priority tier, but customers are charged the equivalent Standard price.',
+        forcedTier: 'Forced tier',
+        forcedTierAuto: 'Not specified (follow the switch above)',
+        forcedTierFast: 'Fast (priority)',
+        forcedTierUltrafast: 'UltraFast (ultrafast)',
+        forcedTierHint: 'When set, requests are billed and recorded at this tier: choosing UltraFast makes the usage log show Ultrafast. An UltraFast price never falls below the channel Fast multiplier.'
       },
       invalidRequestFallback: {
         title: 'Invalid Request Fallback Group',

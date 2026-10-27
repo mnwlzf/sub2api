@@ -1591,6 +1591,23 @@
           </p>
           <div class="flex items-center justify-between gap-4 mt-4">
             <label class="text-sm text-gray-600 dark:text-gray-400">
+              {{ t("admin.groups.openaiFast.forcedTier") }}
+            </label>
+            <select
+              class="input w-56"
+              data-testid="create-forced-service-tier"
+              v-model="createForm.forced_service_tier"
+            >
+              <option value="">{{ t("admin.groups.openaiFast.forcedTierAuto") }}</option>
+              <option value="priority">{{ t("admin.groups.openaiFast.forcedTierFast") }}</option>
+              <option value="ultrafast">{{ t("admin.groups.openaiFast.forcedTierUltrafast") }}</option>
+            </select>
+          </div>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            {{ t("admin.groups.openaiFast.forcedTierHint") }}
+          </p>
+          <div class="flex items-center justify-between gap-4 mt-4">
+            <label class="text-sm text-gray-600 dark:text-gray-400">
               {{ t("admin.groups.openaiFast.free") }}
             </label>
             <Toggle
@@ -3238,6 +3255,23 @@
           </div>
           <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
             {{ t("admin.groups.openaiFast.hint") }}
+          </p>
+          <div class="flex items-center justify-between gap-4 mt-4">
+            <label class="text-sm text-gray-600 dark:text-gray-400">
+              {{ t("admin.groups.openaiFast.forcedTier") }}
+            </label>
+            <select
+              class="input w-56"
+              data-testid="edit-forced-service-tier"
+              v-model="editForm.forced_service_tier"
+            >
+              <option value="">{{ t("admin.groups.openaiFast.forcedTierAuto") }}</option>
+              <option value="priority">{{ t("admin.groups.openaiFast.forcedTierFast") }}</option>
+              <option value="ultrafast">{{ t("admin.groups.openaiFast.forcedTierUltrafast") }}</option>
+            </select>
+          </div>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            {{ t("admin.groups.openaiFast.forcedTierHint") }}
           </p>
           <div class="flex items-center justify-between gap-4 mt-4">
             <label class="text-sm text-gray-600 dark:text-gray-400">
@@ -4976,6 +5010,7 @@ const createForm = reactive({
   monthly_limit_usd: null as number | null,
   long_context_pricing_enabled: true,
   force_openai_fast: false,
+  forced_service_tier: '',
   free_openai_fast: false,
   model_pricing: [] as PricingFormEntry[],
   // 图片生成计费配置
@@ -5342,6 +5377,7 @@ const editForm = reactive({
   monthly_limit_usd: null as number | null,
   long_context_pricing_enabled: true,
   force_openai_fast: false,
+  forced_service_tier: '',
   free_openai_fast: false,
   model_pricing: [] as PricingFormEntry[],
   // 图片生成计费配置
@@ -5820,6 +5856,7 @@ const closeCreateModal = () => {
   createForm.video_model_prices = createVideoModelPricesForm();
   createForm.long_context_pricing_enabled = true;
   createForm.force_openai_fast = false;
+  createForm.forced_service_tier = '';
   createForm.free_openai_fast = false;
   createForm.model_pricing = [];
   createForm.web_search_price_per_call = null;
@@ -5946,6 +5983,7 @@ const handleCreateGroup = async () => {
         createForm.platform,
         createForm.force_openai_fast,
       ),
+      forced_service_tier: createForm.forced_service_tier,
       free_openai_fast: normalizeGroupOpenAIFast(
         createForm.platform,
         createForm.free_openai_fast,
@@ -6095,6 +6133,7 @@ const handleEdit = async (group: AdminGroup) => {
   editForm.long_context_pricing_enabled =
     group.long_context_pricing_enabled ?? true;
   editForm.force_openai_fast = group.force_openai_fast ?? false;
+  editForm.forced_service_tier = group.forced_service_tier ?? '';
   editForm.free_openai_fast = group.free_openai_fast ?? false;
   editForm.model_pricing = groupPricingFromAPI(group.model_pricing);
   editForm.allow_image_generation = group.allow_image_generation ?? false;
@@ -6229,6 +6268,7 @@ const closeEditModal = () => {
   editForm.video_model_prices = createVideoModelPricesForm();
   editForm.long_context_pricing_enabled = true;
   editForm.force_openai_fast = false;
+  editForm.forced_service_tier = '';
   editForm.free_openai_fast = false;
   editForm.model_pricing = [];
   editForm.web_search_price_per_call = null;
@@ -6289,6 +6329,7 @@ const handleUpdateGroup = async () => {
         editForm.platform,
         editForm.force_openai_fast,
       ),
+      forced_service_tier: editForm.forced_service_tier,
       free_openai_fast: normalizeGroupOpenAIFast(
         editForm.platform,
         editForm.free_openai_fast,

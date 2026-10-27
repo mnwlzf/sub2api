@@ -2002,14 +2002,6 @@ func openAIFastPolicySettingsFromContext(ctx context.Context) *OpenAIFastPolicyS
 	return nil
 }
 
-func openAIGroupForcesFast(ctx context.Context, account *Account) bool {
-	if ctx == nil || account == nil || account.Platform != PlatformOpenAI {
-		return false
-	}
-	group, _ := ctx.Value(ctxkey.Group).(*Group)
-	return IsGroupContextValid(group) && groupSupportsOpenAIFast(group.Platform) && group.ForceOpenAIFast
-}
-
 // openAIGroupForcedServiceTier reports the tier a ForceOpenAIFast group must put
 // on the wire, given the tier the caller already asked for. Forcing means "at
 // least fast": a caller that already asked for a more expensive tier keeps it.
@@ -2017,13 +2009,29 @@ func openAIGroupForcesFast(ctx context.Context, account *Account) bool {
 // caller paid for, and the downgrade is invisible downstream because billing
 // then records priority.
 func openAIGroupForcedServiceTier(ctx context.Context, account *Account, current string) (string, bool) {
-	if !openAIGroupForcesFast(ctx, account) {
+	if ctx == nil || account == nil || account.Platform != PlatformOpenAI {
 		return "", false
 	}
+	group, _ := ctx.Value(ctxkey.Group).(*Group)
+	if !IsGroupContextValid(group) || !groupSupportsOpenAIFast(group.Platform) {
+		return "", false
+	}
+	// 分组可显式指定强制档位；未指定时沿用 ForceOpenAIFast 的 priority。
+	target := normalizeForcedServiceTier(group.ForcedServiceTier)
+	if target == "" && group.ForceOpenAIFast {
+		target = OpenAIFastTierPriority
+	}
+	if target == "" {
+		return "", false
+	}
+	if target == OpenAIFastTierUltrafast {
+		return target, true
+	}
+	// 目标是 priority：客户端已经要求更高档时不降级。
 	if normalizedOpenAIServiceTierValue(current) == OpenAIFastTierUltrafast {
 		return "", false
 	}
-	return OpenAIFastTierPriority, true
+	return target, true
 }
 
 // applyOpenAIFastPolicyToBody applies the OpenAI fast policy to a raw request
