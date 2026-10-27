@@ -62,11 +62,14 @@ func serviceTierCostRank(tier string) (rank int, known bool) {
 
 // ResolveOpenAIServiceTierBilling applies the response-tier contract for the
 // selected credential. Public OpenAI API responses declare the actual tier and
-// may lower billing. The private ChatGPT Codex endpoint does not: it commonly
-// reports default for effective Fast turns, so OAuth-like credentials retain
-// the final outbound tier while still exposing the observed value.
+// may lower billing. Endpoints whose declaration is not trustworthy — the
+// private ChatGPT Codex protocol and third-party relays flagged with
+// credentials["response_tier_non_authoritative"] — commonly report the base tier
+// for effective Fast turns, so those credentials retain the final outbound tier
+// while still exposing the observed value.
 func ResolveOpenAIServiceTierBilling(account *Account, requested, observed string) ServiceTierBillingResolution {
-	if account != nil && account.IsOpenAIOAuthLike() && codexOAuthResponseTierIsNonAuthoritative(observed) {
+	if account != nil && openAIResponseBaseTierIsNonAuthoritative(observed) &&
+		(account.IsOpenAIOAuthLike() || account.OpenAIResponseTierIsNonAuthoritative()) {
 		return ServiceTierBillingResolution{
 			Requested: normalizeBillingServiceTier(requested),
 			Observed:  normalizeBillingServiceTier(observed),
@@ -76,9 +79,12 @@ func ResolveOpenAIServiceTierBilling(account *Account, requested, observed strin
 	return ResolveBillingServiceTier(requested, observed)
 }
 
-func codexOAuthResponseTierIsNonAuthoritative(observed string) bool {
+// openAIResponseBaseTierIsNonAuthoritative reports whether observed only restates
+// the base tier. A cheaper non-base tier (flex) stays authoritative so the bill
+// still follows a genuine downgrade.
+func openAIResponseBaseTierIsNonAuthoritative(observed string) bool {
 	switch normalizeBillingServiceTier(observed) {
-	case "default":
+	case "default", "standard":
 		return true
 	default:
 		return false

@@ -350,6 +350,8 @@ export default {
         trustWarning: 'This rate is declared by the upstream site for the current API key. Sub2API cannot verify that it matches actual charges. The upstream site or an intermediary may return forged, stale, or modified data. Verify it against bills, balance changes, and actual usage.',
         autoProbe: 'Automatically probe upstream declared rate',
         autoProbeHint: 'Refresh the upstream declared rate on the global interval. This switch alone does not change the account rate.',
+        responseTierNonAuthoritative: 'Upstream service tier is not authoritative',
+        responseTierNonAuthoritativeHint: 'Third-party relays often answer service_tier=default unconditionally. When enabled, the declared tier is no longer allowed to lower the bill; the tier actually sent upstream (fast/priority) is billed instead.',
         syncRate: 'Sync upstream declared rate',
         syncRateHint: 'Update the account rate after each successful probe, using the base rate excluding peak hours. Failed probes or declarations outside the allowed range leave it unchanged. Enabling this also turns on "Automatically probe upstream declared rate".',
         syncRateManagedHint: 'The current rate is maintained automatically from the upstream declared base rate (excluding peak hours).',

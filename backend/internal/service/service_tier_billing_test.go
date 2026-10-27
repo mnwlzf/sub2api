@@ -40,10 +40,13 @@ func TestResolveBillingServiceTier(t *testing.T) {
 }
 
 func TestApplyServiceTierBillingResolutionOnlyRewritesDowngrades(t *testing.T) {
-	t.Run("codex exception only covers OpenAI default", func(t *testing.T) {
-		require.True(t, codexOAuthResponseTierIsNonAuthoritative("default"))
-		require.False(t, codexOAuthResponseTierIsNonAuthoritative("standard"))
-		require.False(t, codexOAuthResponseTierIsNonAuthoritative("flex"))
+	t.Run("codex exception covers the whole base tier", func(t *testing.T) {
+		require.True(t, openAIResponseBaseTierIsNonAuthoritative("default"))
+		require.True(t, openAIResponseBaseTierIsNonAuthoritative("standard"))
+		require.True(t, openAIResponseBaseTierIsNonAuthoritative(" Default "))
+		require.False(t, openAIResponseBaseTierIsNonAuthoritative("flex"))
+		require.False(t, openAIResponseBaseTierIsNonAuthoritative("priority"))
+		require.False(t, openAIResponseBaseTierIsNonAuthoritative(""))
 	})
 
 	t.Run("openai downgrade rewrites tier", func(t *testing.T) {
@@ -106,6 +109,61 @@ func TestApplyServiceTierBillingResolutionOnlyRewritesDowngrades(t *testing.T) {
 			require.Nil(t, result.ServiceTier)
 		})
 	}
+
+	t.Run("relay flagged non-authoritative keeps outbound priority despite default echo", func(t *testing.T) {
+		for _, flag := range []any{true, "true", "TRUE"} {
+			requested := "priority"
+			result := &OpenAIForwardResult{ServiceTier: &requested, UpstreamResponseServiceTier: "default"}
+			account := &Account{
+				Platform:    PlatformOpenAI,
+				Type:        AccountTypeAPIKey,
+				Credentials: map[string]any{"response_tier_non_authoritative": flag},
+			}
+			resolution := ApplyOpenAIServiceTierBillingResolution(account, result)
+			require.False(t, resolution.Downgraded, "flag=%v", flag)
+			require.Equal(t, "priority", resolution.Requested)
+			require.Equal(t, "default", resolution.Observed)
+			require.Equal(t, "priority", resolution.Billing)
+			require.Same(t, &requested, result.ServiceTier)
+		}
+	})
+
+	t.Run("relay flag still accepts an explicit flex downgrade", func(t *testing.T) {
+		requested := "priority"
+		result := &OpenAIForwardResult{ServiceTier: &requested, UpstreamResponseServiceTier: "flex"}
+		account := &Account{
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Credentials: map[string]any{"response_tier_non_authoritative": true},
+		}
+		resolution := ApplyOpenAIServiceTierBillingResolution(account, result)
+		require.True(t, resolution.Downgraded)
+		require.Equal(t, "flex", resolution.Billing)
+		require.Equal(t, "flex", *result.ServiceTier)
+	})
+
+	t.Run("relay flag default-off keeps the generic contract", func(t *testing.T) {
+		requested := "priority"
+		result := &OpenAIForwardResult{ServiceTier: &requested, UpstreamResponseServiceTier: "default"}
+		account := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+		require.False(t, account.OpenAIResponseTierIsNonAuthoritative())
+		resolution := ApplyOpenAIServiceTierBillingResolution(account, result)
+		require.True(t, resolution.Downgraded)
+		require.Equal(t, "default", resolution.Billing)
+	})
+
+	t.Run("relay flag never promotes an untiered request", func(t *testing.T) {
+		result := &OpenAIForwardResult{UpstreamResponseServiceTier: "default"}
+		account := &Account{
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Credentials: map[string]any{"response_tier_non_authoritative": true},
+		}
+		resolution := ApplyOpenAIServiceTierBillingResolution(account, result)
+		require.False(t, resolution.Downgraded)
+		require.Empty(t, resolution.Billing)
+		require.Nil(t, result.ServiceTier)
+	})
 
 	t.Run("non-openai oauth still uses the generic response contract", func(t *testing.T) {
 		requested := "priority"

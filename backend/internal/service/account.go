@@ -1482,6 +1482,29 @@ func (a *Account) IsOpenAIOAuthLike() bool {
 	return a != nil && a.IsOpenAI() && (a.Type == AccountTypeOAuth || a.Type == AccountTypeSetupToken)
 }
 
+// OpenAIResponseTierIsNonAuthoritative reports whether the operator declared
+// that this account's upstream response cannot be trusted to declare the
+// service tier it actually served. Third-party OpenAI-compatible relays
+// frequently answer service_tier "default" no matter what was requested (the
+// same behaviour the private Codex endpoint shows), so their declaration must
+// not be allowed to lower the bill. Stored in
+// credentials["response_tier_non_authoritative"].
+func (a *Account) OpenAIResponseTierIsNonAuthoritative() bool {
+	if a == nil || a.Credentials == nil {
+		return false
+	}
+	// JSON 存进来是 bool，历史/手工写入可能是字符串；GetCredential 对 bool 返回空，
+	// 因此这里直接读 map。
+	switch v := a.Credentials["response_tier_non_authoritative"].(type) {
+	case bool:
+		return v
+	case string:
+		return strings.EqualFold(strings.TrimSpace(v), "true")
+	default:
+		return false
+	}
+}
+
 // UsesOpenAICodexProtocol preserves legacy OpenAI gateway OAuth routing for
 // accounts whose platform is implicit, while adding OpenAI SetupToken.
 // BPS 账号也是 oauth 类型，但它走独立网关与固定上游，绝不能被当成 Codex 协议账号。
