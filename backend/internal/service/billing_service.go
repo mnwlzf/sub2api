@@ -155,8 +155,19 @@ func serviceTierCostMultiplier(serviceTier string) float64 {
 
 func configuredServiceTierMultiplier(serviceTier string, pricing *ModelPricing) float64 {
 	if pricing != nil {
-		if normalizeBillingServiceTier(serviceTier) == OpenAIFastTierUltrafast && pricing.UltrafastMultiplier > 0 {
-			return pricing.UltrafastMultiplier
+		if normalizeBillingServiceTier(serviceTier) == OpenAIFastTierUltrafast {
+			// ultrafast 是 fast 的更高档，绝不允许低于 fast：未配置专属倍率时
+			// 继承 fast 的渠道倍率，配置了也取其与 fast 的较大值。
+			// 缺了这层护栏，客户显式请求 service_tier=ultrafast 就能拿到比
+			// fast 更便宜的价（默认兜底 2x），而上游照 fast 价收费。
+			multiplier := pricing.UltrafastMultiplier
+			if pricing.FastMultiplier != nil && *pricing.FastMultiplier > multiplier {
+				multiplier = *pricing.FastMultiplier
+			}
+			if multiplier > 0 {
+				return multiplier
+			}
+			return serviceTierCostMultiplier(serviceTier)
 		}
 		switch normalizeBillingServiceTier(serviceTier) {
 		case "priority", "fast":
