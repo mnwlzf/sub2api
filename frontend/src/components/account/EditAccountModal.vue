@@ -2360,6 +2360,14 @@
         </button>
       </div>
 
+      <!-- OpenAI images: size tier routing -->
+      <div
+        v-if="account?.platform === 'openai'"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <OpenAIImageSizeTiersField v-model="openAIImageSizeTiers" />
+      </div>
+
       <div
         v-if="account?.type === 'apikey'"
         class="flex items-center justify-between gap-4 border-t border-gray-200 pt-4 dark:border-dark-600"
@@ -3556,6 +3564,13 @@ import UpstreamRequestIdHeaderField from '@/components/account/UpstreamRequestId
 import OpenAIRequestTimezoneSelect from '@/components/account/OpenAIRequestTimezoneSelect.vue'
 import { applyOpenAIRequestTimezoneExtra, normalizeOpenAIRequestTimezone } from '@/components/account/openaiRequestTimezone'
 import { buildOpenAIBPSCredentials, isOpenAIBPSPlatform, validateOpenAIBPSForm } from '@/utils/openaiBPS'
+import OpenAIImageSizeTiersField from '@/components/account/OpenAIImageSizeTiersField.vue'
+import {
+  OPENAI_IMAGE_SIZE_TIERS,
+  applyOpenAIImageSizeTiersToExtra,
+  readOpenAIImageSizeTiers,
+  type OpenAIImageSizeTier
+} from '@/components/account/openaiImageSizeTiers'
 import Toggle from '@/components/common/Toggle.vue'
 import Icon from '@/components/icons/Icon.vue'
 import ProxySelector from '@/components/common/ProxySelector.vue'
@@ -4321,6 +4336,7 @@ const openAICompactMode = ref<OpenAICompactMode>('auto')
 const openAIResponsesMode = ref<OpenAIResponsesMode>('auto')
 // Images 非流式响应缺 b64_json 时由网关下载 url 回填（仅 OpenAI API Key）。
 const openAIImagesUrlToB64JsonEnabled = ref(false)
+const openAIImageSizeTiers = ref<OpenAIImageSizeTier[]>([...OPENAI_IMAGE_SIZE_TIERS])
 const openAIEndpointCapabilities = ref<OpenAIEndpointCapability[]>(['chat_completions', 'embeddings', 'rerank'])
 const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
@@ -4812,6 +4828,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
 	allowOverages.value = extra?.allow_overages === true
 	upstreamRequestIdHeader.value = readUpstreamRequestIdHeader(extra)
 	openAIImagesUrlToB64JsonEnabled.value = extra?.images_url_to_b64_json === true
+	openAIImageSizeTiers.value = readOpenAIImageSizeTiers(extra)
 	autoPause5hThreshold.value = typeof extra?.auto_pause_5h_threshold === 'number' ? extra.auto_pause_5h_threshold * 100 : null
 	autoPause7dThreshold.value = typeof extra?.auto_pause_7d_threshold === 'number' ? extra.auto_pause_7d_threshold * 100 : null
 	autoPause5hDisabled.value = extra?.auto_pause_5h_disabled === true
@@ -6510,6 +6527,7 @@ const handleSubmit = async () => {
           newExtra.web_search_emulation = webSearchEmulationMode.value
         }
 		}
+		applyOpenAIImageSizeTiersToExtra(newExtra, openAIImageSizeTiers.value)
 		if (autoPause5hThreshold.value != null && autoPause5hThreshold.value > 0) {
 			newExtra.auto_pause_5h_threshold = autoPause5hThreshold.value / 100
 		} else {

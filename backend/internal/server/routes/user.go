@@ -31,6 +31,13 @@ func RegisterUserRoutes(
 			user.GET("/profile", h.User.GetProfile)
 			// 鹈鹕智商探针公开状态（只读，仅返回管理员标记公开的计划）
 			user.GET("/pelican-probe/status", h.Admin.PelicanProbe.ListPublicStatus)
+			if h.MCPOAuth != nil {
+				user.GET("/mcp/config", h.MCPOAuth.ConnectionConfig)
+				user.GET("/mcp/grants", h.MCPOAuth.ListGrants)
+				user.DELETE("/mcp/grants/:id", h.MCPOAuth.RevokeGrant)
+				user.GET("/mcp/authorize", h.MCPOAuth.Preview)
+				user.POST("/mcp/authorize", h.MCPOAuth.Decide)
+			}
 			user.PUT("/password", h.User.ChangePassword)
 			user.PUT("", h.User.UpdateProfile)
 			user.GET("/aff", h.User.GetAffiliate)
