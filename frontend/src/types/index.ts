@@ -1301,6 +1301,7 @@ export interface OpenAIBPSTestConnectionResult {
   error_code: string
   duration_ms: number
 }
+
 export interface GrokCatalogScope {
   account_id: number
   account_type: string

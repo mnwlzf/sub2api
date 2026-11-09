@@ -42,3 +42,28 @@ exceptions:
     mitigation: "No zero-size custom generators in codebase; upgrade when nanoid releases fix"
     expires_on: "2026-10-13"
     owner: "security@your-domain"
+  # CVE-2026-118257 / GHSA-83rm-6c8r-g728 于 2026-10-28 发布，vue-i18n 9.x 与 10.x
+  # 均无补丁版本（首修版为 11.4.14）。本仓库的 i18n 消息全部是构建期打包的静态
+  # locale 模块（src/i18n/index.ts 只 setLocaleMessage 静态 default 导出），
+  # 从不接收用户提供的消息，也未使用 escapeParameter，故 srcdoc 注入不可达。
+  - package: vue-i18n
+    advisory: "GHSA-83rm-6c8r-g728"
+    severity: high
+    reason: "XSS needs attacker-controlled translation messages with <iframe srcdoc>; all messages are static build-time locale modules and escapeParameter is never used"
+    mitigation: "No dynamic/user-supplied message registration; vue-i18n 9.x has no patched release, migrate to >=11.4.14 in a dedicated upgrade PR before expiry"
+    expires_on: "2027-01-31"
+    owner: "security@your-domain"
+  - package: "@intlify/core-base"
+    advisory: "GHSA-83rm-6c8r-g728"
+    severity: high
+    reason: "Transitive dependency of vue-i18n 9.14.5; same static-message-only usage, no attacker-controlled translation input"
+    mitigation: "Pinned by vue-i18n 9.x; resolved together with the vue-i18n >=11.4.14 upgrade before expiry"
+    expires_on: "2027-01-31"
+    owner: "security@your-domain"
+  - package: "@intlify/shared"
+    advisory: "GHSA-83rm-6c8r-g728"
+    severity: high
+    reason: "Transitive dependency of vue-i18n 9.14.5; same static-message-only usage, no attacker-controlled translation input"
+    mitigation: "Pinned by vue-i18n 9.x; resolved together with the vue-i18n >=11.4.14 upgrade before expiry"
+    expires_on: "2027-01-31"
+    owner: "security@your-domain"
