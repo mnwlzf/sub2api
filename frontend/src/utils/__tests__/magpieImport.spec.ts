@@ -3,6 +3,7 @@ import {
   MAGPIE_MAX_MODELS,
   buildMagpieBatchScript,
   buildMagpieImportDeeplink,
+  isMagpieImportSupported,
   limitMagpieModels,
   magpieBalanceUrl,
   magpieEndpointBaseUrl,
@@ -29,8 +30,24 @@ describe('magpieImport protocol selection', () => {
 
   it('falls back to chat for platforms magpie has no native protocol for', () => {
     expect(resolveMagpieProtocols('grok')).toEqual(['chat'])
-    expect(resolveMagpieProtocols('typesafe')).toEqual(['chat'])
     expect(resolveMagpieProtocols(undefined)).toEqual(['chat'])
+  })
+
+  it('refuses typesafe (System One) groups, which no magpie protocol can express', () => {
+    // 后端 gateway_systemone.go 只允许 typesafe/composite 分组；
+    // PlatformTypeSafe 不在 chat/messages 分支里，而 magpie 链接又不接受 systemone=。
+    expect(isMagpieImportSupported('typesafe')).toBe(false)
+    expect(isMagpieImportSupported('anthropic')).toBe(true)
+    expect(isMagpieImportSupported(undefined)).toBe(true)
+    expect(resolveMagpieProtocols('typesafe')).toEqual([])
+    expect(
+      buildMagpieImportDeeplink({
+        baseUrl: HOST,
+        platform: 'typesafe',
+        providerName: 'System One',
+        apiKey: 'sk-so'
+      })
+    ).toBe('')
   })
 
   it('keeps chat/responses on /v1 and anthropic/gemini on the bare root', () => {

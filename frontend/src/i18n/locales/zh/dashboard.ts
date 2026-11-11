@@ -121,10 +121,14 @@ export default {
       magpieDesc: '作为 Magpie 的供应商，由其网关转发给各个 agent',
       magpieNotInstalled: 'Magpie 未安装或 magpie:// 协议未注册，请先安装 Magpie。',
       magpieNoBaseUrl: '当前站点没有配置对外访问地址，无法生成 Magpie 导入链接。',
+      magpieUnsupported:
+        '该分组只支持 System One 协议，magpie 链接无法表达，请在 magpie 里手工添加供应商。',
       batchEntry: '导入全部分组',
       batchTitle: '批量导入到 Magpie',
       batchDescription: '已为 {count} 个分组生成导入命令，每个分组取用一把可用密钥。',
       batchSkipped: '有 {count} 个分组没有可用密钥，已跳过：{groups}',
+      batchUnsupported:
+        '有 {count} 个分组只支持 System One，链接无法表达，已跳过：{groups}',
       batchHint: '复制后在终端粘贴执行即可，Magpie 会逐个写入供应商（-y 跳过确认）。',
       copyCommand: '复制命令',
       commandCopied: '导入命令已复制'
