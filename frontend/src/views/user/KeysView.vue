@@ -89,6 +89,15 @@
               </button>
             </div>
           </div>
+          <button
+            v-if="!publicSettings?.hide_ccs_import_button"
+            @click="openBatchImport"
+            class="btn btn-secondary"
+            data-testid="batch-import-btn"
+          >
+            <Icon name="upload" size="md" class="mr-2" />
+            {{ t('keys.quickImport.batchEntry') }}
+          </button>
           <button @click="showCreateModal = true" class="btn btn-primary" data-tour="keys-create-btn">
             <Icon name="plus" size="md" class="mr-2" />
             {{ t('keys.createKey') }}
@@ -409,14 +418,15 @@
                 <Icon name="terminal" size="sm" />
                 <span class="text-xs">{{ t('keys.useKey') }}</span>
               </button>
-              <!-- Import to CC Switch Button -->
+              <!-- 一键导入 Button（CC-Switch / Magpie） -->
               <button
                 v-if="!publicSettings?.hide_ccs_import_button"
-                @click="importToCcswitch(row)"
+                @click="openQuickImport(row)"
+                data-testid="quick-import-btn"
                 class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/20 dark:hover:text-blue-400"
               >
                 <Icon name="upload" size="sm" />
-                <span class="text-xs">{{ t('keys.importToCcSwitch') }}</span>
+                <span class="text-xs">{{ t('keys.quickImport.entry') }}</span>
               </button>
               <!-- Toggle Status Button -->
               <button
@@ -1136,6 +1146,106 @@
       </template>
     </BaseDialog>
 
+    <!-- 一键导入：选择目标（CC-Switch / Magpie） -->
+    <BaseDialog
+      :show="showQuickImport"
+      :title="t('keys.quickImport.title')"
+      width="narrow"
+      @close="closeQuickImport"
+    >
+      <div class="space-y-4">
+        <p class="text-sm text-gray-600 dark:text-gray-400">
+          {{ t('keys.quickImport.description') }}
+        </p>
+        <div class="rounded-xl bg-gray-50 px-3 py-2 text-xs dark:bg-dark-700">
+          <div class="flex items-center justify-between gap-2 text-gray-600 dark:text-gray-300">
+            <span class="truncate font-medium">{{ quickImportRow?.name || '-' }}</span>
+            <span class="shrink-0">{{ quickImportRow?.group?.name || '-' }}</span>
+          </div>
+          <div class="mt-1 font-mono text-gray-500 dark:text-gray-400">{{ maskedQuickImportKey }}</div>
+        </div>
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <button
+            data-testid="quick-import-ccswitch"
+            @click="handleQuickImportCcSwitch"
+            class="flex flex-col items-start gap-1 rounded-xl border-2 border-gray-200 p-4 text-left transition-all hover:border-primary-500 hover:bg-primary-50 dark:border-dark-600 dark:hover:border-primary-500 dark:hover:bg-primary-900/20"
+          >
+            <span class="font-medium text-gray-900 dark:text-white">{{
+              t('keys.quickImport.ccSwitch')
+            }}</span>
+            <span class="text-xs text-gray-500 dark:text-gray-400">{{
+              t('keys.quickImport.ccSwitchDesc')
+            }}</span>
+          </button>
+          <button
+            data-testid="quick-import-magpie"
+            @click="handleQuickImportMagpie"
+            class="flex flex-col items-start gap-1 rounded-xl border-2 border-gray-200 p-4 text-left transition-all hover:border-primary-500 hover:bg-primary-50 dark:border-dark-600 dark:hover:border-primary-500 dark:hover:bg-primary-900/20"
+          >
+            <span class="font-medium text-gray-900 dark:text-white">{{
+              t('keys.quickImport.magpie')
+            }}</span>
+            <span class="text-xs text-gray-500 dark:text-gray-400">{{
+              t('keys.quickImport.magpieDesc')
+            }}</span>
+          </button>
+        </div>
+      </div>
+      <template #footer>
+        <div class="flex justify-end">
+          <button @click="closeQuickImport" class="btn btn-secondary">
+            {{ t('common.cancel') }}
+          </button>
+        </div>
+      </template>
+    </BaseDialog>
+
+    <!-- 一键导入：全部分组（可复制的批量命令） -->
+    <BaseDialog
+      :show="showBatchImport"
+      :title="t('keys.quickImport.batchTitle')"
+      width="wide"
+      @close="closeBatchImport"
+    >
+      <div class="space-y-3">
+        <p class="text-sm text-gray-600 dark:text-gray-400">
+          {{ t('keys.quickImport.batchDescription', { count: batchImportCount }) }}
+        </p>
+        <p v-if="batchSkippedGroups.length > 0" class="text-xs text-amber-600 dark:text-amber-400">
+          {{
+            t('keys.quickImport.batchSkipped', {
+              count: batchSkippedGroups.length,
+              groups: batchSkippedGroups.join('、')
+            })
+          }}
+        </p>
+        <textarea
+          readonly
+          :value="batchImportScript"
+          rows="8"
+          data-testid="batch-import-script"
+          class="w-full resize-none rounded-xl border border-gray-200 bg-gray-50 p-3 font-mono text-xs leading-relaxed text-gray-700 dark:border-dark-600 dark:bg-dark-700 dark:text-gray-300"
+        />
+        <p class="text-xs text-gray-500 dark:text-gray-400">
+          {{ t('keys.quickImport.batchHint') }}
+        </p>
+      </div>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <button @click="closeBatchImport" class="btn btn-secondary">
+            {{ t('common.cancel') }}
+          </button>
+          <button
+            @click="copyBatchImportScript"
+            class="btn btn-primary"
+            data-testid="batch-import-copy"
+          >
+            {{ t('keys.quickImport.copyCommand') }}
+          </button>
+        </div>
+      </template>
+    </BaseDialog>
+
     <!-- Group Selector Dropdown (Teleported to body to avoid overflow clipping) -->
     <Teleport to="body">
       <div
@@ -1245,6 +1355,11 @@ import {
   buildCcSwitchImportDeeplink,
   type CcSwitchClientType
 } from '@/utils/ccswitchImport'
+import {
+  buildMagpieBatchScript,
+  buildMagpieImportDeeplink,
+  magpieProviderId
+} from '@/utils/magpieImport'
 
 // Helper to format date for datetime-local input
 const formatDateTimeLocal = (isoDate: string): string => {
@@ -1415,6 +1530,13 @@ const showUseKeyModal = ref(false)
 const showCcsClientSelect = ref(false)
 const showColumnDropdown = ref(false)
 const pendingCcsRow = ref<ApiKey | null>(null)
+// 一键导入：目标选择弹窗 + 全部分组批量导入弹窗
+const showQuickImport = ref(false)
+const quickImportRow = ref<ApiKey | null>(null)
+const showBatchImport = ref(false)
+const batchImportScript = ref('')
+const batchImportCount = ref(0)
+const batchSkippedGroups = ref<string[]>([])
 const selectedKey = ref<ApiKey | null>(null)
 const copiedKeyId = ref<number | null>(null)
 const groupSelectorKeyId = ref<number | null>(null)
@@ -2083,6 +2205,138 @@ const handleCcsClientSelect = (clientType: CcSwitchClientType) => {
 const closeCcsClientSelect = () => {
   showCcsClientSelect.value = false
   pendingCcsRow.value = null
+}
+
+/** 拉起协议处理程序；100ms 后页面仍在前台，说明协议没注册（客户端未安装）。 */
+const openProtocolLink = (link: string, notInstalledMessage: string) => {
+  try {
+    window.open(link, '_self')
+    setTimeout(() => {
+      if (document.hasFocus()) {
+        appStore.showError(notInstalledMessage)
+      }
+    }, 100)
+  } catch {
+    appStore.showError(notInstalledMessage)
+  }
+}
+
+const publicBaseUrl = (): string =>
+  (publicSettings.value?.api_base_url || window.location.origin || '').replace(/\/+$/, '')
+
+const maskedQuickImportKey = computed(() => {
+  const key = quickImportRow.value?.key || ''
+  if (!key) return ''
+  if (key.length <= 12) return `${key.slice(0, 2)}••••`
+  return `${key.slice(0, 6)}••••••${key.slice(-4)}`
+})
+
+/** 一键导入：打开目标选择弹窗。 */
+const openQuickImport = (row: ApiKey) => {
+  quickImportRow.value = row
+  showQuickImport.value = true
+}
+
+const closeQuickImport = () => {
+  showQuickImport.value = false
+  quickImportRow.value = null
+}
+
+/** 一键导入 → CC-Switch：沿用原有逻辑（antigravity 分组会再问一次客户端类型）。 */
+const handleQuickImportCcSwitch = () => {
+  const row = quickImportRow.value
+  closeQuickImport()
+  if (row) {
+    importToCcswitch(row)
+  }
+}
+
+/**
+ * Magpie 是网关：供应商端点一次写全（该平台原生协议 + chat），
+ * 之后由 magpie 把各个 agent 路由过来，所以这一侧不需要再选客户端。
+ */
+const magpieLinkForRow = (row: ApiKey): string => {
+  const groupId = row.group_id ?? row.group?.id ?? null
+  return buildMagpieImportDeeplink({
+    baseUrl: publicBaseUrl(),
+    platform: row.group?.platform || null,
+    providerId: magpieProviderId(groupId),
+    providerName: (row.group?.name || publicSettings.value?.site_name || 'sub2api').trim(),
+    apiKey: row.key,
+    includeBalance: true
+  })
+}
+
+const handleQuickImportMagpie = () => {
+  const row = quickImportRow.value
+  closeQuickImport()
+  if (!row) {
+    return
+  }
+  const link = magpieLinkForRow(row)
+  if (!link) {
+    appStore.showError(t('keys.quickImport.magpieNoBaseUrl'))
+    return
+  }
+  openProtocolLink(link, t('keys.quickImport.magpieNotInstalled'))
+}
+
+/** 一键导入：为每个分组取一把可用密钥，生成一段可粘贴的批量导入命令。 */
+const openBatchImport = () => {
+  const baseUrl = publicBaseUrl()
+  const keyByGroup = new Map<number, ApiKey>()
+  for (const key of apiKeys.value) {
+    if (key.status !== 'active') {
+      continue
+    }
+    const groupId = key.group_id ?? key.group?.id
+    if (groupId === null || groupId === undefined) {
+      continue
+    }
+    if (!keyByGroup.has(groupId)) {
+      keyByGroup.set(groupId, key)
+    }
+  }
+
+  const links: string[] = []
+  const skipped: string[] = []
+  for (const group of groups.value) {
+    const key = keyByGroup.get(group.id)
+    if (!key) {
+      skipped.push(group.name)
+      continue
+    }
+    const link = buildMagpieImportDeeplink({
+      baseUrl,
+      platform: group.platform,
+      providerId: magpieProviderId(group.id),
+      providerName: (group.name || publicSettings.value?.site_name || 'sub2api').trim(),
+      apiKey: key.key,
+      includeBalance: true
+    })
+    if (link) {
+      links.push(link)
+    }
+  }
+
+  batchImportScript.value = buildMagpieBatchScript(links)
+  batchImportCount.value = links.length
+  batchSkippedGroups.value = skipped
+  showBatchImport.value = true
+}
+
+const closeBatchImport = () => {
+  showBatchImport.value = false
+  batchImportScript.value = ''
+  batchImportCount.value = 0
+  batchSkippedGroups.value = []
+}
+
+const copyBatchImportScript = async () => {
+  if (!batchImportScript.value) {
+    return
+  }
+  await clipboardCopy(batchImportScript.value, t('keys.quickImport.commandCopied'))
 }
 
 function formatResetTime(resetAt: string | null): string {

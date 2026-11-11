@@ -688,3 +688,84 @@ describe('user KeysView column settings', () => {
     })
   })
 })
+
+describe('user KeysView quick import', () => {
+  const group = {
+    id: 65,
+    name: 'UltraFast',
+    platform: 'anthropic',
+    subscription_type: 'standard',
+    rate_multiplier: 1,
+  }
+
+  beforeEach(() => {
+    localStorage.clear()
+    listKeys.mockReset()
+    updateKey.mockReset()
+    getPublicSettings.mockReset()
+    getDashboardApiKeysUsage.mockReset()
+    getAvailableGroups.mockReset()
+    getUserGroupRates.mockReset()
+    showError.mockReset()
+    showSuccess.mockReset()
+    copyToClipboard.mockReset()
+    isCurrentStep.mockReset()
+    nextStep.mockReset()
+
+    listKeys.mockResolvedValue({
+      items: [{ ...createApiKey(), group_id: 65, group: group as never }],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1,
+    })
+    getPublicSettings.mockResolvedValue({ api_base_url: 'https://api.example.com' })
+    getDashboardApiKeysUsage.mockResolvedValue({ stats: {} })
+    getAvailableGroups.mockResolvedValue([group])
+    getUserGroupRates.mockResolvedValue({})
+    isCurrentStep.mockReturnValue(false)
+    nextStep.mockReturnValue(undefined)
+    copyToClipboard.mockResolvedValue(true)
+  })
+
+  it('opens the target picker from the row action', async () => {
+    const wrapper = await mountView()
+
+    await wrapper.get('[data-testid="quick-import-btn"]').trigger('click')
+
+    expect(wrapper.find('[data-testid="quick-import-ccswitch"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="quick-import-magpie"]').exists()).toBe(true)
+  })
+
+  it('opens a magpie:// import link with anthropic + chat endpoints', async () => {
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+    const wrapper = await mountView()
+
+    await wrapper.get('[data-testid="quick-import-btn"]').trigger('click')
+    await wrapper.get('[data-testid="quick-import-magpie"]').trigger('click')
+
+    expect(openSpy).toHaveBeenCalledTimes(1)
+    const link = String(openSpy.mock.calls[0][0])
+    expect(link.startsWith('magpie://import?')).toBe(true)
+    const params = new URLSearchParams(link.split('?')[1])
+    expect(params.get('id')).toBe('sub2api-65')
+    expect(params.get('name')).toBe('UltraFast')
+    expect(params.get('anthropic')).toBe('https://api.example.com')
+    expect(params.get('chat')).toBe('https://api.example.com/v1')
+    expect(params.get('key')).toBe('sk-test-key')
+    expect(params.get('balance')).toBe('https://api.example.com/v1/usage')
+    openSpy.mockRestore()
+  })
+
+  it('builds a batch script for every group that has an active key', async () => {
+    const wrapper = await mountView()
+
+    await wrapper.get('[data-testid="batch-import-btn"]').trigger('click')
+    await flushPromises()
+
+    const script = (wrapper.get('[data-testid="batch-import-script"]').element as HTMLTextAreaElement).value
+    expect(script).toContain('magpie import -y ')
+    expect(script).toContain('name=UltraFast')
+    expect(script).toContain('id=sub2api-65')
+  })
+})
