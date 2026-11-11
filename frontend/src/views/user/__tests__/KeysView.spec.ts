@@ -769,3 +769,63 @@ describe('user KeysView quick import', () => {
     expect(script).toContain('id=sub2api-65')
   })
 })
+
+describe('user KeysView quick import on a System One group', () => {
+  const typesafeGroup = {
+    id: 71,
+    name: 'System One',
+    platform: 'typesafe',
+    subscription_type: 'standard',
+    rate_multiplier: 1,
+  }
+
+  beforeEach(() => {
+    localStorage.clear()
+    listKeys.mockReset()
+    getPublicSettings.mockReset()
+    getDashboardApiKeysUsage.mockReset()
+    getAvailableGroups.mockReset()
+    getUserGroupRates.mockReset()
+    showError.mockReset()
+    copyToClipboard.mockReset()
+    isCurrentStep.mockReset()
+    nextStep.mockReset()
+
+    listKeys.mockResolvedValue({
+      items: [{ ...createApiKey(), group_id: 71, group: typesafeGroup as never }],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1,
+    })
+    getPublicSettings.mockResolvedValue({ api_base_url: 'https://api.example.com' })
+    getDashboardApiKeysUsage.mockResolvedValue({ stats: {} })
+    getAvailableGroups.mockResolvedValue([typesafeGroup])
+    getUserGroupRates.mockResolvedValue({})
+    isCurrentStep.mockReturnValue(false)
+    nextStep.mockReturnValue(undefined)
+  })
+
+  it('disables the Magpie target because the link cannot express System One', async () => {
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+    const wrapper = await mountView()
+
+    await wrapper.get('[data-testid="quick-import-btn"]').trigger('click')
+    const magpie = wrapper.get('[data-testid="quick-import-magpie"]')
+    expect(magpie.attributes('disabled')).toBeDefined()
+
+    await magpie.trigger('click')
+    expect(openSpy).not.toHaveBeenCalled()
+    openSpy.mockRestore()
+  })
+
+  it('leaves System One groups out of the batch script', async () => {
+    const wrapper = await mountView()
+
+    await wrapper.get('[data-testid="batch-import-btn"]').trigger('click')
+    await flushPromises()
+
+    const script = (wrapper.get('[data-testid="batch-import-script"]').element as HTMLTextAreaElement).value
+    expect(script).toBe('')
+  })
+})

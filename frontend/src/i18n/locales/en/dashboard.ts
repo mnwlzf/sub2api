@@ -121,10 +121,14 @@ export default {
       magpieDesc: 'Add as a Magpie provider; its gateway routes every agent',
       magpieNotInstalled: 'Magpie is not installed, or the magpie:// handler is not registered.',
       magpieNoBaseUrl: 'This site has no public base URL configured, so the Magpie link cannot be built.',
+      magpieUnsupported:
+        'This group only serves System One, which the magpie link cannot express; add the provider manually in magpie.',
       batchEntry: 'Import all groups',
       batchTitle: 'Batch import into Magpie',
       batchDescription: 'Generated import commands for {count} groups, using one active key per group.',
       batchSkipped: '{count} groups have no active key and were skipped: {groups}',
+      batchUnsupported:
+        '{count} groups only serve System One, which the link cannot express, so they were skipped: {groups}',
       batchHint: 'Copy and paste into a terminal; Magpie writes each provider (-y skips confirmation).',
       copyCommand: 'Copy commands',
       commandCopied: 'Import commands copied'

@@ -59,9 +59,30 @@ const PLATFORM_PROTOCOLS: Record<string, MagpieProtocol[]> = {
 
 const DEFAULT_PROTOCOLS: MagpieProtocol[] = ['chat']
 
+/**
+ * 无法用 magpie 链接表达的平台。
+ *
+ * `typesafe`（System One）是独立协议：后端 `gateway_systemone.go:76` 明确要求
+ * 分组平台是 typesafe/composite，而 `PlatformTypeSafe` 不出现在
+ * `/v1/chat/completions`、`/v1/messages` 的分支里——chat/anthropic 端点对它都是
+ * 死路。magpie 有 System One 页签，但链接与 CLI 都不接受 `systemone=`
+ * （`unknown field "systemone"`），只能在其 GUI 里手工添加。
+ */
+export const MAGPIE_UNSUPPORTED_PLATFORMS: ReadonlySet<string> = new Set(['typesafe'])
+
+export function isMagpieImportSupported(platform?: GroupPlatform | null): boolean {
+  if (!platform) {
+    return true
+  }
+  return !MAGPIE_UNSUPPORTED_PLATFORMS.has(platform)
+}
+
 export function resolveMagpieProtocols(platform?: GroupPlatform | null): MagpieProtocol[] {
   if (!platform) {
     return DEFAULT_PROTOCOLS
+  }
+  if (!isMagpieImportSupported(platform)) {
+    return []
   }
   return PLATFORM_PROTOCOLS[platform] ?? DEFAULT_PROTOCOLS
 }

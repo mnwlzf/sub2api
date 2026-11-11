@@ -1179,15 +1179,26 @@
           </button>
           <button
             data-testid="quick-import-magpie"
+            :disabled="!magpieQuickImportSupported"
+            :title="magpieQuickImportSupported ? '' : t('keys.quickImport.magpieUnsupported')"
             @click="handleQuickImportMagpie"
-            class="flex flex-col items-start gap-1 rounded-xl border-2 border-gray-200 p-4 text-left transition-all hover:border-primary-500 hover:bg-primary-50 dark:border-dark-600 dark:hover:border-primary-500 dark:hover:bg-primary-900/20"
+            :class="[
+              'flex flex-col items-start gap-1 rounded-xl border-2 border-gray-200 p-4 text-left transition-all dark:border-dark-600',
+              magpieQuickImportSupported
+                ? 'hover:border-primary-500 hover:bg-primary-50 dark:hover:border-primary-500 dark:hover:bg-primary-900/20'
+                : 'cursor-not-allowed opacity-50'
+            ]"
           >
             <span class="font-medium text-gray-900 dark:text-white">{{
               t('keys.quickImport.magpie')
             }}</span>
-            <span class="text-xs text-gray-500 dark:text-gray-400">{{
-              t('keys.quickImport.magpieDesc')
-            }}</span>
+            <span class="text-xs text-gray-500 dark:text-gray-400">
+              {{
+                magpieQuickImportSupported
+                  ? t('keys.quickImport.magpieDesc')
+                  : t('keys.quickImport.magpieUnsupported')
+              }}
+            </span>
           </button>
         </div>
       </div>
@@ -1216,6 +1227,17 @@
             t('keys.quickImport.batchSkipped', {
               count: batchSkippedGroups.length,
               groups: batchSkippedGroups.join('、')
+            })
+          }}
+        </p>
+        <p
+          v-if="batchUnsupportedGroups.length > 0"
+          class="text-xs text-amber-600 dark:text-amber-400"
+        >
+          {{
+            t('keys.quickImport.batchUnsupported', {
+              count: batchUnsupportedGroups.length,
+              groups: batchUnsupportedGroups.join('、')
             })
           }}
         </p>
@@ -1358,6 +1380,7 @@ import {
 import {
   buildMagpieBatchScript,
   buildMagpieImportDeeplink,
+  isMagpieImportSupported,
   magpieProviderId
 } from '@/utils/magpieImport'
 
@@ -1537,6 +1560,7 @@ const showBatchImport = ref(false)
 const batchImportScript = ref('')
 const batchImportCount = ref(0)
 const batchSkippedGroups = ref<string[]>([])
+const batchUnsupportedGroups = ref<string[]>([])
 const selectedKey = ref<ApiKey | null>(null)
 const copiedKeyId = ref<number | null>(null)
 const groupSelectorKeyId = ref<number | null>(null)
@@ -2231,6 +2255,11 @@ const maskedQuickImportKey = computed(() => {
   return `${key.slice(0, 6)}••••••${key.slice(-4)}`
 })
 
+/** System One（typesafe）分组走不了 magpie 链接，只能在其 GUI 里手工添加。 */
+const magpieQuickImportSupported = computed(() =>
+  isMagpieImportSupported(quickImportRow.value?.group?.platform)
+)
+
 /** 一键导入：打开目标选择弹窗。 */
 const openQuickImport = (row: ApiKey) => {
   quickImportRow.value = row
@@ -2300,7 +2329,12 @@ const openBatchImport = () => {
 
   const links: string[] = []
   const skipped: string[] = []
+  const unsupported: string[] = []
   for (const group of groups.value) {
+    if (!isMagpieImportSupported(group.platform)) {
+      unsupported.push(group.name)
+      continue
+    }
     const key = keyByGroup.get(group.id)
     if (!key) {
       skipped.push(group.name)
@@ -2319,6 +2353,8 @@ const openBatchImport = () => {
     }
   }
 
+  batchUnsupportedGroups.value = unsupported
+
   batchImportScript.value = buildMagpieBatchScript(links)
   batchImportCount.value = links.length
   batchSkippedGroups.value = skipped
@@ -2330,6 +2366,7 @@ const closeBatchImport = () => {
   batchImportScript.value = ''
   batchImportCount.value = 0
   batchSkippedGroups.value = []
+  batchUnsupportedGroups.value = []
 }
 
 const copyBatchImportScript = async () => {
