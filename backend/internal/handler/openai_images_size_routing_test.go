@@ -49,6 +49,7 @@ func newOpenAIImagesSizeRoutingTestHandler(t *testing.T, accounts []service.Acco
 		billingService,
 		service.NewAPIKeyService(nil, nil, nil, nil, nil, nil, cfg),
 		nil, nil, nil, nil,
+		nil, // promptPolicyResolver：本用例不覆盖提示词策略
 		cfg,
 	)
 	handler.maxAccountSwitches = 10
