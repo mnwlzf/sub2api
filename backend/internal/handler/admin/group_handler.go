@@ -616,6 +616,53 @@ func (h *GroupHandler) GetByID(c *gin.Context) {
 	response.Success(c, dto.GroupFromServiceAdmin(group))
 }
 
+// GetAvailableModels 汇总多个分组内账号可用的模型，供渠道定价一键同步。
+// GET /api/v1/admin/groups/available-models?group_ids=1,2&platform=openai
+func (h *GroupHandler) GetAvailableModels(c *gin.Context) {
+	if h.rejectUnsupportedSimpleModeOperation(c, "advanced") {
+		return
+	}
+	groupIDs, parseErr := parseGroupIDsQuery(c.Query("group_ids"))
+	if parseErr != nil {
+		response.BadRequest(c, "Invalid group_ids")
+		return
+	}
+
+	result, err := h.adminService.GetGroupsAvailableModels(c.Request.Context(), groupIDs, c.Query("platform"))
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{
+		"models":                result.Models,
+		"account_count":         result.AccountCount,
+		"unrestricted_accounts": result.UnrestrictedAccounts,
+	})
+}
+
+// parseGroupIDsQuery 解析 "1,2,3" 形式的分组 ID 列表，忽略空白项。
+func parseGroupIDsQuery(raw string) ([]int64, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	parts := strings.Split(raw, ",")
+	ids := make([]int64, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		id, err := strconv.ParseInt(part, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
 // GetGroupModelAllowlistCandidates handles getting candidate model IDs for the group model allowlist.
 // GET /api/v1/admin/groups/:id/model-allowlist-candidates
 func (h *GroupHandler) GetGroupModelAllowlistCandidates(c *gin.Context) {

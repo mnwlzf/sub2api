@@ -239,7 +239,17 @@ export default {
         syncingModels: '同步中...',
         syncModelsSuccess: '已同步 {count} 个新模型',
         syncModelsAlreadyUpToDate: '模型列表已是最新',
-        syncModelsError: '同步模型失败'
+        syncModelsError: '同步模型失败',
+        syncGroupModels: '同步分组可用模型',
+        syncingGroupModels: '同步中...',
+        syncGroupModelsHint:
+          '汇总所选分组内各账号可用的模型，作为一个定价条目加入。价格留空由你填写，多余的模型可手动删除。',
+        syncGroupModelsSuccess: '已同步 {count} 个分组可用模型',
+        syncGroupModelsSuccessUnrestricted:
+          '已同步 {count} 个模型；另有 {unrestricted} 个账号未限制模型，若有遗漏请手动补充',
+        syncGroupModelsAlreadyUpToDate: '分组可用模型已全部在列表中',
+        syncGroupModelsNoGroups: '请先选择关联分组',
+        syncGroupModelsError: '同步分组可用模型失败'
       }
     },
 

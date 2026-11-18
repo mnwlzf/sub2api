@@ -423,6 +423,16 @@
                 <label class="input-label text-xs mb-0">{{ t('admin.channels.form.modelPricing', 'Model Pricing') }}</label>
                 <div class="flex items-center gap-2">
                   <button
+                    type="button"
+                    data-testid="sync-group-models"
+                    :title="t('admin.channels.form.syncGroupModelsHint')"
+                    @click="syncGroupModels(sIdx)"
+                    :disabled="section.group_ids.length === 0 || syncingGroupModels !== null"
+                    class="text-xs text-gray-500 hover:text-primary-600 disabled:opacity-50"
+                  >
+                    {{ syncingGroupModels === sIdx ? t('admin.channels.form.syncingGroupModels') : t('admin.channels.form.syncGroupModels') }}
+                  </button>
+                  <button
                     v-if="supportsPricingModelSync(section.platform)"
                     type="button"
                     @click="syncLatestModels(sIdx)"
@@ -871,9 +881,9 @@ function toggleGroupInSection(sectionIdx: number, groupId: number) {
 }
 
 // ── Pricing helpers ──
-function addPricingEntry(sectionIdx: number) {
-  form.platforms[sectionIdx].model_pricing.push({
-    models: [],
+function createEmptyPricingEntry(models: string[] = []): PricingFormEntry {
+  return {
+    models,
     billing_mode: 'token',
     input_price: null,
     output_price: null,
@@ -890,10 +900,16 @@ function addPricingEntry(sectionIdx: number) {
     per_request_price: null,
     intervals: [],
     time_pricing: createDefaultTimePricingForm()
-  })
+  }
+}
+
+function addPricingEntry(sectionIdx: number) {
+  form.platforms[sectionIdx].model_pricing.push(createEmptyPricingEntry())
 }
 
 const syncingPlatform = ref<string | null>(null)
+// 正在同步「分组可用模型」的平台分段下标；null 表示空闲。
+const syncingGroupModels = ref<number | null>(null)
 
 async function syncLatestModels(sectionIdx: number) {
   const section = form.platforms[sectionIdx]
@@ -913,30 +929,52 @@ async function syncLatestModels(sectionIdx: number) {
       return
     }
     // Add new models as a single new pricing entry (user fills in prices)
-    section.model_pricing.push({
-      models: newModels,
-      billing_mode: 'token',
-      input_price: null,
-      output_price: null,
-      cache_write_price: null,
-      cache_write_1h_price: null,
-      cache_write_12h_price: null,
-      cache_read_price: null,
-      fast_multiplier: null,
-      flex_multiplier: null,
-      ultrafast_multiplier: null,
-      reasoning_effort_multipliers: null,
-      image_input_price: null,
-      image_output_price: null,
-      per_request_price: null,
-      intervals: [],
-      time_pricing: createDefaultTimePricingForm()
-    })
+    section.model_pricing.push(createEmptyPricingEntry(newModels))
     appStore.showSuccess(t('admin.channels.form.syncModelsSuccess', { count: newModels.length }))
   } catch (error) {
     appStore.showError(extractApiErrorMessage(error, t('admin.channels.form.syncModelsError')))
   } finally {
     syncingPlatform.value = null
+  }
+}
+
+/**
+ * 一键同步「所选分组的可用模型」：汇总该分段已选分组内各账号可用的模型，
+ * 去重后作为一个新定价条目加入（价格留空由运营者填写，多余模型可手动删除）。
+ */
+async function syncGroupModels(sectionIdx: number) {
+  const section = form.platforms[sectionIdx]
+  if (!section || syncingGroupModels.value !== null) return
+  const groupIds = [...new Set(section.group_ids)]
+  if (groupIds.length === 0) {
+    appStore.showError(t('admin.channels.form.syncGroupModelsNoGroups'))
+    return
+  }
+  syncingGroupModels.value = sectionIdx
+  try {
+    const result = await adminAPI.groups.getAvailableModels(groupIds, section.platform)
+    const existingModels = new Set<string>()
+    for (const entry of section.model_pricing) {
+      for (const model of entry.models) existingModels.add(model)
+    }
+    const newModels = result.models.filter(model => !existingModels.has(model))
+    if (newModels.length === 0) {
+      appStore.showSuccess(t('admin.channels.form.syncGroupModelsAlreadyUpToDate'))
+      return
+    }
+    section.model_pricing.push(createEmptyPricingEntry(newModels))
+    if (result.unrestricted_accounts > 0) {
+      appStore.showSuccess(t('admin.channels.form.syncGroupModelsSuccessUnrestricted', {
+        count: newModels.length,
+        unrestricted: result.unrestricted_accounts
+      }))
+      return
+    }
+    appStore.showSuccess(t('admin.channels.form.syncGroupModelsSuccess', { count: newModels.length }))
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, t('admin.channels.form.syncGroupModelsError')))
+  } finally {
+    syncingGroupModels.value = null
   }
 }
 
