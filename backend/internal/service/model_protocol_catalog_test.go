@@ -332,9 +332,11 @@ func TestCommandCodeGatewayPassesThroughCatalogProtocols(t *testing.T) {
 		url  string
 		body []byte
 	}
+	var forwardSeq atomic.Int64
 	forward := func(t *testing.T, ingress routingMatrixIngress, model string, catalog map[string][]string) observation {
 		t.Helper()
-		base := fmt.Sprintf("http://cc-%s-%d.example", strings.ReplaceAll(t.Name(), "/", "-"), time.Now().UnixNano())
+		// 每次调用使用自增序号避免低精度时钟下多次调用撞到同一个缓存键。
+		base := fmt.Sprintf("http://cc-%s-%d-%d.example", strings.ReplaceAll(t.Name(), "/", "-"), time.Now().UnixNano(), forwardSeq.Add(1))
 		account := commandCodeTestAccount(12)
 		account.Credentials["api_base_urls"] = map[string]any{
 			APIProtocolChatCompletions: base + "/provider/v1",

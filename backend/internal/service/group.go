@@ -103,8 +103,9 @@ type Group struct {
 	AllowMessagesDispatch bool
 	AllowLive             bool
 	ForceOpenAIFast       bool // 强制 OpenAI 网关请求使用 service_tier=priority
-	// ForcedServiceTier 指定强制档位：空=不强制（沿用 ForceOpenAIFast 的 priority），
-	// priority=强制 Fast，ultrafast=强制 UltraFast。
+	ForceOpenAIUltrafast  bool // 对支持 Ultrafast 的模型强制 service_tier=ultrafast，优先于 ForceOpenAIFast
+	// ForcedServiceTier 指定强制档位：空=不强制（沿用 ForceOpenAIUltrafast / ForceOpenAIFast），
+	// priority=强制 Fast，ultrafast=强制 UltraFast（不限模型）。
 	ForcedServiceTier           string
 	FreeOpenAIFast              bool // OpenAI Fast 请求按 Standard 价格向用户计费
 	RequireOAuthOnly            bool // 仅允许非 apikey 类型账号关联（OpenAI/Antigravity/Anthropic/Gemini）

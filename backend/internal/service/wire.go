@@ -1039,6 +1039,8 @@ var ProviderSet = wire.NewSet(
 	NewChannelMonitorRequestTemplateService,
 	ProvideUserPlatformQuotaUsageFlusher,
 	ProvideStudentVerificationService,
+	NewUsageBillingLaneCombiner,
+	ProvideUsageBillingRepository,
 )
 
 // ProvideStudentVerificationService wires the student verification service and
@@ -1057,6 +1059,11 @@ func ProvideStudentVerificationService(
 		settingService, emailService, entClient, authCacheInvalidator)
 	svc.Start()
 	return svc
+}
+
+// ProvideUsageBillingRepository 以按用户合并结算的通道作为各服务使用的计费仓储。
+func ProvideUsageBillingRepository(lanes *UsageBillingLaneCombiner) UsageBillingRepository {
+	return lanes
 }
 
 // ProvideUserPlatformQuotaUsageFlusher 创建并启动 UserPlatformQuotaUsageFlusher。
