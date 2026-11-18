@@ -199,7 +199,7 @@ func containsStandaloneWord(s, word string) bool {
 		}
 		start := from + idx
 		end := start + len(word)
-		if !isASCIILetter(upper, start-1) && !isASCIILetter(upper, end) {
+		if !isASCIILetterAt(upper, start-1) && !isASCIILetterAt(upper, end) {
 			return true
 		}
 		from = start + 1
@@ -209,14 +209,13 @@ func containsStandaloneWord(s, word string) bool {
 	}
 }
 
-// isASCIILetter reports whether the byte at i is an ASCII letter; out-of-range
+// isASCIILetterAt reports whether the byte at i is an ASCII letter; out-of-range
 // indexes are boundaries.
-func isASCIILetter(s string, i int) bool {
+func isASCIILetterAt(s string, i int) bool {
 	if i < 0 || i >= len(s) {
 		return false
 	}
-	c := s[i]
-	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+	return isASCIILetter(s[i])
 }
 
 // truncateJudgeCandidate caps the candidate answer embedded in the judge

@@ -599,7 +599,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		// Account namespace is orthogonal to fingerprint convergence: preserve
 		// each client's identity cardinality, but never reuse it across OAuth
 		// credentials after scheduler failover.
-		if !isCompactRequest && applyCodexAccountIdentityClientMetadataMap(decoded, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c)) {
+		if !isCompactRequest && applyCodexAccountIdentityClientMetadataMap(decoded, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c), codexClientSessionID(c)) {
 			markDecodedModified()
 		}
 		stageCodexFingerprintIDs(c, nil)
@@ -708,7 +708,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	}
 
 	rawTier := requestView.ServiceTier
-	if forcedTier, ok := openAIGroupForcedServiceTier(ctx, account, rawTier); ok {
+	if forcedTier, ok := openAIGroupEffectiveForcedServiceTier(ctx, account, upstreamModel, rawTier); ok {
 		rawTier = forcedTier
 		if requestView.ServiceTier != forcedTier {
 			markPatchSet("service_tier", forcedTier)
