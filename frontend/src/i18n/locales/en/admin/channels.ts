@@ -239,7 +239,17 @@ export default {
          syncingModels: 'Syncing...',
          syncModelsSuccess: 'Synced {count} new model(s)',
          syncModelsAlreadyUpToDate: 'Models already up to date',
-         syncModelsError: 'Failed to sync models'
+         syncModelsError: 'Failed to sync models',
+         syncGroupModels: 'Sync Group Models',
+         syncingGroupModels: 'Syncing...',
+         syncGroupModelsHint:
+          'Collect the models every account in the selected groups can serve and add them as one pricing entry. Prices stay empty for you to fill in, and unneeded models can be deleted.',
+         syncGroupModelsSuccess: 'Synced {count} model(s) from the selected groups',
+         syncGroupModelsSuccessUnrestricted:
+          'Synced {count} model(s). {unrestricted} account(s) have no model restriction, so add any missing models manually.',
+         syncGroupModelsAlreadyUpToDate: 'Group models already up to date',
+         syncGroupModelsNoGroups: 'Select at least one group first',
+         syncGroupModelsError: 'Failed to sync group models'
        }
      },
 

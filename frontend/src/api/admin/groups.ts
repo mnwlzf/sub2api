@@ -119,6 +119,37 @@ export async function getModelAllowlistCandidates(
   return data.models || []
 }
 
+export interface GroupAvailableModels {
+  /** 分组内账号可用的模型并集（去重、按名称排序）。 */
+  models: string[]
+  /** 参与统计的账号数（已按平台过滤）。 */
+  account_count: number
+  /** 未配置模型映射、对任意模型放行的账号数。 */
+  unrestricted_accounts: number
+}
+
+/**
+ * 汇总若干分组内账号可用的模型，供渠道定价一键同步。
+ * @param groupIds - 分组 ID 列表
+ * @param platform - 可选：按该平台过滤账号（渠道定价按平台分段时传入）
+ */
+export async function getAvailableModels(
+  groupIds: number[],
+  platform?: string
+): Promise<GroupAvailableModels> {
+  const { data } = await apiClient.get<GroupAvailableModels>('/admin/groups/available-models', {
+    params: {
+      group_ids: groupIds.join(','),
+      ...(platform ? { platform } : {})
+    }
+  })
+  return {
+    models: data.models || [],
+    account_count: data.account_count || 0,
+    unrestricted_accounts: data.unrestricted_accounts || 0
+  }
+}
+
 /**
  * Create new group
  * @param groupData - Group data
@@ -478,6 +509,7 @@ export const groupsAPI = {
   getLiveCapability,
   getById,
   getModelAllowlistCandidates,
+  getAvailableModels,
   create,
   duplicate,
   update,

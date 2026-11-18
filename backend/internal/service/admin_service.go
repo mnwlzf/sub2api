@@ -44,6 +44,9 @@ type AdminService interface {
 	GetAllGroupsIncludingInactive(ctx context.Context) ([]Group, error)
 	GetGroup(ctx context.Context, id int64) (*Group, error)
 	GetGroupModelsListCandidates(ctx context.Context, id int64, platform string) ([]string, error)
+	// GetGroupsAvailableModels 汇总若干分组内账号可用的模型（分组可用模型并集），
+	// 供渠道定价一键同步使用。
+	GetGroupsAvailableModels(ctx context.Context, groupIDs []int64, platform string) (*GroupAvailableModels, error)
 	CreateGroup(ctx context.Context, input *CreateGroupInput) (*Group, error)
 	// DuplicateGroup creates an inactive independent copy of a group's configuration
 	// and account bindings while preserving each binding's priority.
