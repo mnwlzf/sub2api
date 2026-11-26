@@ -142,7 +142,7 @@ func (s *AccountTestService) testOpenAIRerankConnection(c *gin.Context, account 
 	}
 
 	// 账号级请求头覆写：测试请求与真实转发保持一致的最终头
-	credentialAccount.ApplyHeaderOverrides(req.Header)
+	credentialAccount.ApplyHeaderOverrides(req.Context(), req.Header)
 
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {

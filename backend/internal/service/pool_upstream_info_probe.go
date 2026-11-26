@@ -264,7 +264,7 @@ func (s *UpstreamBillingProbeService) probeLoadedPoolUpstreamInfoAccount(ctx con
 	// 先应用可配置的 header 覆写，再固定写入 Authorization：覆写集合不允许
 	// authorization/x-api-key 等敏感头（见 header_override.go 的封禁列表），这里再
 	// 后置写入兜底，确保任何配置都无法篡改或泄露探测凭证。
-	account.ApplyHeaderOverrides(req.Header)
+	account.ApplyHeaderOverrides(req.Context(), req.Header)
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	var tlsProfile *tlsfingerprint.Profile
 	if s.accountTestService.tlsFPProfileService != nil {
