@@ -123,10 +123,12 @@ const toolSearchNoopSSE = "data: {\"type\":\"response.completed\",\"response\":{
 
 // A revealed tool is declared in tool_search_output and replayed as a
 // function_call; both must carry the same upstream name.
+// 本仓库把 Codex 保留名别名从 python__sub2api 改为 python__custom（对齐官方
+// Codex 客户端的可观测特征，见 b0eebed2c），故这里的期望值随本仓库常量。
 func TestForwardAsAnthropic_CodexOAuthRevealedToolNameMatchesReplay(t *testing.T) {
 	for _, tc := range []struct{ name, want string }{
-		{"python", "python__sub2api"},
-		{"Python", "python__sub2api"},
+		{"python", "python__custom"},
+		{"Python", "python__custom"},
 		{"Echo", "Echo"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
