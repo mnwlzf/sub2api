@@ -282,7 +282,7 @@ func (s *OpenAIGatewayService) sendCCUpstreamRequest(
 
 	// 账号级请求头覆写：放在所有内置默认头（含 Grok CLI 身份头）之后应用，
 	// 使配置值获得除共享传输层强制头之外的最高优先级。
-	account.ApplyHeaderOverrides(upstreamReq.Header)
+	account.ApplyHeaderOverrides(upstreamReq.Context(), upstreamReq.Header)
 	applyOpenCodeSessionHeader(c, account, targetURL, upstreamReq.Header, body)
 	// 免费层门禁：把会话值规范化为上游要求的 ses_ 形状（客户端已提供的合法
 	// 规范值原样保留）。必须在 applyOpenCodeSessionHeader 之后调用。

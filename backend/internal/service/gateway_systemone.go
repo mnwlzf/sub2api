@@ -11,7 +11,6 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/typesafe"
 	"github.com/gin-gonic/gin"
-	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
 
@@ -45,11 +44,15 @@ func (s *GatewayService) ForwardSystemOne(ctx context.Context, c *gin.Context, a
 	if err != nil {
 		return nil, err
 	}
-	// SystemOne 路径此前把客户端 body 原样转发，账号的 model_mapping 完全不生效。
-	// 这会让「typesafe 平台对接非 TypeSafe 上游」的场景无法工作：入站校验强制
-	// model=jev-latest，而目标上游（如 OpenCode Zen 的 systemone 端点）只认自己
-	// 的模型名。此处按账号映射改写出站 model，客户端仍发送规范模型名。
-	body = applySystemOneModelMapping(account, body)
+	mappedModel := firstNonEmpty(account.GetMappedModel(typesafe.JevLatestModel), typesafe.JevLatestModel)
+	var upstreamModel string
+	if mappedModel != typesafe.JevLatestModel {
+		body, err = sjson.SetBytes(body, "model", mappedModel)
+		if err != nil {
+			return nil, fmt.Errorf("apply TypeSafe account model mapping: %w", err)
+		}
+		upstreamModel = mappedModel
+	}
 	req, err := typesafe.NewSystemOneRequest(ctx, baseURL, key, body)
 	if err != nil {
 		return nil, err
@@ -59,6 +62,7 @@ func (s *GatewayService) ForwardSystemOne(ctx context.Context, c *gin.Context, a
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
+	SetOpsUpstreamModel(c, upstreamModel)
 	resp, err := s.httpUpstream.Do(req, proxyURL, account.ID, account.Concurrency)
 	if err != nil {
 		return nil, s.handleUpstreamTransportError(ctx, c, account, err, OpsUpstreamErrorEvent{
@@ -98,6 +102,7 @@ func (s *GatewayService) ForwardSystemOne(ctx context.Context, c *gin.Context, a
 			UpstreamHeaders:       resp.Header.Clone(),
 			Usage:                 ClaudeUsage{InputTokens: decoded.Usage.InputTokens, OutputTokens: decoded.Usage.OutputTokens},
 			Model:                 typesafe.JevLatestModel,
+			UpstreamModel:         upstreamModel,
 			UpstreamResponseModel: decoded.Model,
 			Duration:              time.Since(started),
 		},
@@ -172,31 +177,6 @@ func (s *GatewayService) handleSystemOneErrorResponse(ctx context.Context, c *gi
 		failoverErr.NextAccountAction = NextAccountRetry
 	}
 	return failoverErr
-}
-
-// applySystemOneModelMapping 按账号 model_mapping 改写 SystemOne body 的 model
-// 字段，使出站模型名与目标上游一致。
-//
-// 未命中映射、映射结果与原值相同或 body 形状异常时原样返回：SystemOne 请求的
-// 形状由 ValidateSystemOneRequest 在上游侧把守，这里只做尽力而为的改名，绝不
-// 因为改名失败而中断请求。
-func applySystemOneModelMapping(account *Account, body []byte) []byte {
-	if account == nil || len(body) == 0 {
-		return body
-	}
-	requested := strings.TrimSpace(gjson.GetBytes(body, "model").String())
-	if requested == "" {
-		return body
-	}
-	mapped, matched := account.ResolveMappedModel(requested)
-	if !matched || mapped == "" || mapped == requested {
-		return body
-	}
-	rewritten, err := sjson.SetBytes(body, "model", mapped)
-	if err != nil {
-		return body
-	}
-	return rewritten
 }
 
 // systemOneResponseContentType keeps the upstream JSON media type (and its

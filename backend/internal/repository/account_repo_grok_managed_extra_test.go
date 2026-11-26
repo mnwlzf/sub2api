@@ -143,8 +143,8 @@ func TestLockAndMergeAccountProbeExtraKeepsLatestGrokManagedKeys(t *testing.T) {
 					"ollama_session", "ollama_auto", "ollama_snapshot",
 					"opencode_group_unchanged", "opencode_auto", "opencode_snapshot",
 					"pool_platform", "pool_features", "pool_snapshot",
-					"grok_observed_models", "upstream_model_metadata",
-				}).AddRow(false, false, true, nil, nil, nil, nil, nil, nil, false, nil, nil, nil, nil, nil, tt.databaseModels, tt.databaseMetadata))
+					"grok_observed_models", "upstream_model_metadata", "group_sync_enabled",
+				}).AddRow(false, false, true, nil, nil, nil, nil, nil, nil, false, nil, nil, nil, nil, nil, tt.databaseModels, tt.databaseMetadata, nil))
 
 			account := &service.Account{
 				ID:          41,
@@ -153,7 +153,7 @@ func TestLockAndMergeAccountProbeExtraKeepsLatestGrokManagedKeys(t *testing.T) {
 				Credentials: tt.credentials,
 				Extra:       tt.inputExtra,
 			}
-			got, err := lockAndMergeAccountProbeExtra(context.Background(), client, account, nil, nil)
+			got, err := lockAndMergeAccountProbeExtra(context.Background(), client, account, service.AccountBillingSettingsUpdate{})
 			require.NoError(t, err)
 			require.Equal(t, "from-form", got["note"])
 			if tt.wantModels == nil {
