@@ -3,6 +3,8 @@ package service
 import (
 	"net/http"
 	"net/url"
+	"os"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -15,14 +17,13 @@ const (
 	openCodeSessionHeader         = "X-OpenCode-Session"
 	openCodeInboundBodyContextKey = "opencode_inbound_body"
 
-	// openCodeUpstreamUserAgent 是发往官方 OpenCode 上游的规范 User-Agent。
-	// opencode.ai 前置 Cloudflare 按客户端 UA 签名做 bot 拦截：Python-urllib 等
-	// 编程库 UA 会被 CF error code 1010 拒绝并返回 403。网关透传白名单放行
-	// user-agent，客户端自报身份原样到达上游会命中 WAF；该 403 再被计入账号
-	// 凭证类 strike，健康账号因此被自动禁用。取值沿用真实 opencode 客户端的
-	// UA 格式（opencode/<version>）。
+	// openCodeUserAgentVersionEnv 是 OpenCode 客户端 User-Agent 版本号的环境变量名。
+	openCodeUserAgentVersionEnv = "OPENCODE_USER_AGENT_VERSION"
+
+	// defaultOpenCodeUserAgentVersion 是内置的默认客户端版本号，可用
+	// OPENCODE_USER_AGENT_VERSION 覆盖。
 	//
-	// **UA 版本是免费层门禁的硬性检查项，且上游只接受一个闭区间：**
+	// **UA 版本是免费层门禁的硬性检查项，且上游（实测）只接受一个闭区间：**
 	//
 	//	1.18.0 <= version <= 1.18.33  -> 放行（200）
 	//	version <  1.18.0             -> 426 UpgradeRequired
@@ -37,19 +38,64 @@ const (
 	// 我们把 UA 从 1.18.31 升到 1.19.0 当时无害），收紧后官方最新版 1.19.0
 	// 落到带外 → 全站 403 FreeTierError。官方 1.19.0 客户端自身同样被拒，
 	// 属**上游回归**。因此「顺手把版本号升到官方最新」是危险操作：上游可能
-	// 反过来只接受旧版本带；改版本号前必须重测当前区间，并同步更新
-	// openai_opencode_freetier_test.go 的版本带断言。
+	// 反过来只接受旧版本带；改默认值或设置 OPENCODE_USER_AGENT_VERSION 前必须
+	// 重测当前区间，并同步更新 openai_opencode_freetier_test.go 的版本带断言。
 	//
 	// 取值 1.18.31 的理由：落在带内中段（距下界 31 个 patch，距上界 2 个
 	// patch），且是真实存在的官方 release。子版本取自官方发布产物实测：
 	// ai-sdk/provider-utils 为 4.0.23（二进制内 `var QF="4.0.23"`），
 	// Bun runtime 为 1.3.14（`bun/1.3.14`）。
+	defaultOpenCodeUserAgentVersion = "1.18.31"
+
+	// openCodeUserAgentSuffix 是与内置版本号配套的真实客户端身份后缀；上游按
+	// 版本带判定，后缀不影响判定。
+	openCodeUserAgentSuffix = " ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14"
+)
+
+var (
+	openCodeUserAgentVersionPattern = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
+
+	// openCodeUpstreamUserAgent 是发往官方 OpenCode 上游的规范 User-Agent。
+	// opencode.ai 前置 Cloudflare 按客户端 UA 签名做 bot 拦截：Python-urllib 等
+	// 编程库 UA 会被 CF error code 1010 拒绝并返回 403。网关透传白名单放行
+	// user-agent，客户端自报身份原样到达上游会命中 WAF；该 403 再被计入账号
+	// 凭证类 strike，健康账号因此被自动禁用。取值沿用真实 opencode 客户端的
+	// UA 格式（opencode/<version> + 与真实客户端一致的 ai-sdk/bun 后缀）。
 	//
 	// 2026-10-13 免费层稳定 403 FreeTierError 还叠加了会话 id **编码**的问题
 	// （hex 段必须是官方 tA() 时间戳编码，低 12 位为 0xFFE 只是其结构推论），
 	// 见 openCodeGateSessionLowHex 与 docs/opencode-free-tier-gate-runbook.md。
-	openCodeUpstreamUserAgent = "opencode/1.18.31 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14"
+	openCodeUpstreamUserAgent = "opencode/" + defaultOpenCodeUserAgentVersion + openCodeUserAgentSuffix
 )
+
+func init() {
+	openCodeUpstreamUserAgent = buildOpenCodeUpstreamUserAgent(os.Getenv(openCodeUserAgentVersionEnv))
+}
+
+// buildOpenCodeUpstreamUserAgent 按生效版本号拼出站 UA，保留固定后缀。
+func buildOpenCodeUpstreamUserAgent(envValue string) string {
+	return "opencode/" + resolveOpenCodeUserAgentVersion(envValue) + openCodeUserAgentSuffix
+}
+
+// resolveOpenCodeUserAgentVersion 返回当前生效的客户端版本号：合法的
+// OPENCODE_USER_AGENT_VERSION 优先，否则回退内置默认版本。
+func resolveOpenCodeUserAgentVersion(envValue string) string {
+	if version := NormalizeOpenCodeUserAgentVersion(envValue); version != "" {
+		return version
+	}
+	return defaultOpenCodeUserAgentVersion
+}
+
+// NormalizeOpenCodeUserAgentVersion 校验并归一化 OpenCode User-Agent 版本号。
+// 只接受三段数字 semver（与真实 opencode 客户端版本格式一致），非法值返回空串，
+// 调用方据此回退内置默认版本。
+func NormalizeOpenCodeUserAgentVersion(version string) string {
+	version = strings.TrimSpace(version)
+	if version == "" || !openCodeUserAgentVersionPattern.MatchString(version) {
+		return ""
+	}
+	return version
+}
 
 // rememberOpenCodeInboundBody keeps the client request body so protocol
 // conversion (Responses↔Anthropic↔Chat Completions) can still recover

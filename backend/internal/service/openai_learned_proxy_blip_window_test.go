@@ -122,10 +122,10 @@ func TestLearnedProxyBlip_ProxyPathShapeDetection(t *testing.T) {
 
 	// 前提：被判为「非代理路径」的凭据类错误在全局分类下**仍是** Persistent——
 	// 本次改动没有放宽 classifyUpstreamTransportError 的语义，它照常冷却。
-	require.True(t, classifyUpstreamTransportError(
-		errors.New(`socks connect tcp 85.255.176.68:12324->chatgpt.com:443: username/password authentication failed`)).Persistent,
+	require.Equal(t, upstreamTransportProxyAuth, classifyUpstreamTransportError(
+		errors.New(`socks connect tcp 85.255.176.68:12324->chatgpt.com:443: username/password authentication failed`)),
 		"代理凭据被拒必须仍是持久故障（全局语义未改）")
-	require.True(t, classifyUpstreamTransportError(errors.New(warpBlipDNSNotFoundErr)).Persistent,
+	require.Equal(t, upstreamTransportReachability, classifyUpstreamTransportError(errors.New(warpBlipDNSNotFoundErr)),
 		"DNS no such host 必须仍是持久故障（全局语义未改）")
 }
 
@@ -398,7 +398,7 @@ func TestLearnedProxyBlip_NonProxyPathShapeStillTempUnschedules(t *testing.T) {
 	// 那一类（否则过期订阅的代理会被反复调度，回到 classifyUpstreamTransportError
 	// 当初要修的原始事故）。
 	authErr := errors.New(warpBlipProxyAuthFailedErr)
-	require.True(t, classifyUpstreamTransportError(authErr).Persistent)
+	require.Equal(t, upstreamTransportProxyAuth, classifyUpstreamTransportError(authErr))
 
 	c, _ := newOpenAITransportErrTestContext()
 	err := svc.handleOpenAIUpstreamTransportError(ctx, c, account, authErr, false)
