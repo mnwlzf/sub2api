@@ -120,9 +120,9 @@ func (r *warpWindowProbeRotator) callCount() int {
 // ---------------------------------------------------------------------------
 
 func TestWarpRotationWindow_PremiseErrorsAreClassifiedPersistent(t *testing.T) {
-	require.True(t, classifyUpstreamTransportError(errors.New(warpBlipDNSNotFoundErr)).Persistent,
+	require.Equal(t, upstreamTransportReachability, classifyUpstreamTransportError(errors.New(warpBlipDNSNotFoundErr)),
 		"DNS no such host 必须仍被判为持久信号（未改全局语义）")
-	require.True(t, classifyUpstreamTransportError(errors.New(warpBlipConnRefusedErr)).Persistent,
+	require.Equal(t, upstreamTransportReachability, classifyUpstreamTransportError(errors.New(warpBlipConnRefusedErr)),
 		"connection refused 必须仍被判为持久信号（未改全局语义）")
 }
 
