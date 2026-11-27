@@ -100,7 +100,7 @@ func newOpenAIPassthroughKeepaliveHandler(t *testing.T, upstream service.HTTPUps
 		service.NewConcurrencyService(nil),
 		billing,
 		service.NewAPIKeyService(nil, nil, nil, nil, nil, nil, cfg),
-		nil, nil, nil, nil, cfg,
+		nil, nil, nil, nil, nil, cfg,
 	)
 	h.maxAccountSwitches = 2
 	return h
